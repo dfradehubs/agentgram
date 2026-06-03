@@ -31,7 +31,7 @@ import (
 )
 
 // @title Agentgram API
-// @version 1.0
+// @version 0.1.0
 // @description Multiplexer API for AI agents with AG-UI protocol. Connects to remote agents, handles authentication, permissions, and emits AG-UI SSE events.
 // @host localhost:8080
 // @BasePath /

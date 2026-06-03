@@ -1,33 +1,31 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Agentgram · API Reference</title>
-  <link rel="icon" href="../images/logo.svg" type="image/svg+xml" />
-  <style>
-    body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-    .topbar {
-      display: flex; align-items: center; gap: 0.6rem;
-      padding: 0.6rem 1rem; border-bottom: 1px solid rgba(120,120,120,0.2);
-      position: sticky; top: 0; background: #fff; z-index: 10;
-    }
-    .topbar img { height: 24px; width: 24px; }
-    .topbar a { color: inherit; text-decoration: none; font-weight: 600; }
-    .topbar .spacer { flex: 1; }
-    .topbar .back { font-weight: 500; opacity: 0.8; font-size: 0.9rem; }
-    .topbar .back:hover { opacity: 1; }
-  </style>
-</head>
-<body>
-  <nav class="topbar">
-    <a href="../" title="Agentgram"><img src="../images/logo.svg" alt="Agentgram" /></a>
-    <a href="../">Agentgram</a>
-    <span class="spacer"></span>
-    <a class="back" href="../docs/">← Back to docs</a>
-  </nav>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Agentgram · API Reference</title>
+    <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
+    <style>
+      body { margin: 0; }
+      .back-to-docs {
+        position: fixed; top: 12px; right: 16px; z-index: 9999;
+        font: 600 13px/1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        color: #fff; text-decoration: none;
+        background: #7c3aed; padding: 8px 14px; border-radius: 999px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+      }
+      .back-to-docs:hover { background: #6d28d9; }
+    </style>
+  </head>
+  <body>
+    <a class="back-to-docs" href="../docs/">← Docs</a>
 
-  <redoc spec-url="../openapi.json" hide-download-button></redoc>
-  <script src="https://cdn.jsdelivr.net/npm/redoc@2/bundles/redoc.standalone.js"></script>
-</body>
+    <!-- Rendered from the OpenAPI spec with Scalar -->
+    <script
+      id="api-reference"
+      data-url="../openapi.json"
+      data-configuration='{"theme":"purple","hideDownloadButton":false,"metaData":{"title":"Agentgram API Reference"}}'
+    ></script>
+    <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+  </body>
 </html>

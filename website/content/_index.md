@@ -17,7 +17,7 @@ layout: hextra-home
 
 <div class="hx:mb-12">
 {{< hextra/hero-subtitle >}}
-  A single front door for all your AI agents. Agentgram speaks REST, A2A and ADK&nbsp;<br class="hx:sm:block hx:hidden" />on the way in, and emits clean AG-UI events on the way out.
+  Centralize every agent and MCP server in your company — ADK, A2A or custom —&nbsp;<br class="hx:sm:block hx:hidden" />behind one API and one MCP endpoint, with RBAC deciding who can reach what.
 {{< /hextra/hero-subtitle >}}
 </div>
 
@@ -51,14 +51,14 @@ layout: hextra-home
     subtitle="Talk to several agents in one thread and propagate context between them."
   >}}
   {{< hextra/feature-card
-    title="Auth & permissions"
-    icon="lock-closed"
-    subtitle="Optional Keycloak (OIDC/JWT) login, with per-agent access by groups or individual users."
+    title="RBAC for every agent & MCP"
+    icon="shield-check"
+    subtitle="Fine-grained, per-agent and per-MCP access control by group or user. One endpoint; each caller only sees what they're allowed to."
   >}}
   {{< hextra/feature-card
     title="MCP server"
     icon="terminal"
-    subtitle="Use your agents as tools in any MCP-compatible IDE or CLI — standard OAuth discovery + Dynamic Client Registration, no manual setup."
+    subtitle="Aggregate your agents and company MCP servers into one MCP endpoint for any compatible IDE or CLI — standard OAuth + Dynamic Client Registration, no manual setup."
   >}}
   {{< hextra/feature-card
     title="Built-in observability"

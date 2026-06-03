@@ -10,6 +10,13 @@ multiplexer that connects to remote agents over their native protocol (Custom RE
 Google ADK), handles authentication, permissions and session storage, and converts everything to a
 uniform stream of [AG-UI](https://docs.ag-ui.com/) events. The **web** client renders that stream.
 
+{{< callout type="info" >}}
+**Centralize everything, behind RBAC.** Register every agent (ADK, A2A or custom) **and** every MCP
+server your company runs, and reach them all through a single API endpoint and a single MCP endpoint.
+Role-based access control decides — per agent and per MCP server — exactly who can access what, so one
+integration gives each user only the tools they're entitled to.
+{{< /callout >}}
+
 ## Get started
 
 {{< cards >}}

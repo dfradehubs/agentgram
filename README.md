@@ -39,13 +39,22 @@ its native protocol, and converts everything to a uniform stream of AG-UI events
 just renders that stream — it never needs to know whether an answer came from a REST endpoint, an
 A2A peer or a Google ADK app.
 
+> [!TIP]
+> **The killer feature — centralize everything, behind RBAC.** Point Agentgram at *every* agent and
+> MCP server in your company — whether they speak ADK, A2A or a custom protocol — and expose them
+> through **one API endpoint and one MCP endpoint**. Role-based access control (RBAC) decides exactly
+> who can reach which agent or MCP, so a single integration hands each person precisely the tools
+> they're entitled to — and nothing else. No more N integrations, N logins, N tools to wire up per client.
+
 ## Features
 
+- 🏢 **Centralize N agents and N MCP servers** — register everything your company runs and reach it all through **one API endpoint and one MCP endpoint**.
+- 🛡️ **RBAC** — fine-grained, per-agent and per-MCP access control by group or user. Each caller only ever sees what they're allowed to.
 - 🔌 **Protocol-agnostic** — Custom REST/SSE, [A2A](docs/AGENT_A2A_CONTRACT.md) (JSON-RPC) and [Google ADK](docs/AGENT_ADK_CONTRACT.md) agents behind one interface.
 - 📡 **AG-UI native** — the API emits standard [AG-UI](https://docs.ag-ui.com/) SSE events (`RUN_STARTED`, `TEXT_MESSAGE_*`, `TOOL_CALL_*`, `RUN_FINISHED`).
 - 🧵 **Sessions that persist** — conversation history per agent, stored in Redis and managed by the API (agents stay stateless).
 - 👥 **Multi-agent chats** — talk to several agents in one thread and propagate context between them.
-- 🔐 **Auth & permissions** — optional Keycloak (OIDC/JWT) login, with access controlled per agent by Google Workspace groups or individual users.
+- 🔐 **Authentication** — optional Keycloak (OIDC/JWT) login; identities and groups (e.g. Google Workspace) drive the RBAC above.
 - 🛠️ **MCP server** — expose your agents as tools inside Claude Code and Cursor, with full OAuth + Dynamic Client Registration (no manual setup).
 - 💬 **Slack integration** — reach the same agents from Slack.
 - 📊 **Built-in observability** — usage metrics, latency and cost dashboards out of the box.

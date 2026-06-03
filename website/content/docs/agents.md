@@ -21,15 +21,17 @@ out:
 See the [protocols overview](https://github.com/dfradehubs/agentgram/blob/main/docs/PROTOCOLS_OVERVIEW.md)
 for how each one is mapped onto AG-UI.
 
-## Permissions
+## Permissions (RBAC)
 
-Access is controlled per agent. An agent can be reachable by:
+Access is role-based and controlled **per agent** (and, the same way, [per MCP server]({{< relref "mcp" >}})). An
+agent can be reachable by:
 
 - **Groups** — e.g. Google Workspace groups (`google-workspace/team@example.com`), with `*` for public access.
 - **Individual users** — by email.
 
 When a request comes in, the API filters the visible agents by the caller's identity (from the JWT
-claims) before routing.
+claims) before routing — so a single endpoint serves your whole company, yet each person only ever
+reaches the agents and MCP servers they're entitled to.
 
 ## The chat contract
 
