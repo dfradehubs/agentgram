@@ -2,6 +2,11 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // Disable Next's gzip compression: it buffers streamed responses and flushes
+  // them in large blocks, which breaks incremental SSE delivery (the agent's
+  // streamed text would only appear once the whole message is written). Static
+  // asset compression should be handled at the edge (ingress/CDN/service mesh).
+  compress: false,
   async headers() {
     return [
       {
