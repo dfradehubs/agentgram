@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.2] - 2026-06-03
+
+### Fixed
+
+- Scroll-up during a streaming response now works. The scroll listeners were attached in a mount-time effect that captured a null container (the messages container renders conditionally), so they were never bound and the user's scroll could not detach auto-scroll. They are now attached via a callback ref when the container actually mounts.
+- Switching agent and returning during an active run no longer corrupts the message (it used to show only the tail, mislabelled as "thinking"). Single-agent runs are buffered server-side, so the browser no longer resumes from the partial background reader — it reconnects via the same full-replay path used after a reload.
+
 ## [0.2.1] - 2026-06-03
 
 ### Fixed
