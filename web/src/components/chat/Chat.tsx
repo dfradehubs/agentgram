@@ -44,6 +44,10 @@ const NEAR_BOTTOM_THRESHOLD_PX = 120;
 // scrollTop below which older messages are loaded (infinite scroll upward).
 const LOAD_OLDER_THRESHOLD_PX = 100;
 
+// Recovery polling after a reload while a run may still be in flight server-side.
+const RUN_RECOVERY_POLL_MS = 1500;
+const RUN_RECOVERY_MAX_POLLS = 40; // ~60s before falling back to a re-send
+
 export function Chat() {
   const { agents, currentAgent } = useAgents();
   const { user, displayName } = useUser();
@@ -343,20 +347,64 @@ export function Chat() {
     pinnedRef.current = true;
   }, [chatSessionId, sessionResetKey]);
 
-  // Auto-retry incomplete conversations (page reload during stream)
-  useEffect(() => {
-    if (!chatSessionId || isLoading || isChatReconnecting) return;
-    if (messages.length === 0) return;
+  // Always-current snapshot of messages, read inside the recovery loop below
+  // without making it a dependency (which would restart/cancel it on every
+  // streaming delta).
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
 
-    const lastMsg = messages[messages.length - 1];
-    if (lastMsg.role === "user") {
-      const timer = setTimeout(() => {
-        retry(lastMsg);
-      }, 500);
-      return () => clearTimeout(timer);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only on session load
-  }, [chatSessionId]);
+  // Recover an in-flight run after a page reload. When the last persisted
+  // message is from the user, a run may still be running on the server: the
+  // backend keeps the run alive even if the client disconnected and persists
+  // the full assistant reply when it finishes. So instead of firing a duplicate
+  // run, poll the session for the assistant reply. Only re-send as a last resort
+  // if nothing arrives within the timeout (the run was genuinely lost, e.g. a
+  // server restart). MCP sessions use a different fetch path and keep the old
+  // retry behaviour.
+  //
+  // Depends on isLoading so it starts once the session finishes loading (at
+  // session load isLoading is briefly true); the loop runs at most once per
+  // session and reads the latest messages via messagesRef.
+  const agentIdForRecovery = currentAgent?.id;
+  useEffect(() => {
+    if (!chatSessionId || isLoading || isChatReconnecting || isMCP) return;
+    if (!agentIdForRecovery) return;
+    const lastMsg = messagesRef.current[messagesRef.current.length - 1];
+    if (!lastMsg || lastMsg.role !== "user") return;
+
+    let cancelled = false;
+    let polls = 0;
+    let timer: ReturnType<typeof setTimeout>;
+
+    const poll = async () => {
+      polls += 1;
+      try {
+        const session = await fetchSession(agentIdForRecovery, chatSessionId);
+        if (cancelled) return;
+        const serverMessages = session.messages ?? [];
+        const last = serverMessages[serverMessages.length - 1];
+        if (last && last.role === "assistant") {
+          // Run finished server-side — show the persisted reply, no duplicate run.
+          replaceMessages(serverMessages);
+          return;
+        }
+      } catch {
+        // ignore and keep polling
+      }
+      if (cancelled) return;
+      if (polls >= RUN_RECOVERY_MAX_POLLS) {
+        retry(lastMsg); // fallback: the run was genuinely lost
+        return;
+      }
+      timer = setTimeout(poll, RUN_RECOVERY_POLL_MS);
+    };
+
+    timer = setTimeout(poll, RUN_RECOVERY_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [chatSessionId, isLoading, isChatReconnecting, isMCP, agentIdForRecovery, replaceMessages, retry]);
 
   // Focus input on agent/session change
   useEffect(() => {
