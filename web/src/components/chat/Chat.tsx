@@ -38,6 +38,12 @@ const chatWidthClass = {
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
+// Distance from the bottom (px) within which the viewport is considered "at the
+// bottom" and auto-scroll stays pinned.
+const NEAR_BOTTOM_THRESHOLD_PX = 120;
+// scrollTop below which older messages are loaded (infinite scroll upward).
+const LOAD_OLDER_THRESHOLD_PX = 100;
+
 export function Chat() {
   const { agents, currentAgent } = useAgents();
   const { user, displayName } = useUser();
@@ -61,8 +67,12 @@ export function Chat() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const isNearBottomRef = useRef(true);
-  const autoScrollRef = useRef(true);
+  // Auto-scroll state: pinnedRef tracks whether we follow the bottom;
+  // isProgrammaticScrollRef marks scrolls WE trigger so the scroll listener can
+  // tell them apart from the user's own scrolling.
+  const pinnedRef = useRef(true);
+  const isProgrammaticScrollRef = useRef(false);
+  const prevScrollHeightRef = useRef(0);
 
   // Mode detection
   const isMCP = !!(currentMCPServer || isMCPMulti);
@@ -214,45 +224,54 @@ export function Chat() {
     }, [refreshSessions, chatSessionId, currentAgent?.id, replaceMessages]),
   });
 
-  // Scroll tracking — yield auto-scroll the moment the user scrolls up, and
-  // re-enable it only when they return to the bottom on their own.
-  //
-  // We rely on wheel/touch events to detect user intent because those are
-  // produced ONLY by the user, never by programmatic scrolling. A heuristic
-  // based on scrollTop deltas cannot tell apart the user's scroll from the
-  // auto-scroll's own movement, which is what previously trapped the viewport
-  // at the bottom during streaming.
-  const prevScrollHeightRef = useRef(0);
+  // Auto-scroll (pin-to-bottom). We follow the bottom while pinned. The user
+  // unpins by scrolling up and re-pins by returning to the bottom on their own.
+  // The key to not trapping the viewport during streaming is distinguishing OUR
+  // programmatic scroll from the user's: isProgrammaticScrollRef is set right
+  // before we scroll and cleared on the next frame, so the `scroll` event our
+  // own scrollTop change produces is ignored by handleScroll.
+  const scrollToBottom = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    isProgrammaticScrollRef.current = true;
+    // Direct scrollTop (not scrollIntoView) is synchronous, predictable, and
+    // never scrolls ancestor containers.
+    container.scrollTop = container.scrollHeight;
+    requestAnimationFrame(() => {
+      isProgrammaticScrollRef.current = false;
+    });
+  }, []);
+
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
 
     const isNearBottom = () => {
       const { scrollTop, scrollHeight, clientHeight } = container;
-      return scrollHeight - scrollTop - clientHeight < 120;
+      return scrollHeight - scrollTop - clientHeight < NEAR_BOTTOM_THRESHOLD_PX;
     };
 
-    // Upward wheel = user wants to read history; release auto-scroll.
+    // Immediate, defensive unpin signal: produced only by the user.
     const handleWheel = (event: WheelEvent) => {
-      if (event.deltaY < 0) autoScrollRef.current = false;
+      if (event.deltaY < 0) pinnedRef.current = false;
     };
 
-    // Touch drag downward moves content down = scrolling up; release.
+    // Touch drag downward moves content down = scrolling up; unpin.
     let lastTouchY = 0;
     const handleTouchStart = (event: TouchEvent) => {
       lastTouchY = event.touches[0]?.clientY ?? 0;
     };
     const handleTouchMove = (event: TouchEvent) => {
       const y = event.touches[0]?.clientY ?? 0;
-      if (y > lastTouchY) autoScrollRef.current = false;
+      if (y > lastTouchY) pinnedRef.current = false;
       lastTouchY = y;
     };
 
-    // Re-arm auto-scroll once the viewport is back at the bottom.
+    // Only the USER's scroll updates the pinned state. Our own programmatic
+    // scroll is ignored so it can't re-pin the view the user just left.
     const handleScroll = () => {
-      const nearBottom = isNearBottom();
-      isNearBottomRef.current = nearBottom;
-      if (nearBottom) autoScrollRef.current = true;
+      if (isProgrammaticScrollRef.current) return;
+      pinnedRef.current = isNearBottom();
     };
 
     container.addEventListener("wheel", handleWheel, { passive: true });
@@ -280,12 +299,13 @@ export function Chat() {
     }
   }, [hasMoreMessages, isLoadingMore, loadOlderMessages, prependMessages]);
 
-  // Trigger load-more when user scrolls near the top
+  // Trigger load-more when user scrolls near the top (independent listener,
+  // does not touch pinnedRef).
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
     const handleScrollForLoadMore = () => {
-      if (container.scrollTop < 100) {
+      if (container.scrollTop < LOAD_OLDER_THRESHOLD_PX) {
         handleLoadOlder();
       }
     };
@@ -293,25 +313,35 @@ export function Chat() {
     return () => container.removeEventListener("scroll", handleScrollForLoadMore);
   }, [handleLoadOlder]);
 
+  // Follow the bottom on every streaming delta / timeline change while pinned.
+  // This also fires on initial session load (the hook calls setTimeline), so a
+  // freshly opened session starts pinned at the bottom.
   useEffect(() => {
-    if (!autoScrollRef.current) return;
-    // Instant (not smooth) scroll: a smooth animation runs asynchronously and
-    // keeps emitting scroll events after each delta, which fights the user's
-    // own scroll and drags the viewport back to the bottom.
-    messagesEndRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
-  }, [timeline]);
+    if (!pinnedRef.current) return;
+    scrollToBottom();
+  }, [timeline, scrollToBottom]);
 
-  // Preserve scroll position after older messages are prepended
+  // Preserve scroll position after older messages are prepended. The scrollTop
+  // adjustment is marked programmatic so it doesn't disturb pinnedRef.
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container || prevScrollHeightRef.current === 0) return;
-    const newScrollHeight = container.scrollHeight;
-    const heightDiff = newScrollHeight - prevScrollHeightRef.current;
+    const heightDiff = container.scrollHeight - prevScrollHeightRef.current;
     if (heightDiff > 0) {
+      isProgrammaticScrollRef.current = true;
       container.scrollTop += heightDiff;
+      requestAnimationFrame(() => {
+        isProgrammaticScrollRef.current = false;
+      });
     }
     prevScrollHeightRef.current = 0;
   }, [messages]);
+
+  // Every session/agent change starts pinned at the bottom; the hook's
+  // setTimeline on load then triggers scrollToBottom via the effect above.
+  useEffect(() => {
+    pinnedRef.current = true;
+  }, [chatSessionId, sessionResetKey]);
 
   // Auto-retry incomplete conversations (page reload during stream)
   useEffect(() => {
@@ -392,7 +422,8 @@ export function Chat() {
 
   const handleSend = useCallback(() => {
     // A fresh send always snaps back to the bottom and follows the response.
-    autoScrollRef.current = true;
+    pinnedRef.current = true;
+    scrollToBottom();
     const atts = pendingAttachments.length > 0 ? pendingAttachments : undefined;
     if (isMultiAgent && selectedTargetAgentIds.length > 0) {
       // Parallel send to all selected agents with context propagation
@@ -404,7 +435,7 @@ export function Chat() {
     if (inputRef.current) {
       inputRef.current.style.height = "auto";
     }
-  }, [pendingAttachments, isMultiAgent, selectedTargetAgentIds, sendMultiple, sendMessage]);
+  }, [pendingAttachments, isMultiAgent, selectedTargetAgentIds, sendMultiple, sendMessage, scrollToBottom]);
 
   const handleFileSelect = useCallback((files: FileList | null) => {
     if (!files) return;
