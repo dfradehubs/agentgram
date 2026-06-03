@@ -642,8 +642,12 @@ func (s *RedisSessionStore) AppendRunEvent(ctx context.Context, sessionID string
 	return nil
 }
 
-// SetActiveRun marks a run as in-flight for the session.
+// SetActiveRun marks a run as in-flight for the session and starts a fresh event
+// buffer for it. Dropping any leftover stream from a previous run is essential:
+// otherwise a reconnect would replay the previous run's RUN_FINISHED and close
+// before reaching the current run's events.
 func (s *RedisSessionStore) SetActiveRun(ctx context.Context, sessionID, token string) error {
+	s.rdb.Del(ctx, RunEventsKey(sessionID))
 	if err := s.rdb.Set(ctx, ActiveRunKey(sessionID), token, activeRunTTL).Err(); err != nil {
 		return fmt.Errorf("failed to set active run: %w", err)
 	}
