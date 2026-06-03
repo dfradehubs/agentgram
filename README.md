@@ -54,6 +54,7 @@ A2A peer or a Google ADK app.
 - 📡 **AG-UI native** — the API emits standard [AG-UI](https://docs.ag-ui.com/) SSE events (`RUN_STARTED`, `TEXT_MESSAGE_*`, `TOOL_CALL_*`, `RUN_FINISHED`).
 - 🧵 **Sessions that persist** — conversation history per agent, stored in Redis and managed by the API (agents stay stateless).
 - 👥 **Multi-agent chats** — talk to several agents in one thread and propagate context between them.
+- 🤝 **Share & collaborate** — share conversations with revocable, time-limited links (view or clone), and build **shared multi-agent groups** that a team uses together.
 - 🔐 **Authentication** — optional Keycloak (OIDC/JWT) login; identities and groups (e.g. Google Workspace) drive the RBAC above.
 - 🛠️ **MCP server** — expose your agents as tools inside Claude Code and Cursor, with full OAuth + Dynamic Client Registration (no manual setup).
 - 💬 **Slack integration** — reach the same agents from Slack.

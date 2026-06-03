@@ -1,6 +1,6 @@
 ---
 title: Model Context Protocol (MCP)
-weight: 6
+weight: 7
 ---
 
 Agentgram ships a standard **MCP server** that turns your agents into tools for any

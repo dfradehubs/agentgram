@@ -30,6 +30,7 @@ integration gives each user only the tools they're entitled to.
 {{< cards >}}
   {{< card link="/docs/configuration/" title="Configuration" icon="adjustments" subtitle="The config file, environment variables and secrets." >}}
   {{< card link="/docs/agents/" title="Agents & protocols" icon="switch-horizontal" subtitle="Register agents and how each protocol maps to AG-UI." >}}
+  {{< card link="/docs/collaboration/" title="Sharing & collaboration" icon="user-group" subtitle="Share conversations and create shared multi-agent groups across users." >}}
   {{< card link="/docs/mcp/" title="MCP" icon="terminal" subtitle="Expose your agents as tools in any MCP-compatible IDE or CLI." >}}
   {{< card link="/api/" title="API Reference" icon="code" subtitle="The full OpenAPI reference for the HTTP API." >}}
 {{< /cards >}}

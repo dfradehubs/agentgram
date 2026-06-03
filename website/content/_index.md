@@ -51,6 +51,11 @@ layout: hextra-home
     subtitle="Talk to several agents in one thread and propagate context between them."
   >}}
   {{< hextra/feature-card
+    title="Share & collaborate"
+    icon="share"
+    subtitle="Share conversations with revocable links, and build shared multi-agent groups your team uses together."
+  >}}
+  {{< hextra/feature-card
     title="RBAC for every agent & MCP"
     icon="shield-check"
     subtitle="Fine-grained, per-agent and per-MCP access control by group or user. One endpoint; each caller only sees what they're allowed to."

@@ -214,37 +214,57 @@ export function Chat() {
     }, [refreshSessions, chatSessionId, currentAgent?.id, replaceMessages]),
   });
 
-  // Scroll tracking — disable auto-scroll when user scrolls up manually,
-  // re-enable only when user scrolls back to the bottom on their own.
-  const lastScrollTopRef = useRef(0);
-  const userScrolledUpRef = useRef(false);
+  // Scroll tracking — yield auto-scroll the moment the user scrolls up, and
+  // re-enable it only when they return to the bottom on their own.
+  //
+  // We rely on wheel/touch events to detect user intent because those are
+  // produced ONLY by the user, never by programmatic scrolling. A heuristic
+  // based on scrollTop deltas cannot tell apart the user's scroll from the
+  // auto-scroll's own movement, which is what previously trapped the viewport
+  // at the bottom during streaming.
   const prevScrollHeightRef = useRef(0);
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
-    const handleScroll = () => {
-      const { scrollTop, scrollHeight, clientHeight } = container;
-      const nearBottom = scrollHeight - scrollTop - clientHeight < 120;
-      isNearBottomRef.current = nearBottom;
 
-      // Detect intentional upward scroll by user
-      if (scrollTop < lastScrollTopRef.current - 10) {
-        userScrolledUpRef.current = true;
-        autoScrollRef.current = false;
-      }
-      // Re-enable auto-scroll only when user scrolls back near bottom
-      if (nearBottom && userScrolledUpRef.current) {
-        userScrolledUpRef.current = false;
-        autoScrollRef.current = true;
-      }
-      // If user never scrolled up, keep auto-scroll synced to position
-      if (!userScrolledUpRef.current) {
-        autoScrollRef.current = nearBottom;
-      }
-      lastScrollTopRef.current = scrollTop;
+    const isNearBottom = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      return scrollHeight - scrollTop - clientHeight < 120;
     };
+
+    // Upward wheel = user wants to read history; release auto-scroll.
+    const handleWheel = (event: WheelEvent) => {
+      if (event.deltaY < 0) autoScrollRef.current = false;
+    };
+
+    // Touch drag downward moves content down = scrolling up; release.
+    let lastTouchY = 0;
+    const handleTouchStart = (event: TouchEvent) => {
+      lastTouchY = event.touches[0]?.clientY ?? 0;
+    };
+    const handleTouchMove = (event: TouchEvent) => {
+      const y = event.touches[0]?.clientY ?? 0;
+      if (y > lastTouchY) autoScrollRef.current = false;
+      lastTouchY = y;
+    };
+
+    // Re-arm auto-scroll once the viewport is back at the bottom.
+    const handleScroll = () => {
+      const nearBottom = isNearBottom();
+      isNearBottomRef.current = nearBottom;
+      if (nearBottom) autoScrollRef.current = true;
+    };
+
+    container.addEventListener("wheel", handleWheel, { passive: true });
+    container.addEventListener("touchstart", handleTouchStart, { passive: true });
+    container.addEventListener("touchmove", handleTouchMove, { passive: true });
     container.addEventListener("scroll", handleScroll, { passive: true });
-    return () => container.removeEventListener("scroll", handleScroll);
+    return () => {
+      container.removeEventListener("wheel", handleWheel);
+      container.removeEventListener("touchstart", handleTouchStart);
+      container.removeEventListener("touchmove", handleTouchMove);
+      container.removeEventListener("scroll", handleScroll);
+    };
   }, []);
 
   // Handle loading older messages when scrolling near the top
@@ -274,9 +294,11 @@ export function Chat() {
   }, [handleLoadOlder]);
 
   useEffect(() => {
-    if (autoScrollRef.current) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
+    if (!autoScrollRef.current) return;
+    // Instant (not smooth) scroll: a smooth animation runs asynchronously and
+    // keeps emitting scroll events after each delta, which fights the user's
+    // own scroll and drags the viewport back to the bottom.
+    messagesEndRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
   }, [timeline]);
 
   // Preserve scroll position after older messages are prepended
@@ -369,8 +391,8 @@ export function Chat() {
   }, []);
 
   const handleSend = useCallback(() => {
+    // A fresh send always snaps back to the bottom and follows the response.
     autoScrollRef.current = true;
-    userScrolledUpRef.current = false;
     const atts = pendingAttachments.length > 0 ? pendingAttachments : undefined;
     if (isMultiAgent && selectedTargetAgentIds.length > 0) {
       // Parallel send to all selected agents with context propagation
