@@ -1,0 +1,54 @@
+# Ingress for Agentgram (nginx-ingress example).
+#
+# Routing rules:
+#   /mcp, /.well-known/, /register  -> API   (MCP clients hit these directly)
+#   everything else (/)             -> Web   (the web app proxies /api and /auth
+#                                              to the API server-side via BACKEND_URL)
+#
+# Adjust `host`, ingressClassName and TLS to your environment.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: agentgram
+  namespace: agentgram
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"   # required for SSE streaming
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - agentgram.example.com
+      secretName: agentgram-tls
+  rules:
+    - host: agentgram.example.com
+      http:
+        paths:
+          - path: /mcp
+            pathType: Prefix
+            backend:
+              service:
+                name: agentgram-api
+                port:
+                  number: 8080
+          - path: /.well-known
+            pathType: Prefix
+            backend:
+              service:
+                name: agentgram-api
+                port:
+                  number: 8080
+          - path: /register
+            pathType: Exact
+            backend:
+              service:
+                name: agentgram-api
+                port:
+                  number: 8080
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: agentgram-web
+                port:
+                  number: 3000

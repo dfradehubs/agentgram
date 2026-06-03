@@ -1,0 +1,169 @@
+# Agentgram API — values for the bjw-s app-template chart
+#   https://github.com/bjw-s-labs/helm-charts (chart: app-template)
+#
+# Install:
+#   helm install agentgram-api bjw-s/app-template -f values-api.yaml -n agentgram --create-namespace
+#
+# This chart only renders standard Kubernetes objects (Deployment, Service,
+# ConfigMap, HPA, PDB) — nothing vendor-specific.
+
+global:
+  fullnameOverride: agentgram-api
+
+controllers:
+  main:
+    replicas: 2
+    strategy: RollingUpdate
+    rollingUpdate:
+      unavailable: 0
+      surge: 1
+
+    containers:
+      main:
+        image:
+          repository: ghcr.io/dfradehubs/agentgram-api
+          tag: v0.1.0
+          pullPolicy: IfNotPresent
+
+        env:
+          PORT: "8080"
+          CONFIG_PATH: "/config/config.yaml"
+          SERVER_HOST: "agentgram.example.com"
+          LOG_LEVEL: "info"
+          POSTGRES_HOST: "postgresql"
+          POSTGRES_USER: "agentgram"
+          POSTGRES_DB: "agentgram"
+          POSTGRES_SSLMODE: "require"
+          REDIS_ADDR: "redis-master:6379"
+          # Secrets — create the `agentgram-secrets` Secret (see kubernetes/README.md)
+          POSTGRES_PASSWORD:
+            secretKeyRef:
+              name: agentgram-secrets
+              key: postgres-password
+          REDIS_PASSWORD:
+            secretKeyRef:
+              name: agentgram-secrets
+              key: redis-password
+          # --- Auth (only needed when auth.enabled: true in the ConfigMap) ---
+          # OIDC_CLIENT_ID:
+          #   secretKeyRef: { name: agentgram-secrets, key: oidc-client-id }
+          # OIDC_CLIENT_SECRET:
+          #   secretKeyRef: { name: agentgram-secrets, key: oidc-client-secret }
+
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+
+        probes:
+          liveness:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /health
+                port: 8080
+              initialDelaySeconds: 10
+              periodSeconds: 30
+          readiness:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /health
+                port: 8080
+              initialDelaySeconds: 5
+              periodSeconds: 10
+
+service:
+  main:
+    controller: main
+    ports:
+      http:
+        port: 8080
+
+persistence:
+  config:
+    enabled: true
+    type: configMap
+    name: agentgram-api-config
+    globalMounts:
+      - path: /config
+        readOnly: true
+
+rawResources:
+  hpa:
+    enabled: true
+    apiVersion: autoscaling/v2
+    kind: HorizontalPodAutoscaler
+    spec:
+      spec:
+        scaleTargetRef:
+          apiVersion: apps/v1
+          kind: Deployment
+          name: agentgram-api
+        minReplicas: 2
+        maxReplicas: 6
+        metrics:
+          - type: Resource
+            resource:
+              name: cpu
+              target:
+                type: Utilization
+                averageUtilization: 70
+
+  pdb:
+    enabled: true
+    apiVersion: policy/v1
+    kind: PodDisruptionBudget
+    spec:
+      spec:
+        minAvailable: 1
+        selector:
+          matchLabels:
+            app.kubernetes.io/name: agentgram-api
+
+  # Application config mounted at /config/config.yaml.
+  # Auth is disabled here to keep the example runnable — enable Keycloak
+  # before exposing the instance publicly.
+  config:
+    enabled: true
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: agentgram-api-config
+    spec:
+      data:
+        config.yaml: |
+          server:
+            port: "${ENV:PORT}"
+            host: "${ENV:SERVER_HOST}"
+          auth:
+            enabled: false
+            admin_groups: ["*"]
+          logging:
+            level: "${ENV:LOG_LEVEL}"
+            format: "json"
+          redis:
+            addr: "${ENV:REDIS_ADDR}"
+            password: "${ENV:REDIS_PASSWORD}"
+          database:
+            host: "${ENV:POSTGRES_HOST}"
+            port: 5432
+            user: "${ENV:POSTGRES_USER}"
+            password: "${ENV:POSTGRES_PASSWORD}"
+            dbname: "${ENV:POSTGRES_DB}"
+            sslmode: "${ENV:POSTGRES_SSLMODE}"
+            max_conns: 25
+          metrics:
+            enabled: true
+            retention_days: 30
+          mcp_server:
+            enabled: true
+            tool_call_timeout: "2m"
+            max_tool_call_rounds: 10
+          langfuse:
+            enabled: false

@@ -1,0 +1,58 @@
+# Agentgram API configuration (self-hosted example)
+# Secrets are resolved from the environment via ${ENV:VAR} — never hardcode them here.
+
+server:
+  port: "${ENV:PORT}"
+  host: "${ENV:SERVER_HOST}"
+
+# Auth is DISABLED in this example so you can try Agentgram right away.
+# DO NOT expose an unauthenticated instance to the public internet.
+# To enable login, flip `enabled` to true, fill in the keycloak block, and
+# set the matching env vars in docker-compose.yml / .env.
+auth:
+  enabled: false
+  admin_users:
+    - "anonymous@localhost"
+  admin_groups:
+    - "*"
+  # keycloak:
+  #   enabled: true
+  #   issuer: "${ENV:KEYCLOAK_ISSUER}"
+  #   jwks_cache_ttl: 3600
+  #   client_id: "${ENV:OIDC_CLIENT_ID}"
+  #   client_secret: "${ENV:OIDC_CLIENT_SECRET}"
+  #   redirect_uri: "${ENV:OIDC_REDIRECT_URI}"
+  #   post_logout_uri: "${ENV:OIDC_POST_LOGOUT_URI}"
+
+logging:
+  level: "${ENV:LOG_LEVEL}"
+  format: "json"
+
+redis:
+  addr: "${ENV:REDIS_ADDR}"
+  password: "${ENV:REDIS_PASSWORD}"
+
+database:
+  host: "${ENV:POSTGRES_HOST}"
+  port: 5432
+  user: "${ENV:POSTGRES_USER}"
+  password: "${ENV:POSTGRES_PASSWORD}"
+  dbname: "${ENV:POSTGRES_DB}"
+  sslmode: "${ENV:POSTGRES_SSLMODE}"
+  max_conns: 25
+
+metrics:
+  enabled: true
+  retention_days: 30
+  cleanup_interval: "1h"
+
+# MCP server endpoint (use your agents as tools in Claude Code / Cursor).
+# Requires auth to be enabled for the OAuth flow; safe to leave on otherwise.
+mcp_server:
+  enabled: true
+  tool_call_timeout: "2m"
+  max_tool_call_rounds: 10
+
+# Optional: tracing (OpenTelemetry) and Langfuse are off by default.
+langfuse:
+  enabled: false

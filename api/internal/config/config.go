@@ -87,7 +87,7 @@ type MCPServerConfig struct {
 // Authentication accepts it before falling back to JWT validation, the same
 // way the per-MCP `api_keys` block works in kubernetes-mcp / defectdojo-mcp.
 type StaticToken struct {
-	Name   string   `yaml:"name"`   // Human-readable identifier ("magec", "automation-bot-sre", ...)
+	Name   string   `yaml:"name"`   // Human-readable identifier ("ci-bot", "automation-bot", ...)
 	Token  string   `yaml:"token"`  // The bearer value; load via ${ENV:...} in deployments
 	Email  string   `yaml:"email"`  // Synthetic email surfaced as claim.Email
 	Groups []string `yaml:"groups"` // Synthetic Keycloak group memberships

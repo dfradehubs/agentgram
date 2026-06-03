@@ -20,9 +20,9 @@ func TestMatchStaticToken_NoTokensConfigured(t *testing.T) {
 func TestMatchStaticToken_HappyPath(t *testing.T) {
 	m := NewMCPAuth(nil, zap.NewNop(), "agentgram.example.com", []config.StaticToken{
 		{
-			Name:   "magec",
+			Name:   "ci-bot",
 			Token:  "s3cr3t",
-			Email:  "magec@example.com",
+			Email:  "ci-bot@example.com",
 			Groups: []string{"/google-workspace/sysadmin@example.com"},
 		},
 	})
@@ -31,14 +31,14 @@ func TestMatchStaticToken_HappyPath(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected match, got none")
 	}
-	if name != "magec" {
-		t.Fatalf("expected name=magec, got %q", name)
+	if name != "ci-bot" {
+		t.Fatalf("expected name=ci-bot, got %q", name)
 	}
-	if claims.Email != "magec@example.com" {
-		t.Fatalf("expected email=magec@example.com, got %q", claims.Email)
+	if claims.Email != "ci-bot@example.com" {
+		t.Fatalf("expected email=ci-bot@example.com, got %q", claims.Email)
 	}
-	if claims.Sub != "static:magec" {
-		t.Fatalf("expected sub=static:magec, got %q", claims.Sub)
+	if claims.Sub != "static:ci-bot" {
+		t.Fatalf("expected sub=static:ci-bot, got %q", claims.Sub)
 	}
 	if len(claims.Groups) != 1 || claims.Groups[0] != "/google-workspace/sysadmin@example.com" {
 		t.Fatalf("expected one sysadmin group, got %v", claims.Groups)
@@ -47,7 +47,7 @@ func TestMatchStaticToken_HappyPath(t *testing.T) {
 
 func TestMatchStaticToken_DoesNotMatchUnknownToken(t *testing.T) {
 	m := NewMCPAuth(nil, zap.NewNop(), "agentgram.example.com", []config.StaticToken{
-		{Name: "magec", Token: "s3cr3t", Email: "magec@example.com"},
+		{Name: "ci-bot", Token: "s3cr3t", Email: "ci-bot@example.com"},
 	})
 	if _, _, ok := m.matchStaticToken("wrong"); ok {
 		t.Fatalf("expected unknown token to not match")
@@ -57,20 +57,20 @@ func TestMatchStaticToken_DoesNotMatchUnknownToken(t *testing.T) {
 func TestMatchStaticToken_SkipsEmptyTokenEntries(t *testing.T) {
 	m := NewMCPAuth(nil, zap.NewNop(), "agentgram.example.com", []config.StaticToken{
 		{Name: "broken", Token: "", Email: "broken@example.com"},
-		{Name: "magec", Token: "s3cr3t", Email: "magec@example.com"},
+		{Name: "ci-bot", Token: "s3cr3t", Email: "ci-bot@example.com"},
 	})
 	if _, _, ok := m.matchStaticToken(""); ok {
 		t.Fatalf("empty token must never match (silent loop should not collapse to true)")
 	}
-	if _, name, ok := m.matchStaticToken("s3cr3t"); !ok || name != "magec" {
-		t.Fatalf("expected magec to still match after skipping the empty entry; got ok=%v name=%q", ok, name)
+	if _, name, ok := m.matchStaticToken("s3cr3t"); !ok || name != "ci-bot" {
+		t.Fatalf("expected ci-bot to still match after skipping the empty entry; got ok=%v name=%q", ok, name)
 	}
 }
 
 func TestMatchStaticToken_ClaimsGroupsAreCopiedFromCaller(t *testing.T) {
 	groups := []string{"/google-workspace/sysadmin@example.com"}
 	m := NewMCPAuth(nil, zap.NewNop(), "agentgram.example.com", []config.StaticToken{
-		{Name: "magec", Token: "s3cr3t", Email: "magec@example.com", Groups: groups},
+		{Name: "ci-bot", Token: "s3cr3t", Email: "ci-bot@example.com", Groups: groups},
 	})
 	groups[0] = "tampered"
 
@@ -83,9 +83,9 @@ func TestMatchStaticToken_ClaimsGroupsAreCopiedFromCaller(t *testing.T) {
 func TestMatchStaticToken_ReturnsFreshClaimsPerCall(t *testing.T) {
 	m := NewMCPAuth(nil, zap.NewNop(), "agentgram.example.com", []config.StaticToken{
 		{
-			Name:   "magec",
+			Name:   "ci-bot",
 			Token:  "s3cr3t",
-			Email:  "magec@example.com",
+			Email:  "ci-bot@example.com",
 			Groups: []string{"/google-workspace/sysadmin@example.com"},
 		},
 	})
@@ -106,14 +106,14 @@ func TestMatchStaticToken_ReturnsFreshClaimsPerCall(t *testing.T) {
 	if second.Groups[0] != "/google-workspace/sysadmin@example.com" {
 		t.Fatalf("downstream mutation on one Claims leaked into another: got %q", second.Groups[0])
 	}
-	if second.Email != "magec@example.com" {
+	if second.Email != "ci-bot@example.com" {
 		t.Fatalf("downstream mutation on one Claims.Email leaked: got %q", second.Email)
 	}
 
 	// Third call must still see the original configured values, proving the
 	// stored entry was not corrupted by the earlier tamper.
 	third, _, _ := m.matchStaticToken("s3cr3t")
-	if third.Email != "magec@example.com" || third.Groups[0] != "/google-workspace/sysadmin@example.com" {
+	if third.Email != "ci-bot@example.com" || third.Groups[0] != "/google-workspace/sysadmin@example.com" {
 		t.Fatalf("stored entry was mutated through a returned Claims pointer: got %#v", third)
 	}
 }
@@ -125,7 +125,7 @@ func TestMatchStaticToken_WrongTokenSameLengthDoesNotMatch(t *testing.T) {
 	// also pass; the value is that the SHA-256-based comparison cannot leak
 	// the configured length through early-exit on length mismatch.
 	m := NewMCPAuth(nil, zap.NewNop(), "agentgram.example.com", []config.StaticToken{
-		{Name: "magec", Token: "abcdef", Email: "magec@example.com"},
+		{Name: "ci-bot", Token: "abcdef", Email: "ci-bot@example.com"},
 	})
 	if _, _, ok := m.matchStaticToken("abcdeg"); ok {
 		t.Fatalf("token of identical length but different value must not match")
@@ -144,9 +144,9 @@ func TestMatchStaticToken_WrongTokenSameLengthDoesNotMatch(t *testing.T) {
 func TestHandler_StaticTokenBypassesJWTValidator(t *testing.T) {
 	m := NewMCPAuth(nil, zap.NewNop(), "agentgram.example.com", []config.StaticToken{
 		{
-			Name:   "magec",
+			Name:   "ci-bot",
 			Token:  "s3cr3t",
-			Email:  "magec@example.com",
+			Email:  "ci-bot@example.com",
 			Groups: []string{"/google-workspace/sysadmin@example.com"},
 		},
 	})
@@ -173,14 +173,14 @@ func TestHandler_StaticTokenBypassesJWTValidator(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
-	if seen == nil || seen.Email != "magec@example.com" {
-		t.Fatalf("expected synthetic claims for magec in context, got %#v", seen)
+	if seen == nil || seen.Email != "ci-bot@example.com" {
+		t.Fatalf("expected synthetic claims for ci-bot in context, got %#v", seen)
 	}
 }
 
 func TestHandler_NoAuthorizationHeaderReturns401(t *testing.T) {
 	m := NewMCPAuth(nil, zap.NewNop(), "agentgram.example.com", []config.StaticToken{
-		{Name: "magec", Token: "s3cr3t", Email: "magec@example.com"},
+		{Name: "ci-bot", Token: "s3cr3t", Email: "ci-bot@example.com"},
 	})
 
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -110,8 +110,8 @@ Tools are generated dynamically based on the agents you have access to. Each age
 
 | Tool | Agent | Description |
 |---|---|---|
-| `ask_anton` | Anton | Knowledge management, search across postmortems and internal documentation |
-| `ask_antonia` | Antonia | Database infrastructure (Cloud SQL, secrets, metadata) |
+| `ask_docs-agent` | Docs Agent | Knowledge base search across runbooks and documentation |
+| `ask_db-agent` | Database Agent | Database infrastructure (instances, secrets, metadata) |
 | `ask_kube-agent` | Kubernetes Agent | Management of K8s clusters, pods, deployments, logs |
 | `ask_metrics-agent` | Metrics Agent | Querying Prometheus/Grafana metrics |
 | `ask_logs-agent` | Logs Agent | Log analysis in OpenSearch |
@@ -143,7 +143,7 @@ Ask kube-agent how many pods there are in the production namespace and whether a
 ### Query internal knowledge
 
 ```
-Ask Anton about the rollback procedure for the main database.
+Ask docs-agent about the rollback procedure for the main database.
 ```
 
 ### Analyze errors in Sentry
@@ -155,7 +155,7 @@ Ask sentry-agent for the most frequent errors in the last hour in the example-we
 ### Query database infrastructure
 
 ```
-Ask Antonia about the status of the Cloud SQL instances and whether there are any active alerts.
+Ask db-agent about the status of the database instances and whether there are any active alerts.
 ```
 
 ### Combining agents

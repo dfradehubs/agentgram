@@ -1,0 +1,85 @@
+# Agentgram - self-hosted stack (API + web + Redis + PostgreSQL)
+#
+# Usage:
+#   cp .env.example .env      # then edit values
+#   docker compose up -d
+#
+# The web UI is served on http://localhost:3000 and proxies API/auth calls
+# to the api service internally (BACKEND_URL).
+
+services:
+  api:
+    image: ghcr.io/dfradehubs/agentgram-api:${AGENTGRAM_VERSION:-latest}
+    restart: unless-stopped
+    environment:
+      PORT: "8080"
+      CONFIG_PATH: /config/config.yaml
+      SERVER_HOST: ${SERVER_HOST:-localhost:8080}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Redis
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      # PostgreSQL
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-agentgram}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agentgram}
+      POSTGRES_DB: ${POSTGRES_DB:-agentgram}
+      POSTGRES_SSLMODE: ${POSTGRES_SSLMODE:-disable}
+      # --- Auth (uncomment in config.yaml + set these to enable Keycloak) ---
+      # KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER:-}
+      # OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      # OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      # OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-}
+      # OIDC_POST_LOGOUT_URI: ${OIDC_POST_LOGOUT_URI:-}
+    volumes:
+      - ./config.yaml:/config/config.yaml:ro
+    ports:
+      - "8080:8080"
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  web:
+    image: ghcr.io/dfradehubs/agentgram-web:${AGENTGRAM_VERSION:-latest}
+    restart: unless-stopped
+    environment:
+      # Server-side proxy target for /api/* and /auth/* (same-origin for the browser)
+      BACKEND_URL: http://api:8080
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-agentgram}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agentgram}
+      POSTGRES_DB: ${POSTGRES_DB:-agentgram}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agentgram}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  redis-data:
+  postgres-data:

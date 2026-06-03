@@ -1,0 +1,95 @@
+# Agentgram Web — values for the bjw-s app-template chart
+#   https://github.com/bjw-s-labs/helm-charts (chart: app-template)
+#
+# Install:
+#   helm install agentgram-web bjw-s/app-template -f values-web.yaml -n agentgram
+
+global:
+  fullnameOverride: agentgram-web
+
+controllers:
+  main:
+    replicas: 2
+    strategy: RollingUpdate
+    rollingUpdate:
+      unavailable: 0
+      surge: 1
+
+    containers:
+      main:
+        image:
+          repository: ghcr.io/dfradehubs/agentgram-web
+          tag: v0.1.0
+          pullPolicy: IfNotPresent
+
+        env:
+          # Server-side proxy target for /api/* and /auth/* (in-cluster API service)
+          BACKEND_URL: "http://agentgram-api:8080"
+          LOG_LEVEL: "info"
+
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "128Mi"
+          limits:
+            cpu: "250m"
+            memory: "256Mi"
+
+        probes:
+          liveness:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /
+                port: 3000
+              initialDelaySeconds: 10
+              periodSeconds: 30
+          readiness:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /
+                port: 3000
+              initialDelaySeconds: 5
+              periodSeconds: 10
+
+service:
+  main:
+    controller: main
+    ports:
+      http:
+        port: 3000
+
+rawResources:
+  hpa:
+    enabled: true
+    apiVersion: autoscaling/v2
+    kind: HorizontalPodAutoscaler
+    spec:
+      spec:
+        scaleTargetRef:
+          apiVersion: apps/v1
+          kind: Deployment
+          name: agentgram-web
+        minReplicas: 2
+        maxReplicas: 4
+        metrics:
+          - type: Resource
+            resource:
+              name: cpu
+              target:
+                type: Utilization
+                averageUtilization: 70
+
+  pdb:
+    enabled: true
+    apiVersion: policy/v1
+    kind: PodDisruptionBudget
+    spec:
+      spec:
+        minAvailable: 1
+        selector:
+          matchLabels:
+            app.kubernetes.io/name: agentgram-web

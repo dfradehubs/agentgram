@@ -1,329 +1,210 @@
 <p align="center">
-  <img src="docs/agentgram-logo.svg" alt="Agentgram" width="64" height="64" />
+  <img src="docs/agentgram-logo.svg" alt="Agentgram" width="72" height="72" />
 </p>
 
 <h1 align="center">Agentgram</h1>
 
 <p align="center">
-  A unified interface for interacting with multiple AI agents. The system provides a consistent chat experience regardless of the protocol each agent uses.
+  <strong>One chat. Every agent. Any protocol.</strong>
+</p>
+
+<p align="center">
+  A single front door for all your AI agents — Agentgram speaks REST, A2A and ADK on the way in,<br/>
+  and emits clean <a href="https://docs.ag-ui.com/">AG-UI</a> events on the way out, so the UI never has to care how an agent is built.
 </p>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
   <img src="https://img.shields.io/badge/Go-1.25-00ADD8.svg" alt="Go 1.25" />
   <img src="https://img.shields.io/badge/Next.js-16-000000.svg" alt="Next.js 16" />
+  <img src="https://img.shields.io/badge/protocol-AG--UI-7C3AED.svg" alt="AG-UI" />
 </p>
+
+---
+
+## Why
+
+I kept ending up with a different chat window for every agent I built — one for the Kubernetes
+agent, another for logs, another for metrics — each speaking its own protocol. Agentgram is the
+single front door I wanted: **one chat UI, one API, every agent**, regardless of how each one is
+wired underneath.
+
+The API is a multiplexer. It handles auth, permissions and session storage, talks to each agent in
+its native protocol, and converts everything to a uniform stream of AG-UI events. The web client
+just renders that stream — it never needs to know whether an answer came from a REST endpoint, an
+A2A peer or a Google ADK app.
 
 ## Features
 
-- **Multi-agent**: Connect to multiple AI agents from a single interface
-- **AG-UI protocol**: SSE streaming with standard AG-UI events
-- **Session management**: Persistent conversation history per agent
-- **Authentication**: Keycloak JWT integration (optional)
-- **Permissions**: Access control by Google Workspace groups and individual users
-- **Protocol abstraction**: Support for Custom, A2A, and ADK agents
+- 🔌 **Protocol-agnostic** — Custom REST/SSE, [A2A](docs/AGENT_A2A_CONTRACT.md) (JSON-RPC) and [Google ADK](docs/AGENT_ADK_CONTRACT.md) agents behind one interface.
+- 📡 **AG-UI native** — the API emits standard [AG-UI](https://docs.ag-ui.com/) SSE events (`RUN_STARTED`, `TEXT_MESSAGE_*`, `TOOL_CALL_*`, `RUN_FINISHED`).
+- 🧵 **Sessions that persist** — conversation history per agent, stored in Redis and managed by the API (agents stay stateless).
+- 👥 **Multi-agent chats** — talk to several agents in one thread and propagate context between them.
+- 🔐 **Auth & permissions** — optional Keycloak (OIDC/JWT) login, with access controlled per agent by Google Workspace groups or individual users.
+- 🛠️ **MCP server** — expose your agents as tools inside Claude Code and Cursor, with full OAuth + Dynamic Client Registration (no manual setup).
+- 💬 **Slack integration** — reach the same agents from Slack.
+- 📊 **Built-in observability** — usage metrics, latency and cost dashboards out of the box.
+- 🧰 **Admin panel** — register agents, MCP servers, LLMs and permissions from the UI.
 
 ## Architecture
 
 ```
 ┌──────────────────────┐     ┌─────────────────────┐     ┌─────────────────┐
 │        Web           │────>│        API          │────>│  Agent (Custom) │
-│  (Next.js+SSE/AG-UI) │<────│   (Go Multiplexer)  │<────│  SSE or JSON    │
+│  (Next.js + AG-UI)   │<────│   (Go Multiplexer)  │<────│  REST · SSE     │
 └──────────────────────┘     │                     │     └─────────────────┘
-         ↑                   │  - JWT Auth         │     ┌─────────────────┐
-    AG-UI Events             │  - Permissions      │────>│  Agent (A2A)    │
-                             │  - AG-UI Response   │<────│  JSON-RPC       │
-                             │  - Session Proxy    │     └─────────────────┘
-                             └─────────────────────┘
+         ↑                   │  - JWT / OIDC auth  │     ┌─────────────────┐
+    AG-UI events             │  - Permissions      │────>│  Agent (A2A)    │
+    over SSE                 │  - Session store    │<────│  JSON-RPC       │
+                             │  - AG-UI conversion │     └─────────────────┘
+                             │  - MCP server       │     ┌─────────────────┐
+                             └─────────────────────┘────>│  Agent (ADK)    │
+                                       │            <────│  REST · SSE     │
+                                  Redis · PostgreSQL     └─────────────────┘
 ```
 
-## Quick Start
+See [docs/PROTOCOLS_OVERVIEW.md](docs/PROTOCOLS_OVERVIEW.md) for how each protocol is mapped onto AG-UI.
 
-### Requirements
+## Quick start
 
-- Node.js 22+
-- Go 1.25+
-- Docker & Docker Compose
-
-### Installation
+**Requirements:** Node.js 22+, Go 1.25+, Docker & Docker Compose.
 
 ```bash
-# Clone the repository
 git clone https://github.com/dfradehubs/agentgram.git
 cd agentgram
-
-# Install dependencies
-make install
+make install        # install web + Go dependencies
+make docker-up      # API + mock agent + Redis + PostgreSQL + a test frontend
 ```
 
-### Development
+That brings up:
+
+| Service        | URL                     |
+| -------------- | ----------------------- |
+| API            | http://localhost:8080   |
+| Mock agent     | http://localhost:9000   |
+| Test frontend  | http://localhost:3001   |
+
+To run the real web UI against the stack:
 
 ```bash
-# Start the full development environment
-make dev
+make web            # Next.js dev server on http://localhost:3000
 ```
 
-This will start:
-- **API** at http://localhost:8080 (via Docker)
-- **Mock Agent** at http://localhost:9000 (for testing)
-- **Web** at http://localhost:3000
+Run `make help` to see every available target.
 
-### Available Commands
+## How it works
 
-```bash
-make help           # View all available commands
-
-# Development
-make dev            # Start full environment (Docker API + Next.js)
-make dev-docker     # Start everything with Docker
-
-# Individual services
-make api            # API only (requires local Go)
-make web            # Web only
-
-# Docker
-make docker-up      # Start Docker services
-make docker-down    # Stop Docker services
-make docker-logs    # View logs
-
-# Testing
-make test           # Run all tests
-make lint           # Run linters
-
-# Cleanup
-make clean          # Clean build artifacts
-```
-
-## Project Structure
-
-```
-agentgram/
-├── api/                        # Go API (multiplexer)
-│   ├── cmd/server/            # Entry point
-│   ├── internal/
-│   │   ├── proxy/             # Proxy to agents (REST, A2A, ADK) + SSE writer
-│   │   ├── handlers/          # HTTP handlers (chat, sessions, admin, MCP, custom agents)
-│   │   ├── models/            # Data types (AG-UI, sessions, agents)
-│   │   ├── agents/            # Registry, clients, permissions, health checker
-│   │   ├── auth/              # JWT, OIDC, GitHub OAuth
-│   │   ├── middleware/        # Auth, security headers, rate limit, body limit
-│   │   ├── mcp/               # MCP server registry and client
-│   │   ├── customagent/       # Custom agent runtime and tools
-│   │   ├── store/             # Redis session store
-│   │   ├── repository/        # PostgreSQL repositories
-│   │   └── config/            # YAML loader with ${ENV:VAR}
-│   ├── configs/               # YAML configuration
-│   ├── migrations/            # PostgreSQL migrations
-│   ├── docker/                # Docker Compose for development
-│   └── test/mock-agent/       # Mock agent for testing
-├── web/                        # Next.js web
-│   └── src/
-│       ├── app/               # App Router (pages, admin, auth proxy)
-│       ├── components/        # React components (chat, sidebar, admin, MCP)
-│       ├── contexts/          # Contexts (Agent, Session, Background Stream, MCP, User)
-│       ├── hooks/             # Custom hooks (useChat, useMCPChat)
-│       └── lib/               # API client, types, i18n, logging, PDF export
-├── docs/                      # Documentation
-├── Makefile                   # Development commands
-└── README.md                  # This documentation
-```
-
-## API
-
-See [docs/API.md](docs/API.md) for the complete API documentation.
-
-### Chat
+A chat request is a list of messages plus an optional session id:
 
 ```http
 POST /api/agents/{agentId}/chat
 Content-Type: application/json
+Authorization: Bearer <jwt>     # only when auth is enabled
 
 {
   "messages": [
-    {"role": "user", "content": "Hello"}
+    { "role": "user", "content": "Hello" }
   ],
   "session_id": "optional-uuid"
 }
 ```
 
-Response: SSE with AG-UI events
+The response is a stream of AG-UI events over SSE — the same shape no matter which protocol the agent speaks:
 
 ```
 data: {"type":"RUN_STARTED","threadId":"...","runId":"..."}
 data: {"type":"TEXT_MESSAGE_START","messageId":"...","role":"assistant"}
-data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"...","delta":"Hello!"}
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"...","delta":"Hello"}
 data: {"type":"TEXT_MESSAGE_END","messageId":"..."}
 data: {"type":"RUN_FINISHED","threadId":"...","runId":"..."}
 ```
 
-### Agents
+Full API reference: [docs/API.md](docs/API.md). Agent contracts: [REST](docs/AGENT_REST_CONTRACT.md) · [A2A](docs/AGENT_A2A_CONTRACT.md) · [ADK](docs/AGENT_ADK_CONTRACT.md).
 
-```http
-GET /api/agents              # List available agents
-GET /api/agents/{id}         # Get details of an agent
-GET /api/agents/{id}/health  # Agent health status
+## Deploying to the world
+
+Ready-to-use deployment recipes live in [`examples/`](examples/):
+
+- **[Docker Compose](examples/docker-compose/)** — self-host the whole stack (API + web + Redis + PostgreSQL) with the published images. The fastest way to put Agentgram on a server.
+- **[Kubernetes (Helm)](examples/kubernetes/)** — production values for the [bjw-s `app-template`](https://github.com/bjw-s/helm-charts) chart, plus an Ingress that routes the web app and the MCP/OAuth endpoints correctly.
+
+Container images are published to GitHub Container Registry on every release:
+
 ```
-
-### Sessions
-
-```http
-GET    /api/agents/{id}/sessions              # List sessions
-GET    /api/agents/{id}/sessions/{sessionId}  # Get session with messages
-PATCH  /api/agents/{id}/sessions/{sessionId}  # Rename session
-DELETE /api/agents/{id}/sessions/{sessionId}  # Delete session
+ghcr.io/dfradehubs/agentgram-api
+ghcr.io/dfradehubs/agentgram-web
 ```
 
 ## Configuration
 
-### API
-
-The API is configured through YAML files. See `api/configs/config.yaml`:
+The API is configured from a single YAML file (`CONFIG_PATH`, e.g. `api/configs/config.yaml`) that
+covers the server, auth, Redis, PostgreSQL, metrics, tracing and the MCP server. Secrets are never
+written inline — every sensitive value uses `${ENV:VAR}` and is resolved from the environment:
 
 ```yaml
-server:
-  port: 8080
-
 auth:
-  enabled: false  # Enable for production
+  enabled: true          # set false to run without login (local / trusted networks)
+  keycloak:
+    enabled: true
+    issuer: "${ENV:KEYCLOAK_ISSUER}"
+    client_id: "${ENV:OIDC_CLIENT_ID}"
+    client_secret: "${ENV:OIDC_CLIENT_SECRET}"
 
-agents:
-  - id: my-agent
-    name: "My Agent"
-    protocol: custom
-    endpoint: http://my-agent:9000/chat
-    allowed_groups:
-      - "*"  # Public access
+redis:
+  addr: "${ENV:REDIS_ADDR}"
+  password: "${ENV:REDIS_PASSWORD}"
 ```
 
-### Web
+See [`api/.env.example`](api/.env.example) for the full list of variables.
 
-Environment variables in `web/.env.local`:
+**Agents are managed at runtime** from the built-in admin panel (`/admin`) and stored in PostgreSQL —
+no redeploy needed to add one. For each agent you choose its protocol (Custom / A2A / ADK), its
+endpoint, and who can reach it (Google Workspace groups or individual users).
 
-```env
-NEXT_PUBLIC_API_URL=http://localhost:8080
-```
+## Claude Code & Cursor (MCP)
 
-## Tech Stack
-
-### API
-- **Go 1.25** - Main language
-- **Chi** - HTTP router
-- **Zap** - Structured logging
-
-### Web
-- **Next.js 16** - React framework
-- **SSE/AG-UI** - Direct streaming via fetch + ReadableStream
-- **Tailwind CSS 4** - Styling
-- **TypeScript** - Static typing
-- **Pino** - Server-side logging (JSON in production)
-
-## Development
-
-### Adding a new agent
-
-1. Add the configuration in `api/configs/config.yaml`
-2. The agent must implement one of the supported protocols:
-   - **Custom**: An endpoint that accepts a POST with messages and responds with SSE or JSON
-   - **A2A**: Agent-to-Agent protocol with JSON-RPC
-   - **ADK**: Google ADK framework with REST SSE
-
-### Implementing sessions in an agent
-
-Agents that support sessions must implement:
-
-```
-GET    /api/sessions                    # List the user's sessions
-GET    /api/sessions/{sessionId}        # Get session with messages
-PATCH  /api/sessions/{sessionId}        # Rename session
-DELETE /api/sessions/{sessionId}        # Delete session
-```
-
-See `api/test/mock-agent/main.go` as a reference.
-
-## Claude Code (MCP)
-
-Agentgram exposes an MCP endpoint that lets you use the deployed agents as tools directly from Claude Code.
-
-### Configure
-
-Agentgram implements the full OAuth flow for MCP: protected resource metadata (RFC 9728), authorization server discovery (RFC 8414), and **Dynamic Client Registration (RFC 7591)**. The client discovers and registers everything automatically, so **there is no need to configure `clientId`, scopes, or endpoints by hand**.
-
-**Claude Code:**
+Agentgram exposes an MCP endpoint that turns your agents into tools inside Claude Code and Cursor. It
+implements the full discovery + auth flow — protected resource metadata (RFC 9728), authorization
+server discovery (RFC 8414) and **Dynamic Client Registration (RFC 7591)** — so there is nothing to
+configure by hand:
 
 ```bash
 claude mcp add --transport http agentgram https://agentgram.example.com/mcp
 ```
 
-**Cursor** — in `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` (project):
-
-```json
-{
-  "mcpServers": {
-    "agentgram": {
-      "type": "http",
-      "url": "https://agentgram.example.com/mcp"
-    }
-  }
-}
-```
-
-The same configuration works for **Cursor automations** (background agents): they share the `mcp.json`, so once agentgram is added it is also available to the automations.
-
-### Authenticate
-
-Inside Claude Code:
+Then run `/mcp` in Claude Code, authenticate once, and ask away:
 
 ```
-/mcp
+Ask logs-agent for the errors in the last 30 minutes of the payment-api service.
 ```
 
-Select `agentgram` and authenticate with your Google account (Keycloak). You only need to do this once.
+Full guide (Cursor, automations, tuning): [docs/MCP.md](docs/MCP.md).
 
-### Usage
+## Tech stack
 
-Once connected, Claude Code can use the agents directly:
+**API** — Go 1.25 · Chi router · Redis (sessions + pub/sub) · PostgreSQL · OpenTelemetry · structured logging.
 
-- **Ask an agent**: "Ask kube-agent how many pods there are in the istio-system namespace"
-- **Search logs**: "Ask logs-agent for the errors in the last 30 minutes"
-- **Analyze traces**: "Ask traces-agent for traces with 5xx errors"
-- **Query metrics**: "Ask metrics-agent for the cluster's CPU usage"
+**Web** — Next.js 16 (App Router) · TypeScript · Tailwind CSS 4 · SSE/AG-UI consumed directly via `fetch` + `ReadableStream` · Pino logging · bilingual UI (English / Spanish).
 
-The available agents are discovered automatically based on your permissions.
+## Project structure
 
-### Recommended configuration
-
-Add this to `~/.claude/settings.json` for a better experience:
-
-```json
-{
-  "env": {
-    "MAX_MCP_OUTPUT_TOKENS": "50000"
-  },
-  "permissions": {
-    "allow": [
-      "mcp__agentgram__*"
-    ]
-  }
-}
+```
+agentgram/
+├── api/        # Go API (multiplexer) — proxy, agents, auth, mcp, store, repository
+├── web/        # Next.js web client (AG-UI over SSE)
+├── docs/       # Architecture, API and protocol contracts
+├── examples/   # Docker Compose & Kubernetes deployment recipes
+└── Makefile    # Development & build commands
 ```
 
-- **`MAX_MCP_OUTPUT_TOKENS`**: Increases the MCP response token limit (default 25K). Agents like logs-agent or sentry-agent return long responses with tables and breakdowns.
-- **`permissions.allow`**: Allows the agentgram tools without a confirmation prompt. Without this, every call to an agent requires manual approval.
+Deeper dives: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [api/CLAUDE.md](api/CLAUDE.md) · [web/CLAUDE.md](web/CLAUDE.md).
 
-### Known limitations
+## Contributing
 
-- **Sequential execution**: Claude Code runs MCP calls one after another, not in parallel. If you ask it to query two agents at once, the second one will wait until the first finishes. This is a limitation of the MCP client's HTTP streamable transport.
-- **Timeout on long responses**: The MCP SDK has a 60s default timeout. Agentgram sends progress notifications every 15s to keep the connection alive, but if the agent takes longer than expected, retry with a more specific query.
-
-See [docs/MCP.md](docs/MCP.md) for full documentation, Cursor configuration, and more examples.
-
-## Additional Documentation
-
-- [MCP Integration](docs/MCP.md) - Integrate agents into Claude Code, Cursor, and other MCP clients
-- [API Documentation](docs/API.md) - Complete API documentation
-- [API CLAUDE.md](api/CLAUDE.md) - Guide for API development
-- [Web CLAUDE.md](web/CLAUDE.md) - Guide for web development
+Issues and pull requests are welcome. For anything non-trivial, open an issue first so we can talk it
+through. Keep PRs focused, run `make test` and `make lint` before pushing, and follow
+[Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`, …).
 
 ## License
 
-Distributed under the MIT license. See the [LICENSE](LICENSE) file for more information.
+Released under the [MIT License](LICENSE). © Daniel Fradejas.
