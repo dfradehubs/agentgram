@@ -24,7 +24,7 @@ menu:
       weight: 1
     - identifier: api
       name: API Reference
-      url: /agentgram/api/
+      url: /api/
       weight: 2
     - name: Search
       weight: 3

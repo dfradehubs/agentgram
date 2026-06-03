@@ -43,5 +43,5 @@ environment via `${ENV:VAR}`. The example ships with `auth.enabled: false`.
 {{< callout type="warning" >}}
 **Do not expose an unauthenticated instance to the public internet.** Enable Keycloak in
 `config.yaml` and put the web app behind your identity provider before going live. See
-[Configuration](configuration).
+[Configuration]({{< relref "configuration" >}}).
 {{< /callout >}}

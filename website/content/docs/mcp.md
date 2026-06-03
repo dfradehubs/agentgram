@@ -1,14 +1,20 @@
 ---
-title: MCP for Claude Code
+title: Model Context Protocol (MCP)
 weight: 6
 ---
 
-Agentgram exposes an MCP endpoint that turns your agents into tools inside **Claude Code** and
-**Cursor**. It implements the full discovery and auth flow — protected resource metadata
-(RFC 9728), authorization server discovery (RFC 8414) and **Dynamic Client Registration**
-(RFC 7591) — so there is nothing to configure by hand.
+Agentgram ships a standard **MCP server** that turns your agents into tools for any
+MCP-compatible IDE or CLI. It implements the full discovery and auth flow defined by the spec —
+protected resource metadata (RFC 9728), authorization server discovery (RFC 8414) and
+**Dynamic Client Registration** (RFC 7591) — so any conformant client connects with **just the URL**.
+No client ID, scopes or endpoints to configure by hand.
+
+That includes editors and agents such as **Claude Code**, **Cursor**, and any other tool that speaks
+the MCP HTTP transport with OAuth.
 
 ## Add the server
+
+The only thing a client needs is the `/mcp` URL.
 
 **Claude Code:**
 
@@ -16,7 +22,8 @@ Agentgram exposes an MCP endpoint that turns your agents into tools inside **Cla
 claude mcp add --transport http agentgram https://agentgram.example.com/mcp
 ```
 
-**Cursor** — in `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` (project):
+**Cursor** (or any client using an `mcp.json`) — in `~/.cursor/mcp.json` (global) or
+`.cursor/mcp.json` (project):
 
 ```json
 {
@@ -29,10 +36,13 @@ claude mcp add --transport http agentgram https://agentgram.example.com/mcp
 }
 ```
 
+Other MCP clients follow the same pattern: point them at the `/mcp` endpoint and let the standard
+discovery + DCR flow do the rest.
+
 ## Authenticate
 
-In Claude Code, run `/mcp`, select `agentgram`, and sign in once. The client discovers and registers
-everything automatically — no client ID, scopes or endpoints to set by hand.
+On first use the client runs the OAuth flow automatically (it discovers the authorization server and
+registers itself via DCR). In Claude Code, run `/mcp`, select `agentgram`, and sign in once.
 
 ## Use it
 
@@ -46,9 +56,9 @@ Then ask metrics-agent for its CPU and memory usage in the last hour.
 
 ## Tips
 
-- Bump `MAX_MCP_OUTPUT_TOKENS` (e.g. to `50000`) in `~/.claude/settings.json` for agents that return
+- Bump `MAX_MCP_OUTPUT_TOKENS` (e.g. to `50000`) in your client settings for agents that return
   long, tabular responses.
 - Agentgram sends progress notifications every 15s to keep long-running calls alive.
 
-The full guide (Cursor automations, OAuth internals, tuning) is in
+The full guide (client specifics, OAuth internals, tuning) is in
 [`docs/MCP.md`](https://github.com/dfradehubs/agentgram/blob/main/docs/MCP.md).

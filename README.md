@@ -166,24 +166,25 @@ See [`api/.env.example`](api/.env.example) for the full list of variables.
 no redeploy needed to add one. For each agent you choose its protocol (Custom / A2A / ADK), its
 endpoint, and who can reach it (Google Workspace groups or individual users).
 
-## Claude Code & Cursor (MCP)
+## Model Context Protocol (MCP)
 
-Agentgram exposes an MCP endpoint that turns your agents into tools inside Claude Code and Cursor. It
-implements the full discovery + auth flow — protected resource metadata (RFC 9728), authorization
-server discovery (RFC 8414) and **Dynamic Client Registration (RFC 7591)** — so there is nothing to
-configure by hand:
+Agentgram ships a standard MCP server that turns your agents into tools for **any MCP-compatible IDE
+or CLI** — Claude Code, Cursor, and any other client that speaks the spec. It implements the full
+discovery + auth flow defined by the standard — protected resource metadata (RFC 9728), authorization
+server discovery (RFC 8414) and **Dynamic Client Registration (RFC 7591)** — so a conformant client
+connects with just the URL, nothing to configure by hand:
 
 ```bash
 claude mcp add --transport http agentgram https://agentgram.example.com/mcp
 ```
 
-Then run `/mcp` in Claude Code, authenticate once, and ask away:
+The client runs the OAuth + DCR flow automatically. Then ask away:
 
 ```
 Ask logs-agent for the errors in the last 30 minutes of the payment-api service.
 ```
 
-Full guide (Cursor, automations, tuning): [docs/MCP.md](docs/MCP.md).
+Full guide (client setup, automations, tuning): [docs/MCP.md](docs/MCP.md).
 
 ## Tech stack
 

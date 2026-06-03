@@ -22,7 +22,7 @@ layout: hextra-home
 </div>
 
 <div class="hx:mb-6">
-{{< hextra/hero-button text="Get Started" link="docs" >}}
+{{< hextra/hero-button text="Get Started" link="/docs/" >}}
 &nbsp;
 {{< hextra/hero-button text="View on GitHub" link="https://github.com/dfradehubs/agentgram" style="background: transparent; border: 1px solid rgba(120,120,120,0.4);" >}}
 </div>
@@ -58,7 +58,7 @@ layout: hextra-home
   {{< hextra/feature-card
     title="MCP server"
     icon="terminal"
-    subtitle="Use your agents as tools in Claude Code and Cursor — full OAuth + Dynamic Client Registration, no manual setup."
+    subtitle="Use your agents as tools in any MCP-compatible IDE or CLI — standard OAuth discovery + Dynamic Client Registration, no manual setup."
   >}}
   {{< hextra/feature-card
     title="Built-in observability"

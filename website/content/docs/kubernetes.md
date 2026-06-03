@@ -51,5 +51,5 @@ via `BACKEND_URL`. SSE buffering is disabled on the Ingress so streaming respons
 
 {{< callout type="warning" >}}
 The example ConfigMap ships with `auth.enabled: false`. Enable Keycloak before exposing the instance
-publicly — see [Configuration](configuration).
+publicly — see [Configuration]({{< relref "configuration" >}}).
 {{< /callout >}}
