@@ -1,0 +1,288 @@
+/* =============================================================================
+   Agentgram landing — custom styles (extends the Hextra theme)
+   Loaded by the theme via `resources.Get "css/custom.css"`.
+   Scoped to landing sections with the `ag-` prefix so it never leaks into docs.
+   ============================================================================= */
+
+/* Brand: align the theme's primary ramp with the indigo logo (#6366f1). */
+:root {
+  --primary-hue: 245;
+  --primary-saturation: 80%;
+  --primary-lightness: 64%;
+
+  --ag-accent: hsl(245 80% 64%);
+  --ag-accent-2: hsl(268 78% 64%);
+  --ag-accent-soft: hsl(245 80% 64% / 0.14);
+
+  --ag-surface: #ffffff;
+  --ag-surface-2: #f6f6f8;
+  --ag-border: rgba(9, 9, 11, 0.09);
+  --ag-border-strong: rgba(9, 9, 11, 0.16);
+  --ag-text: #18181b;
+  --ag-text-dim: #52525b;
+  --ag-shadow: 0 1px 2px rgba(9, 9, 11, 0.06), 0 8px 30px rgba(9, 9, 11, 0.06);
+  --ag-shadow-lg: 0 30px 60px -20px rgba(9, 9, 11, 0.25);
+}
+
+.dark {
+  --ag-surface: #111113;
+  --ag-surface-2: #161618;
+  --ag-border: rgba(255, 255, 255, 0.08);
+  --ag-border-strong: rgba(255, 255, 255, 0.16);
+  --ag-text: #fafafa;
+  --ag-text-dim: #a1a1aa;
+  --ag-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 40px rgba(0, 0, 0, 0.45);
+  --ag-shadow-lg: 0 40px 80px -24px rgba(0, 0, 0, 0.7);
+}
+
+/* ---- Hero polish ------------------------------------------------------- */
+.hextra-hero {
+  position: relative;
+}
+.ag-hero-code {
+  max-width: 46rem;
+  margin: 2.25rem auto 0;
+  text-align: left;
+}
+.ag-hero-code pre {
+  border: 1px solid var(--ag-border);
+  box-shadow: var(--ag-shadow);
+}
+
+/* ---- Section scaffolding ---------------------------------------------- */
+.ag-section {
+  max-width: 72rem;
+  margin-inline: auto;
+  padding: clamp(3.5rem, 2rem + 6vw, 6.5rem) 1.5rem 0;
+}
+.ag-section-head {
+  max-width: 42rem;
+  margin: 0 auto clamp(2rem, 1rem + 3vw, 3.25rem);
+  text-align: center;
+}
+.ag-eyebrow {
+  display: inline-block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ag-accent);
+  margin-bottom: 0.75rem;
+}
+.ag-section-title {
+  font-size: clamp(1.7rem, 1.2rem + 1.8vw, 2.6rem);
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--ag-text);
+  margin: 0;
+}
+.ag-section-sub {
+  margin: 0.9rem auto 0;
+  font-size: 1.05rem;
+  line-height: 1.6;
+  color: var(--ag-text-dim);
+}
+
+/* ---- Architecture diagram --------------------------------------------- */
+.ag-arch {
+  display: grid;
+  grid-template-columns: 1fr auto 1.15fr auto 1fr;
+  align-items: stretch;
+  gap: 0.75rem;
+}
+.ag-arch-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1.1rem;
+  border: 1px solid var(--ag-border);
+  border-radius: 1rem;
+  background: var(--ag-surface-2);
+}
+.ag-arch-core {
+  border-color: var(--ag-border-strong);
+  background:
+    linear-gradient(180deg, var(--ag-accent-soft), transparent 60%),
+    var(--ag-surface-2);
+  box-shadow: var(--ag-shadow);
+}
+.ag-arch-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ag-text-dim);
+  margin-bottom: 0.2rem;
+}
+.ag-node {
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--ag-border);
+  border-radius: 0.6rem;
+  background: var(--ag-surface);
+  color: var(--ag-text);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+.ag-node-core {
+  border-color: color-mix(in srgb, var(--ag-accent) 35%, var(--ag-border));
+}
+.ag-arch-flow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--ag-accent);
+  white-space: nowrap;
+}
+.ag-arch-stores {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 0.9rem;
+}
+.ag-store {
+  padding: 0.55rem 1rem;
+  border: 1px dashed var(--ag-border-strong);
+  border-radius: 999px;
+  font-size: 0.85rem;
+  color: var(--ag-text-dim);
+  background: var(--ag-surface);
+}
+@media (max-width: 860px) {
+  .ag-arch {
+    grid-template-columns: 1fr;
+  }
+  .ag-arch-flow {
+    transform: rotate(90deg);
+    height: 1.6rem;
+  }
+}
+
+/* ---- Generic card grid (use cases, deploy) ---------------------------- */
+.ag-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15.5rem, 1fr));
+  gap: 1rem;
+}
+.ag-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1.4rem;
+  border: 1px solid var(--ag-border);
+  border-radius: 1rem;
+  background: var(--ag-surface-2);
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.ag-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--ag-border-strong);
+  box-shadow: var(--ag-shadow);
+}
+.ag-card-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+.ag-card-title {
+  font-size: 1.05rem;
+  font-weight: 650;
+  color: var(--ag-text);
+}
+.ag-card-text {
+  font-size: 0.92rem;
+  line-height: 1.55;
+  color: var(--ag-text-dim);
+  margin: 0;
+}
+.ag-card code {
+  font-size: 0.82em;
+  padding: 0.1em 0.35em;
+  border-radius: 0.35rem;
+  background: var(--ag-accent-soft);
+  color: var(--ag-text);
+}
+
+/* ---- Screenshot gallery ----------------------------------------------- */
+.ag-gallery {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.25rem;
+}
+.ag-shot {
+  margin: 0;
+  border: 1px solid var(--ag-border);
+  border-radius: 0.9rem;
+  overflow: hidden;
+  background: var(--ag-surface-2);
+  box-shadow: var(--ag-shadow);
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+.ag-shot:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--ag-shadow-lg);
+}
+.ag-shot-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.6rem 0.85rem;
+  border-bottom: 1px solid var(--ag-border);
+  background: var(--ag-surface);
+}
+.ag-shot-bar span {
+  width: 0.62rem;
+  height: 0.62rem;
+  border-radius: 999px;
+  background: var(--ag-border-strong);
+}
+.ag-shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.ag-shot figcaption {
+  padding: 0.85rem 1rem 1rem;
+  font-size: 0.92rem;
+  color: var(--ag-text-dim);
+}
+.ag-shot figcaption strong {
+  color: var(--ag-text);
+  font-weight: 600;
+}
+@media (max-width: 720px) {
+  .ag-gallery {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---- Final CTA --------------------------------------------------------- */
+.ag-cta {
+  max-width: 72rem;
+  margin: clamp(3.5rem, 2rem + 6vw, 6.5rem) auto clamp(2rem, 5vw, 4rem);
+  padding: clamp(2.5rem, 1.5rem + 4vw, 4rem) 1.5rem;
+  text-align: center;
+  border: 1px solid var(--ag-border-strong);
+  border-radius: 1.5rem;
+  background:
+    radial-gradient(120% 120% at 50% 0%, var(--ag-accent-soft), transparent 55%),
+    var(--ag-surface-2);
+}
+.ag-cta .ag-section-title {
+  margin-bottom: 0.6rem;
+}
+.ag-cta-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+  margin-top: 1.6rem;
+}
+.ag-note {
+  margin-top: 1.1rem;
+  font-size: 0.85rem;
+  color: var(--ag-text-dim);
+}

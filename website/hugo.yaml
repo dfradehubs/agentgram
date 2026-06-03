@@ -1,5 +1,5 @@
 # Agentgram documentation & landing site (Hugo + Hextra theme)
-baseURL: "https://dfradehubs.github.io/agentgram/"
+baseURL: "https://agentgram.eu/"
 title: Agentgram
 theme: hextra
 
