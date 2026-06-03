@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <a href="https://dfradehubs.github.io/agentgram/"><img src="https://img.shields.io/badge/docs-dfradehubs.github.io%2Fagentgram-7C3AED.svg" alt="Documentation" /></a>
+  <a href="https://agentgram.eu"><img src="https://img.shields.io/badge/docs-dfradehubs.github.io%2Fagentgram-7C3AED.svg" alt="Documentation" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
   <img src="https://img.shields.io/badge/Go-1.25-00ADD8.svg" alt="Go 1.25" />
   <img src="https://img.shields.io/badge/Next.js-16-000000.svg" alt="Next.js 16" />
