@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.3] - 2026-06-03
+
+### Fixed
+
+- Streaming responses now render incrementally (token by token) again. Next.js gzip compression was buffering `text/event-stream` responses and flushing them in large blocks, so the agent's reply only appeared once it was fully written. Compression is now disabled in Next (`compress: false`); static asset compression should be handled at the edge (ingress/CDN/service mesh).
+- Reloading the page during an active run no longer fires a duplicate run. The backend keeps the run alive and persists the full reply when it finishes, so the client now polls the session for that reply and shows it once the run completes, only re-sending as a last resort if nothing arrives.
+
 ## [0.1.2] - 2026-06-03
 
 ### Fixed
