@@ -1,0 +1,1 @@
+ALTER TABLE agents ADD COLUMN custom_format JSONB DEFAULT NULL;

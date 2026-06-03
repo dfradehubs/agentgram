@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agentgram - Test Frontend</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 10px;
+            color: #00d9ff;
+        }
+        .subtitle {
+            text-align: center;
+            color: #888;
+            margin-bottom: 30px;
+        }
+        .config-section {
+            background: #16213e;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        .config-section h3 {
+            margin-bottom: 15px;
+            color: #00d9ff;
+        }
+        .form-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .form-row label {
+            width: 120px;
+            padding-top: 8px;
+            color: #aaa;
+        }
+        .form-row input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid #333;
+            border-radius: 5px;
+            background: #0f0f23;
+            color: #eee;
+            font-size: 14px;
+        }
+        .form-row input:focus {
+            outline: none;
+            border-color: #00d9ff;
+        }
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        .btn-primary {
+            background: #00d9ff;
+            color: #000;
+        }
+        .btn-primary:hover {
+            background: #00b8d9;
+        }
+        .btn-primary:disabled {
+            background: #555;
+            color: #888;
+            cursor: not-allowed;
+        }
+        .btn-secondary {
+            background: #333;
+            color: #eee;
+        }
+        .btn-secondary:hover {
+            background: #444;
+        }
+        .agents-section {
+            background: #16213e;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        .agents-section h3 {
+            margin-bottom: 15px;
+            color: #00d9ff;
+        }
+        .agents-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .agent-card {
+            background: #0f0f23;
+            padding: 15px;
+            border-radius: 8px;
+            border: 2px solid transparent;
+            cursor: pointer;
+            transition: all 0.2s;
+            min-width: 200px;
+        }
+        .agent-card:hover {
+            border-color: #00d9ff;
+        }
+        .agent-card.selected {
+            border-color: #00d9ff;
+            background: #1a2a4e;
+        }
+        .agent-card .name {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .agent-card .protocol {
+            font-size: 12px;
+            color: #888;
+        }
+        .agent-card .status {
+            font-size: 12px;
+            margin-top: 5px;
+        }
+        .status.healthy {
+            color: #4caf50;
+        }
+        .status.unhealthy {
+            color: #f44336;
+        }
+        .chat-section {
+            background: #16213e;
+            padding: 20px;
+            border-radius: 10px;
+        }
+        .chat-section h3 {
+            margin-bottom: 15px;
+            color: #00d9ff;
+        }
+        .chat-messages {
+            background: #0f0f23;
+            border-radius: 8px;
+            padding: 15px;
+            height: 300px;
+            overflow-y: auto;
+            margin-bottom: 15px;
+        }
+        .message {
+            margin-bottom: 15px;
+            padding: 10px;
+            border-radius: 8px;
+        }
+        .message.user {
+            background: #1a3a5c;
+            margin-left: 50px;
+        }
+        .message.assistant {
+            background: #2a2a4e;
+            margin-right: 50px;
+        }
+        .message .role {
+            font-size: 12px;
+            color: #00d9ff;
+            margin-bottom: 5px;
+        }
+        .message .content {
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .message.streaming .content::after {
+            content: '|';
+            animation: blink 1s infinite;
+        }
+        @keyframes blink {
+            50% { opacity: 0; }
+        }
+        .chat-input {
+            display: flex;
+            gap: 10px;
+        }
+        .chat-input input {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid #333;
+            border-radius: 8px;
+            background: #0f0f23;
+            color: #eee;
+            font-size: 14px;
+        }
+        .chat-input input:focus {
+            outline: none;
+            border-color: #00d9ff;
+        }
+        .error {
+            color: #f44336;
+            margin-top: 10px;
+            padding: 10px;
+            background: rgba(244, 67, 54, 0.1);
+            border-radius: 5px;
+        }
+        .info {
+            color: #2196f3;
+            margin-top: 10px;
+            padding: 10px;
+            background: rgba(33, 150, 243, 0.1);
+            border-radius: 5px;
+        }
+        .no-auth-warning {
+            background: rgba(255, 152, 0, 0.1);
+            color: #ff9800;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Agentgram</h1>
+        <p class="subtitle">Test Frontend for Backend Verification</p>
+
+        <div class="config-section">
+            <h3>Configuration</h3>
+            <div class="form-row">
+                <label>Backend URL:</label>
+                <input type="text" id="backendUrl" value="http://localhost:8080" />
+            </div>
+            <div class="form-row">
+                <label>JWT Token:</label>
+                <input type="text" id="jwtToken" placeholder="Optional: paste JWT token here" />
+            </div>
+            <div style="margin-top: 15px; display: flex; gap: 10px;">
+                <button class="btn-primary" onclick="loadAgents()">Load Agents</button>
+                <button class="btn-secondary" onclick="checkHealth()">Check Health</button>
+            </div>
+            <div id="configStatus"></div>
+        </div>
+
+        <div class="agents-section">
+            <h3>Available Agents</h3>
+            <div class="no-auth-warning" id="noAuthWarning" style="display: none;">
+                Warning: No JWT token provided. In production, you need a valid token to access agents.
+            </div>
+            <div class="agents-list" id="agentsList">
+                <p style="color: #888;">Click "Load Agents" to fetch available agents</p>
+            </div>
+        </div>
+
+        <div class="chat-section">
+            <h3>Chat</h3>
+            <div class="chat-messages" id="chatMessages">
+                <p style="color: #888; text-align: center; padding-top: 100px;">
+                    Select an agent and start chatting
+                </p>
+            </div>
+            <div class="chat-input">
+                <input type="text" id="messageInput" placeholder="Type your message..."
+                       onkeypress="if(event.key === 'Enter') sendMessage()" disabled />
+                <button class="btn-primary" id="sendBtn" onclick="sendMessage()" disabled>Send</button>
+            </div>
+            <div id="chatStatus"></div>
+        </div>
+    </div>
+
+    <script>
+        let selectedAgent = null;
+        let messages = [];
+        let isStreaming = false;
+        window.agentsData = {};
+
+        function getBackendUrl() {
+            return document.getElementById('backendUrl').value.replace(/\/$/, '');
+        }
+
+        function getHeaders() {
+            const headers = {
+                'Content-Type': 'application/json'
+            };
+            const token = document.getElementById('jwtToken').value.trim();
+            if (token) {
+                headers['Authorization'] = 'Bearer ' + token;
+            }
+            return headers;
+        }
+
+        async function checkHealth() {
+            const statusEl = document.getElementById('configStatus');
+            try {
+                const response = await fetch(getBackendUrl() + '/health');
+                const data = await response.json();
+                statusEl.innerHTML = '<div class="info">Backend healthy: ' + JSON.stringify(data) + '</div>';
+            } catch (error) {
+                statusEl.innerHTML = '<div class="error">Failed to connect: ' + error.message + '</div>';
+            }
+        }
+
+        async function loadAgents() {
+            const statusEl = document.getElementById('configStatus');
+            const listEl = document.getElementById('agentsList');
+            const warningEl = document.getElementById('noAuthWarning');
+
+            const token = document.getElementById('jwtToken').value.trim();
+            warningEl.style.display = token ? 'none' : 'block';
+
+            try {
+                statusEl.innerHTML = '<div class="info">Loading agents...</div>';
+                const response = await fetch(getBackendUrl() + '/api/agents', {
+                    headers: getHeaders()
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'HTTP ' + response.status);
+                }
+
+                const data = await response.json();
+                const agents = data.agents || [];
+
+                if (agents.length === 0) {
+                    listEl.innerHTML = '<p style="color: #888;">No agents available</p>';
+                    statusEl.innerHTML = '<div class="info">No agents found</div>';
+                    return;
+                }
+
+                listEl.innerHTML = agents.map(function(agent) {
+                    return '<div class="agent-card" onclick="selectAgent(\'' + agent.id + '\')" id="agent-' + agent.id + '">' +
+                        '<div class="name">' + (agent.name || agent.id) + '</div>' +
+                        '<div class="protocol">Protocol: ' + agent.protocol + '</div>' +
+                        '<div class="status ' + agent.status + '">' + (agent.status || 'unknown') + '</div>' +
+                    '</div>';
+                }).join('');
+
+                statusEl.innerHTML = '<div class="info">Loaded ' + agents.length + ' agent(s)</div>';
+
+                window.agentsData = {};
+                agents.forEach(function(a) { window.agentsData[a.id] = a; });
+
+            } catch (error) {
+                statusEl.innerHTML = '<div class="error">Failed to load agents: ' + error.message + '</div>';
+                listEl.innerHTML = '<p style="color: #f44336;">Failed to load agents</p>';
+            }
+        }
+
+        function selectAgent(agentId) {
+            document.querySelectorAll('.agent-card').forEach(function(el) { el.classList.remove('selected'); });
+
+            var card = document.getElementById('agent-' + agentId);
+            if (card) card.classList.add('selected');
+
+            selectedAgent = agentId;
+            messages = [];
+
+            document.getElementById('messageInput').disabled = false;
+            document.getElementById('sendBtn').disabled = false;
+
+            var chatEl = document.getElementById('chatMessages');
+            var agentName = window.agentsData[agentId] ? window.agentsData[agentId].name : agentId;
+            chatEl.innerHTML = '<p style="color: #888; text-align: center; padding-top: 100px;">Chatting with: <strong>' + agentName + '</strong></p>';
+        }
+
+        async function sendMessage() {
+            if (!selectedAgent || isStreaming) return;
+
+            var input = document.getElementById('messageInput');
+            var message = input.value.trim();
+            if (!message) return;
+
+            input.value = '';
+            isStreaming = true;
+            document.getElementById('sendBtn').disabled = true;
+
+            messages.push({ role: 'user', content: message });
+            renderMessages();
+
+            messages.push({ role: 'assistant', content: '', streaming: true });
+            renderMessages();
+
+            try {
+                var response = await fetch(getBackendUrl() + '/api/agents/' + selectedAgent + '/chat', {
+                    method: 'POST',
+                    headers: getHeaders(),
+                    body: JSON.stringify({ messages: messages.slice(0, -1) })
+                });
+
+                if (!response.ok) {
+                    var error = await response.json();
+                    throw new Error(error.error || 'HTTP ' + response.status);
+                }
+
+                var reader = response.body.getReader();
+                var decoder = new TextDecoder();
+                var buffer = '';
+
+                while (true) {
+                    var result = await reader.read();
+                    if (result.done) break;
+
+                    buffer += decoder.decode(result.value, { stream: true });
+                    var lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+
+                    for (var i = 0; i < lines.length; i++) {
+                        var line = lines[i];
+                        if (line.indexOf('data: ') === 0) {
+                            try {
+                                var data = JSON.parse(line.slice(6));
+                                handleSSEEvent(data);
+                            } catch (e) {
+                                console.error('Failed to parse SSE:', e);
+                            }
+                        }
+                    }
+                }
+
+            } catch (error) {
+                document.getElementById('chatStatus').innerHTML = '<div class="error">Error: ' + error.message + '</div>';
+                messages.pop();
+            } finally {
+                isStreaming = false;
+                document.getElementById('sendBtn').disabled = false;
+            }
+
+            renderMessages();
+        }
+
+        function handleSSEEvent(data) {
+            var lastMsg = messages[messages.length - 1];
+
+            if (data.type === 'start') {
+                console.log('Stream started:', data.messageId);
+            } else if (data.type === 'chunk') {
+                if (lastMsg && lastMsg.role === 'assistant') {
+                    lastMsg.content += data.content;
+                    renderMessages();
+                }
+            } else if (data.type === 'end') {
+                if (lastMsg) {
+                    lastMsg.streaming = false;
+                }
+                console.log('Stream ended:', data.status);
+                renderMessages();
+            } else if (data.type === 'error') {
+                document.getElementById('chatStatus').innerHTML = '<div class="error">Error: ' + data.message + '</div>';
+            }
+        }
+
+        function renderMessages() {
+            var chatEl = document.getElementById('chatMessages');
+
+            if (messages.length === 0) {
+                chatEl.innerHTML = '<p style="color: #888; text-align: center; padding-top: 100px;">Start chatting with the selected agent</p>';
+                return;
+            }
+
+            chatEl.innerHTML = messages.map(function(msg) {
+                var roleLabel = msg.role === 'user' ? 'You' : 'Assistant';
+                var streamingClass = msg.streaming ? ' streaming' : '';
+                return '<div class="message ' + msg.role + streamingClass + '">' +
+                    '<div class="role">' + roleLabel + '</div>' +
+                    '<div class="content">' + escapeHtml(msg.content) + '</div>' +
+                '</div>';
+            }).join('');
+
+            chatEl.scrollTop = chatEl.scrollHeight;
+        }
+
+        function escapeHtml(text) {
+            var div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        window.onload = function() {
+            checkHealth();
+        };
+    </script>
+</body>
+</html>

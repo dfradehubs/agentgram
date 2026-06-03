@@ -1,0 +1,990 @@
+basePath: /
+definitions:
+  github_com_dfradehubs_agentgram-api_internal_models.AgentListResponse:
+    properties:
+      agents:
+        items:
+          $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.AgentResponse'
+        type: array
+    type: object
+  github_com_dfradehubs_agentgram-api_internal_models.AgentResponse:
+    properties:
+      category:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      protocol:
+        type: string
+      require_github_token:
+        type: boolean
+      status:
+        type: string
+    type: object
+  github_com_dfradehubs_agentgram-api_internal_models.Attachment:
+    properties:
+      content_type:
+        type: string
+      data:
+        description: base64
+        type: string
+      filename:
+        type: string
+    type: object
+  github_com_dfradehubs_agentgram-api_internal_models.ChatMessage:
+    properties:
+      agent_id:
+        description: Which agent sent/received this message (multi-agent sessions)
+        type: string
+      attachments:
+        description: File attachments (images, PDFs, etc.)
+        items:
+          $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.Attachment'
+        type: array
+      broadcast_agent_ids:
+        description: 'For broadcast messages: which agents it was sent to'
+        items:
+          type: string
+        type: array
+      content:
+        type: string
+      content_parts:
+        description: Ordered text/tool interleaving for reconstruction
+        items:
+          $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ContentPart'
+        type: array
+      is_admin:
+        description: Whether the user who sent this message is an admin
+        type: boolean
+      role:
+        description: '"user" | "assistant" | "system"'
+        type: string
+      tool_calls:
+        description: Tool calls made during this message
+        items:
+          $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.StoredToolCall'
+        type: array
+      tool_results:
+        description: Tool results for the tool calls
+        items:
+          $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.StoredToolResult'
+        type: array
+      user_email:
+        description: Email of the user who sent this message
+        type: string
+      user_name:
+        description: Display name of the user who sent this message
+        type: string
+    type: object
+  github_com_dfradehubs_agentgram-api_internal_models.ChatRequest:
+    properties:
+      group_id:
+        type: string
+      messages:
+        items:
+          $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ChatMessage'
+        type: array
+      send_context:
+        type: boolean
+      session_id:
+        type: string
+    type: object
+  github_com_dfradehubs_agentgram-api_internal_models.ContentPart:
+    properties:
+      text:
+        description: Text content (for type="text")
+        type: string
+      tool_index:
+        description: Index into ToolCalls (for type="tool_use"); pointer so 0 is not
+          omitted
+        type: integer
+      type:
+        description: '"text" or "tool_use"'
+        type: string
+    type: object
+  github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse:
+    properties:
+      error:
+        type: string
+    type: object
+  github_com_dfradehubs_agentgram-api_internal_models.HealthCheckConfig:
+    properties:
+      enabled:
+        type: boolean
+      endpoint:
+        description: 'Path appended to agent endpoint (default: /health)'
+        type: string
+      interval_seconds:
+        type: integer
+      timeout_seconds:
+        type: integer
+      url:
+        description: Full URL (optional, overrides endpoint + path)
+        type: string
+    type: object
+  github_com_dfradehubs_agentgram-api_internal_models.HealthResponse:
+    properties:
+      details:
+        additionalProperties: true
+        type: object
+      status:
+        type: string
+    type: object
+  github_com_dfradehubs_agentgram-api_internal_models.InheritedPermission:
+    properties:
+      from_group:
+        type: string
+      value:
+        type: string
+    type: object
+  github_com_dfradehubs_agentgram-api_internal_models.InheritedPerms:
+    properties:
+      groups:
+        items:
+          $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.InheritedPermission'
+        type: array
+      users:
+        items:
+          $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.InheritedPermission'
+        type: array
+    type: object
+  github_com_dfradehubs_agentgram-api_internal_models.PollingConfig:
+    properties:
+      interval_ms:
+        type: integer
+      timeout_seconds:
+        type: integer
+    type: object
+  github_com_dfradehubs_agentgram-api_internal_models.RateLimitConfig:
+    properties:
+      requests_per_hour:
+        type: integer
+      requests_per_minute:
+        type: integer
+    type: object
+  github_com_dfradehubs_agentgram-api_internal_models.Session:
+    properties:
+      agent_ids:
+        description: Participating agents
+        items:
+          type: string
+        type: array
+      app_name:
+        type: string
+      created_at:
+        description: Unix timestamp
+        type: integer
+      group_id:
+        description: Agent group ID (for collaborative sessions)
+        type: string
+      is_multi_agent:
+        description: Whether this is a multi-agent session
+        type: boolean
+      last_activity:
+        description: Unix timestamp
+        type: integer
+      message_count:
+        type: integer
+      messages:
+        description: Only included when fetching single session
+        items:
+          $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ChatMessage'
+        type: array
+      session_id:
+        type: string
+      session_name:
+        type: string
+      user_id:
+        type: string
+    type: object
+  github_com_dfradehubs_agentgram-api_internal_models.SessionGetResponse:
+    properties:
+      has_more:
+        type: boolean
+      messages:
+        items:
+          $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ChatMessage'
+        type: array
+      next_cursor:
+        description: Message index to use as `before` for the next page
+        type: integer
+      session:
+        $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.Session'
+    type: object
+  github_com_dfradehubs_agentgram-api_internal_models.SessionListResponse:
+    properties:
+      sessions:
+        items:
+          $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.Session'
+        type: array
+    type: object
+  github_com_dfradehubs_agentgram-api_internal_models.SessionRenameRequest:
+    properties:
+      session_name:
+        type: string
+    type: object
+  github_com_dfradehubs_agentgram-api_internal_models.StoredToolCall:
+    properties:
+      args:
+        additionalProperties: true
+        type: object
+      id:
+        type: string
+      name:
+        type: string
+    type: object
+  github_com_dfradehubs_agentgram-api_internal_models.StoredToolResult:
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+      response:
+        additionalProperties: true
+        type: object
+    type: object
+  internal_handlers.AdminAgentRequest:
+    properties:
+      adk_app_name:
+        type: string
+      adk_user_id:
+        type: string
+      agent_card_path:
+        type: string
+      allowed_groups:
+        items:
+          type: string
+        type: array
+      allowed_users:
+        items:
+          type: string
+        type: array
+      category:
+        type: string
+      description:
+        type: string
+      endpoint:
+        type: string
+      forward_authorization:
+        type: boolean
+      headers:
+        additionalProperties:
+          type: string
+        type: object
+      health_check:
+        $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.HealthCheckConfig'
+      id:
+        type: string
+      name:
+        type: string
+      pipeline_final_agent:
+        type: string
+      polling:
+        $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.PollingConfig'
+      protocol:
+        type: string
+      rate_limit:
+        $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.RateLimitConfig'
+      require_github_token:
+        type: boolean
+    type: object
+  internal_handlers.AdminAgentResponse:
+    properties:
+      adk_app_name:
+        type: string
+      adk_user_id:
+        type: string
+      agent_card_path:
+        type: string
+      allowed_groups:
+        items:
+          type: string
+        type: array
+      allowed_users:
+        items:
+          type: string
+        type: array
+      category:
+        type: string
+      description:
+        type: string
+      endpoint:
+        type: string
+      forward_authorization:
+        type: boolean
+      headers:
+        additionalProperties:
+          type: string
+        type: object
+      health_check:
+        $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.HealthCheckConfig'
+      id:
+        type: string
+      inherited_permissions:
+        $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.InheritedPerms'
+      name:
+        type: string
+      pipeline_final_agent:
+        type: string
+      polling:
+        $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.PollingConfig'
+      protocol:
+        type: string
+      rate_limit:
+        $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.RateLimitConfig'
+      require_github_token:
+        type: boolean
+      status:
+        type: string
+    type: object
+  internal_handlers.FeatureFlags:
+    properties:
+      summarizer_enabled:
+        type: boolean
+    type: object
+  internal_handlers.PublicConfigResponse:
+    properties:
+      available_models:
+        items:
+          $ref: '#/definitions/internal_handlers.PublicLLMModel'
+        type: array
+      features:
+        $ref: '#/definitions/internal_handlers.FeatureFlags'
+    type: object
+  internal_handlers.PublicLLMModel:
+    properties:
+      default:
+        type: boolean
+      id:
+        type: string
+      name:
+        type: string
+      provider:
+        type: string
+    type: object
+  internal_handlers.UserResponse:
+    properties:
+      email:
+        type: string
+      groups:
+        items:
+          type: string
+        type: array
+      is_admin:
+        type: boolean
+    type: object
+host: localhost:8080
+info:
+  contact: {}
+  description: Multiplexer API for AI agents with AG-UI protocol. Connects to remote
+    agents, handles authentication, permissions, and emits AG-UI SSE events.
+  title: Agentgram API
+  version: "1.0"
+paths:
+  /api/admin/agents:
+    get:
+      description: Returns all agents with full configuration including endpoints,
+        permissions, and health status. Requires admin role.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: agents array
+          schema:
+            additionalProperties:
+              items:
+                $ref: '#/definitions/internal_handlers.AdminAgentResponse'
+              type: array
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      - CookieAuth: []
+      summary: List all agents (admin)
+      tags:
+      - admin-agents
+    post:
+      consumes:
+      - application/json
+      description: Creates a new agent configuration. Requires admin role. Fields
+        id, name, protocol, and endpoint are required.
+      parameters:
+      - description: Agent configuration
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.AdminAgentRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_handlers.AdminAgentResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      - CookieAuth: []
+      summary: Create a new agent (admin)
+      tags:
+      - admin-agents
+  /api/admin/agents/{id}:
+    delete:
+      description: Deletes an agent configuration. Requires admin role.
+      parameters:
+      - description: Agent ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: Agent deleted
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      - CookieAuth: []
+      summary: Delete an agent (admin)
+      tags:
+      - admin-agents
+    get:
+      description: Returns full agent configuration including endpoint, headers, permissions,
+        and inherited permissions. Requires admin role.
+      parameters:
+      - description: Agent ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_handlers.AdminAgentResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      - CookieAuth: []
+      summary: Get agent details (admin)
+      tags:
+      - admin-agents
+    put:
+      consumes:
+      - application/json
+      description: Updates an existing agent configuration. Requires admin role.
+      parameters:
+      - description: Agent ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Updated agent configuration
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.AdminAgentRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_handlers.AdminAgentResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      - CookieAuth: []
+      summary: Update an agent (admin)
+      tags:
+      - admin-agents
+  /api/agents:
+    get:
+      description: Returns only the agents the authenticated user has access to. Admins
+        see all agents.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.AgentListResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      - CookieAuth: []
+      summary: List agents
+      tags:
+      - agents
+  /api/agents/{agentId}:
+    get:
+      description: Returns a single agent by ID. Requires access permission or admin
+        role.
+      parameters:
+      - description: Agent ID
+        in: path
+        name: agentId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.AgentResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      - CookieAuth: []
+      summary: Get agent details
+      tags:
+      - agents
+  /api/agents/{agentId}/chat:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Sends a chat request to an agent and returns a streaming SSE response with AG-UI protocol events.
+        The response is a Server-Sent Events stream (text/event-stream) containing AG-UI events:
+        RUN_STARTED, TEXT_MESSAGE_START, TEXT_MESSAGE_CONTENT, TEXT_MESSAGE_END, TOOL_CALL_START, TOOL_CALL_ARGS, TOOL_CALL_END, RUN_FINISHED, RUN_ERROR.
+      parameters:
+      - description: Agent ID
+        in: path
+        name: agentId
+        required: true
+        type: string
+      - description: Chat request with messages and optional session_id
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ChatRequest'
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: 'SSE stream with AG-UI events (e.g. data: {\"type\":\"TEXT_MESSAGE_CONTENT\",\"messageId\":\"...\",\"delta\":\"Hello\"})'
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      - CookieAuth: []
+      summary: Chat with an agent
+      tags:
+      - chat
+  /api/agents/{agentId}/health:
+    get:
+      description: Returns the health status of a specific agent
+      parameters:
+      - description: Agent ID
+        in: path
+        name: agentId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.HealthResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      - CookieAuth: []
+      summary: Get agent health status
+      tags:
+      - agents
+  /api/agents/{agentId}/sessions:
+    get:
+      description: Returns all sessions for the authenticated user and the specified
+        agent
+      parameters:
+      - description: Agent ID
+        in: path
+        name: agentId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.SessionListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      - CookieAuth: []
+      summary: List sessions for an agent
+      tags:
+      - sessions
+  /api/agents/{agentId}/sessions/{sessionId}:
+    delete:
+      description: Permanently deletes a session and all its messages. Only the session
+        owner can delete it.
+      parameters:
+      - description: Agent ID
+        in: path
+        name: agentId
+        required: true
+        type: string
+      - description: Session ID (UUID)
+        in: path
+        name: sessionId
+        required: true
+        type: string
+      responses:
+        "204":
+          description: Session deleted
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      - CookieAuth: []
+      summary: Delete a session
+      tags:
+      - sessions
+    get:
+      description: Returns a session and its messages. Supports cursor-based pagination.
+        When limit=0 (default), returns all messages in legacy format for backward
+        compatibility.
+      parameters:
+      - description: Agent ID
+        in: path
+        name: agentId
+        required: true
+        type: string
+      - description: Session ID (UUID)
+        in: path
+        name: sessionId
+        required: true
+        type: string
+      - default: 0
+        description: Number of messages to return (0 = all)
+        in: query
+        name: limit
+        type: integer
+      - description: 'Cursor: message index to load messages before'
+        in: query
+        name: before
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Paginated response (when limit > 0)
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.SessionGetResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      - CookieAuth: []
+      summary: Get session with messages
+      tags:
+      - sessions
+    patch:
+      consumes:
+      - application/json
+      description: Updates the display name of a session. Only the session owner can
+        rename it.
+      parameters:
+      - description: Agent ID
+        in: path
+        name: agentId
+        required: true
+        type: string
+      - description: Session ID (UUID)
+        in: path
+        name: sessionId
+        required: true
+        type: string
+      - description: New session name
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.SessionRenameRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.Session'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      - CookieAuth: []
+      summary: Rename a session
+      tags:
+      - sessions
+  /api/config:
+    get:
+      description: Returns feature flags and available LLM models (without API keys)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_handlers.PublicConfigResponse'
+      security:
+      - BearerAuth: []
+      - CookieAuth: []
+      summary: Get public configuration
+      tags:
+      - config
+  /api/me:
+    get:
+      description: Returns the authenticated user's email, groups, and admin status
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_handlers.UserResponse'
+        "401":
+          description: unauthorized
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      - CookieAuth: []
+      summary: Get current user info
+      tags:
+      - user
+  /health:
+    get:
+      description: Returns ok if the service is running
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.HealthResponse'
+      summary: Liveness probe
+      tags:
+      - health
+  /health/ready:
+    get:
+      description: Returns ready if at least one agent is healthy. Returns 503 if
+        no agents are loaded or all are unhealthy.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.HealthResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.HealthResponse'
+      summary: Readiness probe
+      tags:
+      - health
+securityDefinitions:
+  BearerAuth:
+    description: JWT Bearer token (e.g. "Bearer eyJhbG...")
+    in: header
+    name: Authorization
+    type: apiKey
+  CookieAuth:
+    description: OIDC session cookie
+    in: cookie
+    name: session
+    type: apiKey
+swagger: "2.0"

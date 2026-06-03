@@ -1,0 +1,117 @@
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.dev
+    ports:
+      - "${API_PORT:-8080}:8080"
+    volumes:
+      - ..:/app
+      - /app/tmp  # Exclude tmp directory
+    environment:
+      - CONFIG_PATH=./configs/config.dev.yaml
+      - PORT=8080
+      - SERVER_HOST=${SERVER_HOST:-localhost:${API_PORT:-8080}}
+      - LOG_LEVEL=debug
+      - REDIS_ADDR=redis:6379
+      - POSTGRES_HOST=postgres
+      - POSTGRES_USER=agentgram
+      - POSTGRES_PASSWORD=agentgram
+      - POSTGRES_DB=agentgram
+      - POSTGRES_SSLMODE=disable
+      - MOCK_REST_ENDPOINT=http://mock-agent:9000/chat
+      - MOCK_REST_HEALTH_URL=http://mock-agent:9000/health
+      - MOCK_A2A_ENDPOINT=http://mock-agent:9000
+      - OIDC_CLIENT_ID=${OIDC_CLIENT_ID:-}
+      - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET:-}
+      - OIDC_REDIRECT_URI=${OIDC_REDIRECT_URI:-http://localhost:3000/auth/callback}
+      - OIDC_POST_LOGOUT_URI=${OIDC_POST_LOGOUT_URI:-http://localhost:3000/login}
+      - KEYCLOAK_ISSUER=${KEYCLOAK_ISSUER:-}
+      - MIGRATIONS_PATH=/app/migrations
+    depends_on:
+      - mock-agent
+      - redis
+      - postgres
+    networks:
+      - agentgram
+
+  mock-agent:
+    build:
+      context: ../test/mock-agent
+      dockerfile: Dockerfile
+    ports:
+      - "9000:9000"
+    environment:
+      - PORT=9000
+      - REDIS_URL=redis:6379
+    depends_on:
+      - redis
+    networks:
+      - agentgram
+
+  mock-oauth2-mcp:
+    build:
+      context: ../test/mock-oauth2-mcp
+      dockerfile: Dockerfile
+    ports:
+      - "${MOCK_OAUTH2_PORT:-9999}:9999"
+    environment:
+      - PORT=9999
+    networks:
+      - agentgram
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - agentgram
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: agentgram
+      POSTGRES_PASSWORD: agentgram
+      POSTGRES_DB: agentgram
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - agentgram
+
+  web:
+    build:
+      context: ../../web
+      dockerfile: Dockerfile
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    environment:
+      - API_URL_DEV=http://api:8080
+      - LOG_LEVEL=debug
+    depends_on:
+      - api
+    networks:
+      - agentgram
+
+  test-frontend:
+    build:
+      context: ../test/frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3000"  # Changed to 3001 to avoid conflict with Next.js frontend
+    depends_on:
+      - api
+    networks:
+      - agentgram
+
+networks:
+  agentgram:
+    driver: bridge
+
+volumes:
+  redis-data:
+  postgres_data:

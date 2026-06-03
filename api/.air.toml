@@ -1,0 +1,38 @@
+# Config file for air - hot reload for Go apps
+# https://github.com/air-verse/air
+
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  # Command to build the binary
+  cmd = "go build -o ./tmp/main ./cmd/server/main.go"
+  # Binary file to run
+  bin = "./tmp/main"
+  # Watch these extensions
+  include_ext = ["go", "yaml", "yml"]
+  # Exclude these directories
+  exclude_dir = ["tmp", "vendor", "test", "docker"]
+  # Exclude these files
+  exclude_file = []
+  # Exclude files with these patterns
+  exclude_regex = ["_test.go"]
+  # Stop old process when new binary is ready
+  kill_delay = "0s"
+  # Delay before restarting
+  delay = 1000
+
+[log]
+  # Show log time
+  time = false
+
+[color]
+  # Customize colors
+  main = "magenta"
+  watcher = "cyan"
+  build = "yellow"
+  runner = "green"
+
+[misc]
+  # Delete tmp directory on exit
+  clean_on_exit = true

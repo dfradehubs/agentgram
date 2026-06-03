@@ -1,0 +1,48 @@
+# Test fixtures for agents configuration
+agents:
+  - id: "test-agent-1"
+    name: "Test Agent 1"
+    description: "Agent for unit tests"
+    category: "test"
+    protocol: "custom"
+    endpoint: "http://localhost:9000/chat"
+
+    headers:
+      X-Test-Header: "test-value"
+
+    forward_authorization: true
+
+    allowed_groups:
+      - "test-group"
+    allowed_users:
+      - "test@example.com"
+
+    rate_limit:
+      requests_per_minute: 60
+
+    health_check:
+      enabled: true
+      endpoint: "/health"
+      interval_seconds: 30
+      timeout_seconds: 5
+
+    metadata:
+      icon: "test"
+
+  - id: "test-agent-2"
+    name: "Test Agent 2"
+    description: "A2A agent for tests"
+    category: "test"
+    protocol: "a2a"
+    endpoint: "http://localhost:9000"
+    agent_card_path: "/.well-known/agent-card.json"
+
+    polling:
+      interval_ms: 100
+      timeout_seconds: 10
+
+    allowed_groups:
+      - "admin-group"
+    allowed_users: []
+
+    metadata: {}

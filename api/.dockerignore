@@ -1,0 +1,12 @@
+docker/
+test/
+tmp/
+bin/
+.git
+.gitignore
+.air.toml
+*.md
+coverage.*
+.DS_Store
+.idea/
+.vscode/

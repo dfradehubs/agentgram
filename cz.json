@@ -1,0 +1,7 @@
+{
+  "commitizen": {
+    "name": "cz_conventional_commits",
+    "version": "0.22.2",
+    "tag_format": "$version"
+  }
+}

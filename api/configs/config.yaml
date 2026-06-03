@@ -1,0 +1,72 @@
+# Application configuration
+# Production-style config: all secrets resolved from environment via ${ENV:VAR}
+
+server:
+  port: "${ENV:PORT}"
+
+auth:
+  enabled: true
+  session_max_age: 86400
+  cookie_secure: true
+  admin_groups:
+    - "${ENV:ADMIN_GROUP}"
+  keycloak:
+    enabled: true
+    issuer: "${ENV:KEYCLOAK_ISSUER}"
+    jwks_cache_ttl: 3600
+    client_id: "${ENV:OIDC_CLIENT_ID}"
+    client_secret: "${ENV:OIDC_CLIENT_SECRET}"
+    redirect_uri: "${ENV:OIDC_REDIRECT_URI}"
+    post_logout_uri: "${ENV:OIDC_POST_LOGOUT_URI}"
+  github:
+    enabled: true
+    client_id: "${ENV:GITHUB_OAUTH_CLIENT_ID}"
+    client_secret: "${ENV:GITHUB_OAUTH_CLIENT_SECRET}"
+    redirect_url: "${ENV:GITHUB_OAUTH_REDIRECT_URL}"
+  google:
+    enabled: false
+  basic:
+    enabled: false
+
+cors:
+  allowed_origins:
+    - "${ENV:CORS_ALLOWED_ORIGIN}"
+
+logging:
+  level: "${ENV:LOG_LEVEL}"
+  format: "json"
+
+langfuse:
+  enabled: true
+  public_key: "${ENV:LANGFUSE_PUBLIC_KEY}"
+  secret_key: "${ENV:LANGFUSE_SECRET_KEY}"
+  host: "${ENV:LANGFUSE_HOST}"
+  environment: "${ENV:LANGFUSE_ENVIRONMENT}"
+  input_cost_per_1m: 3.0
+  output_cost_per_1m: 15.0
+
+redis:
+  addr: "${ENV:REDIS_ADDR}"
+  password: "${ENV:REDIS_PASSWORD}"
+
+database:
+  host: "${ENV:POSTGRES_HOST}"
+  port: 5432
+  user: "${ENV:POSTGRES_USER}"
+  password: "${ENV:POSTGRES_PASSWORD}"
+  dbname: "${ENV:POSTGRES_DB}"
+  sslmode: "${ENV:POSTGRES_SSLMODE}"
+  max_conns: 25
+
+mcp_server:
+  enabled: true
+  issuer: "${ENV:MCP_SERVER_ISSUER}"
+  client_id: "${ENV:MCP_SERVER_CLIENT_ID}"
+  dcr_mode: "${ENV:MCP_SERVER_DCR_MODE}"
+  tool_call_timeout: "2m"
+  max_tool_call_rounds: 10
+
+metrics:
+  enabled: true
+  retention_days: 30
+  cleanup_interval: "1h"
