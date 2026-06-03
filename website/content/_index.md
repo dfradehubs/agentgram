@@ -27,17 +27,6 @@ layout: hextra-home
 {{< hextra/hero-button text="View on GitHub" link="https://github.com/dfradehubs/agentgram" style="background:#27272a;border:1px solid #3f3f46;" >}}
 </div>
 
-<div class="ag-hero-code">
-
-```bash
-git clone https://github.com/dfradehubs/agentgram.git
-cd agentgram && make install
-make docker-up      # API + agents + Redis + PostgreSQL + web UI
-# → open http://localhost:3000
-```
-
-</div>
-
 <div class="hx:mt-6"></div>
 
 {{< hextra/feature-grid >}}
@@ -160,7 +149,7 @@ Chat from the web UI, call agents as tools from your IDE or CLI over MCP, or wir
   {{< tab name="Custom REST/SSE" >}}
 A plain HTTP endpoint that streams Server-Sent Events (or returns JSON). The simplest way to plug in your own service.
 
-```http
+```text
 POST /api/agents/{agentId}/chat
 Content-Type: application/json
 

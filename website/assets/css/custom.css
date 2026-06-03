@@ -35,18 +35,35 @@
   --ag-shadow-lg: 0 40px 80px -24px rgba(0, 0, 0, 0.7);
 }
 
-/* ---- Hero polish ------------------------------------------------------- */
-.hextra-hero {
-  position: relative;
+/* ---- Calmer, consistent code highlighting in landing sections --------- */
+/* Neutralize Chroma "error" tokens — the harsh red-on-pink the http/operator
+   lexers produced — so code reads as calm monospace instead of an error dump. */
+.ag-section .chroma .err {
+  color: inherit !important;
+  background: transparent !important;
 }
-.ag-hero-code {
-  max-width: 46rem;
-  margin: 2.25rem auto 0;
-  text-align: left;
+/* Soften the loudest token colors to a restrained, on-brand palette. */
+.ag-section .chroma .k,
+.ag-section .chroma .kd,
+.ag-section .chroma .kn,
+.ag-section .chroma .o,
+.ag-section .chroma .nt,
+.ag-section .chroma .nf,
+.ag-section .chroma .nb {
+  color: color-mix(in srgb, var(--ag-accent) 78%, #ffffff) !important;
 }
-.ag-hero-code pre {
-  border: 1px solid var(--ag-border);
-  box-shadow: var(--ag-shadow);
+.ag-section .chroma .s,
+.ag-section .chroma .s1,
+.ag-section .chroma .s2,
+.ag-section .chroma .se {
+  color: #8fcfa5 !important; /* calm green for strings */
+}
+.ag-section .chroma .c,
+.ag-section .chroma .c1,
+.ag-section .chroma .cm,
+.ag-section .chroma .cp {
+  color: var(--ag-text-dim) !important;
+  font-style: italic;
 }
 
 /* ---- Section scaffolding ---------------------------------------------- */
