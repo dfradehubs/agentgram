@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] - 2026-06-03
+
+### Added
+
+- **Live reconnect to an in-flight run after a page reload.** Runs already survive a client disconnect on the server; now every AG-UI event is buffered in a Redis stream (`run_events:{sessionId}`, 10-min TTL) and a new endpoint `GET /api/agents/{agentId}/sessions/{sessionId}/stream` replays what was written and continues streaming live until the run finishes. The web client detects an active run on load and reconnects, so the agent's reply appears and keeps flowing token by token instead of only showing up when complete. Falls back to session polling when there is no active run to reconnect to. Applies to 1:1 agent chat; MCP and group sessions keep their existing behaviour.
+
 ## [0.1.3] - 2026-06-03
 
 ### Fixed
