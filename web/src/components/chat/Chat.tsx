@@ -247,50 +247,6 @@ export function Chat() {
     });
   }, []);
 
-  useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-
-    const isNearBottom = () => {
-      const { scrollTop, scrollHeight, clientHeight } = container;
-      return scrollHeight - scrollTop - clientHeight < NEAR_BOTTOM_THRESHOLD_PX;
-    };
-
-    // Immediate, defensive unpin signal: produced only by the user.
-    const handleWheel = (event: WheelEvent) => {
-      if (event.deltaY < 0) pinnedRef.current = false;
-    };
-
-    // Touch drag downward moves content down = scrolling up; unpin.
-    let lastTouchY = 0;
-    const handleTouchStart = (event: TouchEvent) => {
-      lastTouchY = event.touches[0]?.clientY ?? 0;
-    };
-    const handleTouchMove = (event: TouchEvent) => {
-      const y = event.touches[0]?.clientY ?? 0;
-      if (y > lastTouchY) pinnedRef.current = false;
-      lastTouchY = y;
-    };
-
-    // Only the USER's scroll updates the pinned state. Our own programmatic
-    // scroll is ignored so it can't re-pin the view the user just left.
-    const handleScroll = () => {
-      if (isProgrammaticScrollRef.current) return;
-      pinnedRef.current = isNearBottom();
-    };
-
-    container.addEventListener("wheel", handleWheel, { passive: true });
-    container.addEventListener("touchstart", handleTouchStart, { passive: true });
-    container.addEventListener("touchmove", handleTouchMove, { passive: true });
-    container.addEventListener("scroll", handleScroll, { passive: true });
-    return () => {
-      container.removeEventListener("wheel", handleWheel);
-      container.removeEventListener("touchstart", handleTouchStart);
-      container.removeEventListener("touchmove", handleTouchMove);
-      container.removeEventListener("scroll", handleScroll);
-    };
-  }, []);
-
   // Handle loading older messages when scrolling near the top
   const handleLoadOlder = useCallback(async () => {
     if (!hasMoreMessages || isLoadingMore) return;
@@ -303,20 +259,62 @@ export function Chat() {
       prependMessages(olderMessages);
     }
   }, [hasMoreMessages, isLoadingMore, loadOlderMessages, prependMessages]);
+  // Read the latest handleLoadOlder from the scroll listener without re-attaching.
+  const handleLoadOlderRef = useRef(handleLoadOlder);
+  handleLoadOlderRef.current = handleLoadOlder;
 
-  // Trigger load-more when user scrolls near the top (independent listener,
-  // does not touch pinnedRef).
-  useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-    const handleScrollForLoadMore = () => {
-      if (container.scrollTop < LOAD_OLDER_THRESHOLD_PX) {
-        handleLoadOlder();
-      }
+  // Callback ref for the scrollable messages container. Attaching the scroll
+  // listeners here (instead of a mount-time effect) is essential: the container
+  // is rendered conditionally (EmptyState shows first, and after a reload the
+  // session restores async), so a `useEffect(() => ..., [])` would capture a
+  // null container and never re-run — leaving no listeners, so the user's scroll
+  // never unpins and streaming keeps yanking the view to the bottom.
+  const scrollCleanupRef = useRef<(() => void) | null>(null);
+  const attachScrollContainer = useCallback((node: HTMLDivElement | null) => {
+    if (scrollCleanupRef.current) {
+      scrollCleanupRef.current();
+      scrollCleanupRef.current = null;
+    }
+    scrollContainerRef.current = node;
+    if (!node) return;
+
+    const isNearBottom = () =>
+      node.scrollHeight - node.scrollTop - node.clientHeight < NEAR_BOTTOM_THRESHOLD_PX;
+
+    // Immediate, defensive unpin signal: produced only by the user.
+    const handleWheel = (event: WheelEvent) => {
+      if (event.deltaY < 0) pinnedRef.current = false;
     };
-    container.addEventListener("scroll", handleScrollForLoadMore, { passive: true });
-    return () => container.removeEventListener("scroll", handleScrollForLoadMore);
-  }, [handleLoadOlder]);
+    // Touch drag downward moves content down = scrolling up; unpin.
+    let lastTouchY = 0;
+    const handleTouchStart = (event: TouchEvent) => {
+      lastTouchY = event.touches[0]?.clientY ?? 0;
+    };
+    const handleTouchMove = (event: TouchEvent) => {
+      const y = event.touches[0]?.clientY ?? 0;
+      if (y > lastTouchY) pinnedRef.current = false;
+      lastTouchY = y;
+    };
+    // Only the USER's scroll updates the pinned state; our own programmatic
+    // scroll is ignored so it can't re-pin the view the user just left. Also
+    // triggers load-more near the top.
+    const handleScroll = () => {
+      if (isProgrammaticScrollRef.current) return;
+      pinnedRef.current = isNearBottom();
+      if (node.scrollTop < LOAD_OLDER_THRESHOLD_PX) handleLoadOlderRef.current();
+    };
+
+    node.addEventListener("wheel", handleWheel, { passive: true });
+    node.addEventListener("touchstart", handleTouchStart, { passive: true });
+    node.addEventListener("touchmove", handleTouchMove, { passive: true });
+    node.addEventListener("scroll", handleScroll, { passive: true });
+    scrollCleanupRef.current = () => {
+      node.removeEventListener("wheel", handleWheel);
+      node.removeEventListener("touchstart", handleTouchStart);
+      node.removeEventListener("touchmove", handleTouchMove);
+      node.removeEventListener("scroll", handleScroll);
+    };
+  }, []);
 
   // Follow the bottom on every streaming delta / timeline change while pinned.
   // This also fires on initial session load (the hook calls setTimeline), so a
@@ -761,7 +759,7 @@ export function Chat() {
         onCopyMessage={copyMessage}
         onRetry={retry}
         widthCls={widthCls}
-        scrollContainerRef={scrollContainerRef}
+        scrollContainerRef={attachScrollContainer}
         messagesEndRef={messagesEndRef}
         hasMoreMessages={hasMoreMessages}
         isLoadingMore={isLoadingMore}

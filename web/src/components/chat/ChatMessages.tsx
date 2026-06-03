@@ -300,7 +300,7 @@ interface ChatMessagesProps {
   // Width
   widthCls: string;
   // Scroll refs
-  scrollContainerRef: React.RefObject<HTMLDivElement | null>;
+  scrollContainerRef: React.Ref<HTMLDivElement>;
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
   // Pagination
   hasMoreMessages?: boolean;
