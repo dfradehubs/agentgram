@@ -168,6 +168,10 @@ func (h *SessionsHandler) GetSession(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Surface whether a run is currently in flight so the client can reconnect
+	// to the live stream instead of polling. Resolved at read time (ephemeral).
+	resp.Session.ActiveRun = h.store.HasActiveRun(r.Context(), sessionID)
+
 	w.Header().Set("Content-Type", "application/json")
 
 	// When no pagination is requested (limit=0), return the legacy format

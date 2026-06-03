@@ -350,6 +350,10 @@ func SetupRoutes(cfg *config.Config, registry *agents.Registry, sessionStore sto
 		subscribeHandler := handlers.NewSubscribeHandler(adminDeps.PubSubHub, sessionStore, adminDeps.GroupRepo, adminDeps.UserService, logger)
 		r.Get("/sessions/{sessionId}/subscribe", subscribeHandler.Subscribe)
 
+		// Live reconnect to an in-flight run after a page reload (SSE replay + live)
+		runStreamHandler := handlers.NewRunStreamHandler(adminDeps.RedisClient, sessionStore, registry, adminDeps.GroupRepo, adminDeps.UserService, logger)
+		r.Get("/agents/{agentId}/sessions/{sessionId}/stream", runStreamHandler.Stream)
+
 		// Agent groups (user-facing)
 		groupsHandler := handlers.NewGroupsHandler(adminDeps.GroupRepo, sessionStore, adminDeps.UserService, registry, logger)
 		r.Get("/groups", groupsHandler.ListGroups)

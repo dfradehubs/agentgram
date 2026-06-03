@@ -54,6 +54,17 @@ type SessionStore interface {
 	GetReadState(ctx context.Context, userEmail string) (map[string]int, error)
 	SetReadCount(ctx context.Context, userEmail, sessionID string, count int) error
 	SetReadStateBatch(ctx context.Context, userEmail string, state map[string]int) error
+
+	// Live run streaming (reconnect after reload)
+	// AppendRunEvent buffers a serialized AG-UI event into the session's run
+	// stream so a reconnecting client can replay it.
+	AppendRunEvent(ctx context.Context, sessionID string, data []byte) error
+	// SetActiveRun marks a run as in-flight for the session (token identifies the run).
+	SetActiveRun(ctx context.Context, sessionID, token string) error
+	// ClearActiveRun clears the active-run flag only if it still holds the given token.
+	ClearActiveRun(ctx context.Context, sessionID, token string) error
+	// HasActiveRun reports whether a run is currently in flight for the session.
+	HasActiveRun(ctx context.Context, sessionID string) bool
 }
 
 const sessionTTL = 7 * 24 * time.Hour // 7 days
@@ -595,5 +606,71 @@ func (s *RedisSessionStore) SetReadStateBatch(ctx context.Context, userEmail str
 		return fmt.Errorf("failed to set read state batch: %w", err)
 	}
 	return nil
+}
+
+// Live run streaming (reconnect after reload).
+
+const (
+	runEventsTTL    = 10 * time.Minute // matches the agent run context timeout
+	runEventsMaxLen = 5000             // cap buffered events per run
+	activeRunTTL    = 10 * time.Minute
+)
+
+// RunEventsKey is the Redis Stream key holding a session's buffered run events.
+func RunEventsKey(sessionID string) string {
+	return fmt.Sprintf("run_events:%s", sessionID)
+}
+
+// ActiveRunKey is the Redis key flagging an in-flight run for a session.
+func ActiveRunKey(sessionID string) string {
+	return fmt.Sprintf("active_run:%s", sessionID)
+}
+
+// AppendRunEvent appends a serialized AG-UI event to the session's run stream.
+func (s *RedisSessionStore) AppendRunEvent(ctx context.Context, sessionID string, data []byte) error {
+	key := RunEventsKey(sessionID)
+	if err := s.rdb.XAdd(ctx, &redis.XAddArgs{
+		Stream: key,
+		MaxLen: runEventsMaxLen,
+		Approx: true,
+		Values: map[string]interface{}{"e": data},
+	}).Err(); err != nil {
+		return fmt.Errorf("failed to append run event: %w", err)
+	}
+	// Refresh TTL so the buffer is cleaned up after the run window.
+	s.rdb.Expire(ctx, key, runEventsTTL)
+	return nil
+}
+
+// SetActiveRun marks a run as in-flight for the session.
+func (s *RedisSessionStore) SetActiveRun(ctx context.Context, sessionID, token string) error {
+	if err := s.rdb.Set(ctx, ActiveRunKey(sessionID), token, activeRunTTL).Err(); err != nil {
+		return fmt.Errorf("failed to set active run: %w", err)
+	}
+	return nil
+}
+
+// clearActiveRunScript deletes the active-run flag only if it still holds the
+// given token, so a newer run that started while this one was finishing is not
+// clobbered.
+var clearActiveRunScript = redis.NewScript(`
+if redis.call("GET", KEYS[1]) == ARGV[1] then
+	return redis.call("DEL", KEYS[1])
+end
+return 0
+`)
+
+// ClearActiveRun clears the active-run flag if it still holds the given token.
+func (s *RedisSessionStore) ClearActiveRun(ctx context.Context, sessionID, token string) error {
+	if err := clearActiveRunScript.Run(ctx, s.rdb, []string{ActiveRunKey(sessionID)}, token).Err(); err != nil && err != redis.Nil {
+		return fmt.Errorf("failed to clear active run: %w", err)
+	}
+	return nil
+}
+
+// HasActiveRun reports whether a run is currently in flight for the session.
+func (s *RedisSessionStore) HasActiveRun(ctx context.Context, sessionID string) bool {
+	n, err := s.rdb.Exists(ctx, ActiveRunKey(sessionID)).Result()
+	return err == nil && n > 0
 }
 

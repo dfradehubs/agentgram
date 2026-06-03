@@ -20,6 +20,7 @@ type SSEWriter struct {
 	sessionName string
 	mu          sync.Mutex
 	onEvent     func(event interface{}) // Optional callback for each event
+	clientGone  bool                    // true once writing to the client failed / it disconnected
 }
 
 // NewSSEWriter creates a new SSEWriter with AG-UI protocol support
@@ -64,6 +65,15 @@ func (s *SSEWriter) SetOnEvent(fn func(event interface{})) {
 	s.onEvent = fn
 }
 
+// MarkClientGone marks the client as disconnected. Subsequent events still fire
+// onEvent (so buffering/broadcast keeps working in drain mode) but are no longer
+// written to the client.
+func (s *SSEWriter) MarkClientGone() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.clientGone = true
+}
+
 // SendAGUIEvent sends an AG-UI protocol event
 func (s *SSEWriter) SendAGUIEvent(event interface{}) error {
 	data, err := json.Marshal(event)
@@ -73,11 +83,18 @@ func (s *SSEWriter) SendAGUIEvent(event interface{}) error {
 
 	s.mu.Lock()
 	onEvent := s.onEvent
+	clientGone := s.clientGone
 	s.mu.Unlock()
 
-	// Broadcast to subscribers (fire-and-forget, before writing to client)
+	// Always notify subscribers/buffer first — this must keep working even after
+	// the client disconnects, so a reconnecting client can replay the run.
 	if onEvent != nil {
 		onEvent(event)
+	}
+
+	// Client gone: it was buffered/broadcast above; skip the (failing) write.
+	if clientGone {
+		return nil
 	}
 
 	s.mu.Lock()
@@ -85,6 +102,7 @@ func (s *SSEWriter) SendAGUIEvent(event interface{}) error {
 
 	_, err = fmt.Fprintf(s.w, "data: %s\n\n", data)
 	if err != nil {
+		s.clientGone = true
 		return fmt.Errorf("failed to write AG-UI event: %w", err)
 	}
 

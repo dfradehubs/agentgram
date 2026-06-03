@@ -15,6 +15,7 @@ type Session struct {
 	LastActivity int64         `json:"last_activity"`        // Unix timestamp
 	MessageCount int           `json:"message_count"`
 	Messages     []ChatMessage `json:"messages,omitempty"`   // Only included when fetching single session
+	ActiveRun    bool          `json:"active_run,omitempty"` // True when a run is in flight (ephemeral, resolved at read time)
 }
 
 // SessionListResponse response for listing sessions

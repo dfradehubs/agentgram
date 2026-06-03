@@ -155,13 +155,12 @@ func (p *RESTProxy) proxySSEToAGUI(ctx context.Context, sse *SSEWriter, body io.
 	var contentParts []ContentPart
 	var streamErr string // non-empty if stream ended with an error
 
-	// sendToClient wraps SSE writes; once the client is gone it's a no-op.
+	// sendToClient always invokes fn so onEvent (buffer/pub-sub) keeps firing even
+	// in drain mode; SendAGUIEvent skips the actual client write once it's gone.
 	sendToClient := func(fn func() error) {
-		if clientGone {
-			return
-		}
-		if err := fn(); err != nil {
+		if err := fn(); err != nil && !clientGone {
 			clientGone = true
+			sse.MarkClientGone()
 			p.logger.Debug("client disconnected, entering drain mode")
 		}
 	}
@@ -172,6 +171,7 @@ func (p *RESTProxy) proxySSEToAGUI(ctx context.Context, sse *SSEWriter, body io.
 		case <-ctx.Done():
 			if !clientGone {
 				clientGone = true
+				sse.MarkClientGone()
 				p.logger.Debug("client context cancelled, entering drain mode")
 			}
 		default:

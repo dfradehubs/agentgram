@@ -417,11 +417,23 @@ func (h *ProxyHandler) Chat(w http.ResponseWriter, r *http.Request) {
 		metrics.ActiveStreams.WithLabelValues("agent", agentID).Inc()
 	}
 
-	// Build OnEvent callback for group sessions (broadcasts to Redis Pub/Sub)
-	var onEvent func(event interface{})
-	if session.GroupID != "" && h.hub != nil {
-		sessionID := session.SessionID
-		onEvent = func(event interface{}) {
+	// Build OnEvent callback. Every AG-UI event is buffered into the session's
+	// run stream so a client that reloads can reconnect and replay the run live.
+	// Group sessions additionally broadcast to Redis Pub/Sub for live multi-user
+	// collaboration. Both are fire-and-forget: a buffering failure must not break
+	// the run or the original client's SSE.
+	sessionID := session.SessionID
+	onEvent := func(event interface{}) {
+		data, err := json.Marshal(event)
+		if err != nil {
+			return
+		}
+		if err := h.store.AppendRunEvent(context.Background(), sessionID, data); err != nil {
+			h.logger.Debug("failed to buffer run event",
+				zap.String("session_id", sessionID),
+				zap.Error(err))
+		}
+		if session.GroupID != "" && h.hub != nil {
 			if err := h.hub.Publish(context.Background(), sessionID, event); err != nil {
 				h.logger.Debug("failed to publish event to pub/sub",
 					zap.String("session_id", sessionID),
@@ -448,6 +460,18 @@ func (h *ProxyHandler) Chat(w http.ResponseWriter, r *http.Request) {
 		}
 		agentSpan = lfTrace.StartToolCall(fmt.Sprintf("proxy:%s", agentID), spanInput)
 	}
+
+	// Mark this run as in-flight so a client that reloads can reconnect to the
+	// live stream. Cleared once the run is done — crucially AFTER the assistant
+	// reply is persisted (see post-proxy block), so the invariant holds: if no
+	// active run exists, the full reply is already saved. Uses a background
+	// context so cleanup runs even if the original client disconnected.
+	_ = h.store.SetActiveRun(ctx, session.SessionID, requestID)
+	defer func() {
+		clearCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = h.store.ClearActiveRun(clearCtx, session.SessionID, requestID)
+	}()
 
 	result, err := h.proxy.Handle(ctx, w, agent, agentReq, authHeader, proxy.HandleOptions{
 		ThreadID:    session.SessionID,
