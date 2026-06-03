@@ -1,0 +1,81 @@
+# Agentgram documentation & landing site (Hugo + Hextra theme)
+baseURL: "https://dfradehubs.github.io/agentgram/"
+title: Agentgram
+theme: hextra
+
+enableRobotsTXT: true
+enableGitInfo: false
+hasCJKLanguage: false
+
+markup:
+  highlight:
+    noClasses: false
+  goldmark:
+    renderer:
+      unsafe: true
+
+enableInlineShortcodes: true
+
+menu:
+  main:
+    - identifier: docs
+      name: Documentation
+      pageRef: /docs
+      weight: 1
+    - identifier: api
+      name: API Reference
+      url: /agentgram/api/
+      weight: 2
+    - name: Search
+      weight: 3
+      params:
+        type: search
+    - name: GitHub
+      weight: 4
+      url: "https://github.com/dfradehubs/agentgram"
+      params:
+        icon: github
+
+params:
+  description: "One chat, every agent, any protocol. A Go multiplexer that speaks REST, A2A and ADK and emits AG-UI events to a Next.js client."
+
+  navbar:
+    displayTitle: true
+    displayLogo: true
+    logo:
+      path: images/logo.svg
+    width: wide
+
+  theme:
+    default: system
+    displayToggle: true
+
+  footer:
+    enable: true
+    displayCopyright: true
+    displayPoweredBy: true
+    width: normal
+
+  displayUpdatedDate: false
+
+  search:
+    enable: true
+    type: flexsearch
+    flexsearch:
+      index: content
+      tokenize: forward
+
+  editURL:
+    enable: true
+    base: "https://github.com/dfradehubs/agentgram/edit/main/website/content"
+
+  page:
+    width: normal
+
+  toc:
+    displayTags: true
+
+  highlight:
+    copy:
+      enable: true
+      display: hover

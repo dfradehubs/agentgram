@@ -1,0 +1,1515 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "Multiplexer API for AI agents with AG-UI protocol. Connects to remote agents, handles authentication, permissions, and emits AG-UI SSE events.",
+        "title": "Agentgram API",
+        "contact": {},
+        "version": "1.0"
+    },
+    "host": "localhost:8080",
+    "basePath": "/",
+    "paths": {
+        "/api/admin/agents": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "Returns all agents with full configuration including endpoints, permissions, and health status. Requires admin role.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-agents"
+                ],
+                "summary": "List all agents (admin)",
+                "responses": {
+                    "200": {
+                        "description": "agents array",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/definitions/internal_handlers.AdminAgentResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "Creates a new agent configuration. Requires admin role. Fields id, name, protocol, and endpoint are required.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-agents"
+                ],
+                "summary": "Create a new agent (admin)",
+                "parameters": [
+                    {
+                        "description": "Agent configuration",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.AdminAgentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.AdminAgentResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/agents/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "Returns full agent configuration including endpoint, headers, permissions, and inherited permissions. Requires admin role.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-agents"
+                ],
+                "summary": "Get agent details (admin)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.AdminAgentResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "Updates an existing agent configuration. Requires admin role.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-agents"
+                ],
+                "summary": "Update an agent (admin)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Updated agent configuration",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.AdminAgentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.AdminAgentResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "Deletes an agent configuration. Requires admin role.",
+                "tags": [
+                    "admin-agents"
+                ],
+                "summary": "Delete an agent (admin)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Agent deleted"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/agents": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "Returns only the agents the authenticated user has access to. Admins see all agents.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "agents"
+                ],
+                "summary": "List agents",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.AgentListResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/agents/{agentId}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "Returns a single agent by ID. Requires access permission or admin role.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "agents"
+                ],
+                "summary": "Get agent details",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent ID",
+                        "name": "agentId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.AgentResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/agents/{agentId}/chat": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "Sends a chat request to an agent and returns a streaming SSE response with AG-UI protocol events.\nThe response is a Server-Sent Events stream (text/event-stream) containing AG-UI events:\nRUN_STARTED, TEXT_MESSAGE_START, TEXT_MESSAGE_CONTENT, TEXT_MESSAGE_END, TOOL_CALL_START, TOOL_CALL_ARGS, TOOL_CALL_END, RUN_FINISHED, RUN_ERROR.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "chat"
+                ],
+                "summary": "Chat with an agent",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent ID",
+                        "name": "agentId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Chat request with messages and optional session_id",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ChatRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "SSE stream with AG-UI events (e.g. data: {\\\"type\\\":\\\"TEXT_MESSAGE_CONTENT\\\",\\\"messageId\\\":\\\"...\\\",\\\"delta\\\":\\\"Hello\\\"})",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/agents/{agentId}/health": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "Returns the health status of a specific agent",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "agents"
+                ],
+                "summary": "Get agent health status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent ID",
+                        "name": "agentId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.HealthResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/agents/{agentId}/sessions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "Returns all sessions for the authenticated user and the specified agent",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sessions"
+                ],
+                "summary": "List sessions for an agent",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent ID",
+                        "name": "agentId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.SessionListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/agents/{agentId}/sessions/{sessionId}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "Returns a session and its messages. Supports cursor-based pagination. When limit=0 (default), returns all messages in legacy format for backward compatibility.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sessions"
+                ],
+                "summary": "Get session with messages",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent ID",
+                        "name": "agentId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Session ID (UUID)",
+                        "name": "sessionId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Number of messages to return (0 = all)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Cursor: message index to load messages before",
+                        "name": "before",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Paginated response (when limit \u003e 0)",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.SessionGetResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "Permanently deletes a session and all its messages. Only the session owner can delete it.",
+                "tags": [
+                    "sessions"
+                ],
+                "summary": "Delete a session",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent ID",
+                        "name": "agentId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Session ID (UUID)",
+                        "name": "sessionId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Session deleted"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "Updates the display name of a session. Only the session owner can rename it.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sessions"
+                ],
+                "summary": "Rename a session",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent ID",
+                        "name": "agentId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Session ID (UUID)",
+                        "name": "sessionId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "New session name",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.SessionRenameRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.Session"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/config": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "Returns feature flags and available LLM models (without API keys)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "config"
+                ],
+                "summary": "Get public configuration",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.PublicConfigResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/me": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "Returns the authenticated user's email, groups, and admin status",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "user"
+                ],
+                "summary": "Get current user info",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.UserResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/health": {
+            "get": {
+                "description": "Returns ok if the service is running",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "health"
+                ],
+                "summary": "Liveness probe",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.HealthResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/health/ready": {
+            "get": {
+                "description": "Returns ready if at least one agent is healthy. Returns 503 if no agents are loaded or all are unhealthy.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "health"
+                ],
+                "summary": "Readiness probe",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.HealthResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.HealthResponse"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "github_com_dfradehubs_agentgram-api_internal_models.AgentListResponse": {
+            "type": "object",
+            "properties": {
+                "agents": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.AgentResponse"
+                    }
+                }
+            }
+        },
+        "github_com_dfradehubs_agentgram-api_internal_models.AgentResponse": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "protocol": {
+                    "type": "string"
+                },
+                "require_github_token": {
+                    "type": "boolean"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_dfradehubs_agentgram-api_internal_models.Attachment": {
+            "type": "object",
+            "properties": {
+                "content_type": {
+                    "type": "string"
+                },
+                "data": {
+                    "description": "base64",
+                    "type": "string"
+                },
+                "filename": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_dfradehubs_agentgram-api_internal_models.ChatMessage": {
+            "type": "object",
+            "properties": {
+                "agent_id": {
+                    "description": "Which agent sent/received this message (multi-agent sessions)",
+                    "type": "string"
+                },
+                "attachments": {
+                    "description": "File attachments (images, PDFs, etc.)",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.Attachment"
+                    }
+                },
+                "broadcast_agent_ids": {
+                    "description": "For broadcast messages: which agents it was sent to",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "content": {
+                    "type": "string"
+                },
+                "content_parts": {
+                    "description": "Ordered text/tool interleaving for reconstruction",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ContentPart"
+                    }
+                },
+                "is_admin": {
+                    "description": "Whether the user who sent this message is an admin",
+                    "type": "boolean"
+                },
+                "role": {
+                    "description": "\"user\" | \"assistant\" | \"system\"",
+                    "type": "string"
+                },
+                "tool_calls": {
+                    "description": "Tool calls made during this message",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.StoredToolCall"
+                    }
+                },
+                "tool_results": {
+                    "description": "Tool results for the tool calls",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.StoredToolResult"
+                    }
+                },
+                "user_email": {
+                    "description": "Email of the user who sent this message",
+                    "type": "string"
+                },
+                "user_name": {
+                    "description": "Display name of the user who sent this message",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_dfradehubs_agentgram-api_internal_models.ChatRequest": {
+            "type": "object",
+            "properties": {
+                "group_id": {
+                    "type": "string"
+                },
+                "messages": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ChatMessage"
+                    }
+                },
+                "send_context": {
+                    "type": "boolean"
+                },
+                "session_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_dfradehubs_agentgram-api_internal_models.ContentPart": {
+            "type": "object",
+            "properties": {
+                "text": {
+                    "description": "Text content (for type=\"text\")",
+                    "type": "string"
+                },
+                "tool_index": {
+                    "description": "Index into ToolCalls (for type=\"tool_use\"); pointer so 0 is not omitted",
+                    "type": "integer"
+                },
+                "type": {
+                    "description": "\"text\" or \"tool_use\"",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_dfradehubs_agentgram-api_internal_models.HealthCheckConfig": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "endpoint": {
+                    "description": "Path appended to agent endpoint (default: /health)",
+                    "type": "string"
+                },
+                "interval_seconds": {
+                    "type": "integer"
+                },
+                "timeout_seconds": {
+                    "type": "integer"
+                },
+                "url": {
+                    "description": "Full URL (optional, overrides endpoint + path)",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_dfradehubs_agentgram-api_internal_models.HealthResponse": {
+            "type": "object",
+            "properties": {
+                "details": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_dfradehubs_agentgram-api_internal_models.InheritedPermission": {
+            "type": "object",
+            "properties": {
+                "from_group": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_dfradehubs_agentgram-api_internal_models.InheritedPerms": {
+            "type": "object",
+            "properties": {
+                "groups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.InheritedPermission"
+                    }
+                },
+                "users": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.InheritedPermission"
+                    }
+                }
+            }
+        },
+        "github_com_dfradehubs_agentgram-api_internal_models.PollingConfig": {
+            "type": "object",
+            "properties": {
+                "interval_ms": {
+                    "type": "integer"
+                },
+                "timeout_seconds": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_dfradehubs_agentgram-api_internal_models.RateLimitConfig": {
+            "type": "object",
+            "properties": {
+                "requests_per_hour": {
+                    "type": "integer"
+                },
+                "requests_per_minute": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_dfradehubs_agentgram-api_internal_models.Session": {
+            "type": "object",
+            "properties": {
+                "agent_ids": {
+                    "description": "Participating agents",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "app_name": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "description": "Unix timestamp",
+                    "type": "integer"
+                },
+                "group_id": {
+                    "description": "Agent group ID (for collaborative sessions)",
+                    "type": "string"
+                },
+                "is_multi_agent": {
+                    "description": "Whether this is a multi-agent session",
+                    "type": "boolean"
+                },
+                "last_activity": {
+                    "description": "Unix timestamp",
+                    "type": "integer"
+                },
+                "message_count": {
+                    "type": "integer"
+                },
+                "messages": {
+                    "description": "Only included when fetching single session",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ChatMessage"
+                    }
+                },
+                "session_id": {
+                    "type": "string"
+                },
+                "session_name": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_dfradehubs_agentgram-api_internal_models.SessionGetResponse": {
+            "type": "object",
+            "properties": {
+                "has_more": {
+                    "type": "boolean"
+                },
+                "messages": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ChatMessage"
+                    }
+                },
+                "next_cursor": {
+                    "description": "Message index to use as `before` for the next page",
+                    "type": "integer"
+                },
+                "session": {
+                    "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.Session"
+                }
+            }
+        },
+        "github_com_dfradehubs_agentgram-api_internal_models.SessionListResponse": {
+            "type": "object",
+            "properties": {
+                "sessions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.Session"
+                    }
+                }
+            }
+        },
+        "github_com_dfradehubs_agentgram-api_internal_models.SessionRenameRequest": {
+            "type": "object",
+            "properties": {
+                "session_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_dfradehubs_agentgram-api_internal_models.StoredToolCall": {
+            "type": "object",
+            "properties": {
+                "args": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_dfradehubs_agentgram-api_internal_models.StoredToolResult": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "response": {
+                    "type": "object",
+                    "additionalProperties": true
+                }
+            }
+        },
+        "internal_handlers.AdminAgentRequest": {
+            "type": "object",
+            "properties": {
+                "adk_app_name": {
+                    "type": "string"
+                },
+                "adk_user_id": {
+                    "type": "string"
+                },
+                "agent_card_path": {
+                    "type": "string"
+                },
+                "allowed_groups": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "allowed_users": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "category": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "endpoint": {
+                    "type": "string"
+                },
+                "forward_authorization": {
+                    "type": "boolean"
+                },
+                "headers": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "health_check": {
+                    "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.HealthCheckConfig"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "pipeline_final_agent": {
+                    "type": "string"
+                },
+                "polling": {
+                    "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.PollingConfig"
+                },
+                "protocol": {
+                    "type": "string"
+                },
+                "rate_limit": {
+                    "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.RateLimitConfig"
+                },
+                "require_github_token": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_handlers.AdminAgentResponse": {
+            "type": "object",
+            "properties": {
+                "adk_app_name": {
+                    "type": "string"
+                },
+                "adk_user_id": {
+                    "type": "string"
+                },
+                "agent_card_path": {
+                    "type": "string"
+                },
+                "allowed_groups": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "allowed_users": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "category": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "endpoint": {
+                    "type": "string"
+                },
+                "forward_authorization": {
+                    "type": "boolean"
+                },
+                "headers": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "health_check": {
+                    "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.HealthCheckConfig"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "inherited_permissions": {
+                    "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.InheritedPerms"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "pipeline_final_agent": {
+                    "type": "string"
+                },
+                "polling": {
+                    "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.PollingConfig"
+                },
+                "protocol": {
+                    "type": "string"
+                },
+                "rate_limit": {
+                    "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.RateLimitConfig"
+                },
+                "require_github_token": {
+                    "type": "boolean"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.FeatureFlags": {
+            "type": "object",
+            "properties": {
+                "summarizer_enabled": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_handlers.PublicConfigResponse": {
+            "type": "object",
+            "properties": {
+                "available_models": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_handlers.PublicLLMModel"
+                    }
+                },
+                "features": {
+                    "$ref": "#/definitions/internal_handlers.FeatureFlags"
+                }
+            }
+        },
+        "internal_handlers.PublicLLMModel": {
+            "type": "object",
+            "properties": {
+                "default": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "provider": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.UserResponse": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string"
+                },
+                "groups": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "is_admin": {
+                    "type": "boolean"
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "BearerAuth": {
+            "description": "JWT Bearer token (e.g. \"Bearer eyJhbG...\")",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        },
+        "CookieAuth": {
+            "description": "OIDC session cookie",
+            "type": "apiKey",
+            "name": "session",
+            "in": "cookie"
+        }
+    }
+}
