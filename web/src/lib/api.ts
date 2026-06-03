@@ -161,6 +161,11 @@ export function getChatEndpoint(agentId: string): string {
   return `${API_BASE_URL}/api/agents/${agentId}/chat`;
 }
 
+// URL to reconnect to an in-flight run's live SSE stream (replay + live).
+export function getRunStreamUrl(agentId: string, sessionId: string): string {
+  return `${API_BASE_URL}/api/agents/${agentId}/sessions/${sessionId}/stream`;
+}
+
 // Auth Providers API
 export interface AuthProvider {
   name: string;

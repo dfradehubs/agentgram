@@ -28,6 +28,7 @@ export interface Session {
   last_activity: number;
   message_count: number;
   messages?: Message[];
+  active_run?: boolean;        // True when a run is in flight (for live reconnect)
 }
 
 export interface SessionListResponse {

@@ -35,6 +35,10 @@ export interface UseChatReturn {
   replaceMessages: (newMessages: Message[]) => void;
   prependMessages: (olderMessages: Message[]) => void;
   isReconnecting: boolean;
+  /** Reconnect to an in-flight run (after a reload) and stream it live.
+   *  Resolves true if it attached to a stream, false if there was nothing to
+   *  reconnect to (caller should fall back to polling / loading the session). */
+  reconnectToRun: (agentId: string, sessionId: string) => Promise<boolean>;
 }
 
 /** Parameters for processing a single-agent SSE stream */
@@ -44,6 +48,9 @@ export interface SSEStreamParams {
   allMessages: Message[];
   baseTimeline: TimelineItem[];
   effectiveAgentId: string;
+  /** When true, RUN_STARTED does not fire onSessionCreated — used when
+   *  reconnecting to an existing run so it doesn't re-trigger session effects. */
+  suppressSessionCreated?: boolean;
 }
 
 /** Parameters for processing a parallel multi-agent SSE stream */

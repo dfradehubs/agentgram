@@ -180,6 +180,7 @@ export function Chat() {
     replaceMessages,
     prependMessages,
     isReconnecting: isChatReconnecting,
+    reconnectToRun,
   } = useChat({
     agentId: chatAgentId,
     agentName: chatAgentName,
@@ -354,57 +355,80 @@ export function Chat() {
   messagesRef.current = messages;
 
   // Recover an in-flight run after a page reload. When the last persisted
-  // message is from the user, a run may still be running on the server: the
-  // backend keeps the run alive even if the client disconnected and persists
-  // the full assistant reply when it finishes. So instead of firing a duplicate
-  // run, poll the session for the assistant reply. Only re-send as a last resort
-  // if nothing arrives within the timeout (the run was genuinely lost, e.g. a
-  // server restart). MCP sessions use a different fetch path and keep the old
-  // retry behaviour.
+  // message is from the user, a run may still be running on the server (the
+  // backend keeps it alive after the client disconnects). First try to RECONNECT
+  // to the live stream (replay of what was written + new tokens). If there is no
+  // active run to reconnect to (204), fall back to polling the session for the
+  // persisted reply, and only re-send as a last resort if nothing arrives. MCP
+  // sessions use a different path and keep the old retry behaviour.
   //
-  // Depends on isLoading so it starts once the session finishes loading (at
-  // session load isLoading is briefly true); the loop runs at most once per
-  // session and reads the latest messages via messagesRef.
+  // Cancellation is keyed off the session (a separate effect below), NOT off
+  // isLoading — so the reconnect (which itself toggles isLoading) is not aborted
+  // by the recovery effect re-running. The gate ref ensures recovery starts at
+  // most once per session load.
   const agentIdForRecovery = currentAgent?.id;
+  const recoveryRef = useRef<{ sessionId: string | null; cancel: () => void }>({
+    sessionId: null,
+    cancel: () => {},
+  });
+  useEffect(() => {
+    const ref = recoveryRef.current;
+    return () => {
+      ref.cancel();
+      recoveryRef.current = { sessionId: null, cancel: () => {} };
+    };
+  }, [chatSessionId]);
   useEffect(() => {
     if (!chatSessionId || isLoading || isChatReconnecting || isMCP) return;
     if (!agentIdForRecovery) return;
+    if (recoveryRef.current.sessionId === chatSessionId) return; // already handled
     const lastMsg = messagesRef.current[messagesRef.current.length - 1];
     if (!lastMsg || lastMsg.role !== "user") return;
 
     let cancelled = false;
-    let polls = 0;
     let timer: ReturnType<typeof setTimeout>;
+    recoveryRef.current = {
+      sessionId: chatSessionId,
+      cancel: () => {
+        cancelled = true;
+        clearTimeout(timer);
+      },
+    };
 
-    const poll = async () => {
-      polls += 1;
-      try {
-        const session = await fetchSession(agentIdForRecovery, chatSessionId);
+    const startPolling = () => {
+      let polls = 0;
+      const poll = async () => {
+        polls += 1;
+        try {
+          const session = await fetchSession(agentIdForRecovery, chatSessionId);
+          if (cancelled) return;
+          const serverMessages = session.messages ?? [];
+          const last = serverMessages[serverMessages.length - 1];
+          if (last && last.role === "assistant") {
+            replaceMessages(serverMessages); // run finished server-side
+            return;
+          }
+        } catch {
+          // ignore and keep polling
+        }
         if (cancelled) return;
-        const serverMessages = session.messages ?? [];
-        const last = serverMessages[serverMessages.length - 1];
-        if (last && last.role === "assistant") {
-          // Run finished server-side — show the persisted reply, no duplicate run.
-          replaceMessages(serverMessages);
+        if (polls >= RUN_RECOVERY_MAX_POLLS) {
+          retry(lastMsg); // fallback: the run was genuinely lost
           return;
         }
-      } catch {
-        // ignore and keep polling
-      }
-      if (cancelled) return;
-      if (polls >= RUN_RECOVERY_MAX_POLLS) {
-        retry(lastMsg); // fallback: the run was genuinely lost
-        return;
-      }
+        timer = setTimeout(poll, RUN_RECOVERY_POLL_MS);
+      };
       timer = setTimeout(poll, RUN_RECOVERY_POLL_MS);
     };
 
-    timer = setTimeout(poll, RUN_RECOVERY_POLL_MS);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [chatSessionId, isLoading, isChatReconnecting, isMCP, agentIdForRecovery, replaceMessages, retry]);
+    // Try live reconnect first; fall back to polling if there's no active run.
+    (async () => {
+      const reconnected = await reconnectToRun(agentIdForRecovery, chatSessionId);
+      if (cancelled || reconnected) return;
+      startPolling();
+    })();
+    // No cleanup here — cancellation is handled by the [chatSessionId] effect.
+  }, [chatSessionId, isLoading, isChatReconnecting, isMCP, agentIdForRecovery, replaceMessages, retry, reconnectToRun]);
 
   // Focus input on agent/session change
   useEffect(() => {

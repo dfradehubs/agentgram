@@ -14,7 +14,7 @@ function isValidChartData(data: unknown): data is ChartData {
     d.datasets.length > 0
   );
 }
-import { getChatEndpoint, getMCPChatEndpoint, getMultiMCPChatEndpoint } from "@/lib/api";
+import { getChatEndpoint, getMCPChatEndpoint, getMultiMCPChatEndpoint, getRunStreamUrl } from "@/lib/api";
 import { useBackgroundStreamContext } from "@/contexts/BackgroundStreamContext";
 import { reportMetric } from "@/lib/telemetry";
 
@@ -84,6 +84,9 @@ export function useChat({
   userName,
 }: UseChatOptions): UseChatReturn {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
+  // Latest messages, readable inside callbacks without adding a dependency.
+  const messagesStateRef = useRef(messages);
+  messagesStateRef.current = messages;
   const [timeline, setTimeline] = useState<TimelineItem[]>(
     buildTimelineFromMessages(initialMessages)
   );
@@ -118,7 +121,7 @@ export function useChat({
   // Extracted SSE stream processing for single-agent chat.
   // Called from both sendMessage and resume logic.
   const processSSEStream = useCallback((params: SSEStreamParams) => {
-    const { reader, gen, allMessages, baseTimeline, effectiveAgentId } = params;
+    const { reader, gen, allMessages, baseTimeline, effectiveAgentId, suppressSessionCreated } = params;
 
     const streamDecoder = createStreamDecoder();
     let buffer = "";
@@ -171,7 +174,9 @@ export function useChat({
             case "RUN_STARTED":
               if (event.threadId) {
                 activeSessionIdRef.current = event.threadId;
-                onSessionCreated?.(event.threadId, event.sessionName as string | undefined);
+                if (!suppressSessionCreated) {
+                  onSessionCreated?.(event.threadId, event.sessionName as string | undefined);
+                }
               }
               break;
 
@@ -1042,6 +1047,60 @@ export function useChat({
     setTimeline(buildTimelineFromMessages(newMessages));
   }, [isLoading]);
 
+  // Reconnect to an in-flight run after a page reload: opens the server's
+  // replay+live SSE stream and feeds it through the same render pipeline as a
+  // normal chat. Returns false if there's nothing to reconnect to (204), so the
+  // caller can fall back to polling / loading the persisted session.
+  const reconnectToRun = useCallback(async (reconnectAgentId: string, reconnectSessionId: string): Promise<boolean> => {
+    if (isLoadingRef.current) return false;
+
+    const controller = new AbortController();
+    let response: Response;
+    try {
+      response = await fetch(getRunStreamUrl(reconnectAgentId, reconnectSessionId), {
+        method: "GET",
+        signal: controller.signal,
+      });
+    } catch {
+      return false;
+    }
+    // 204 = nothing buffered and no active run → fall back.
+    if (response.status === 204 || !response.ok || !response.body) {
+      return false;
+    }
+
+    const reader = response.body.getReader();
+    const gen = ++requestGenRef.current;
+    abortRef.current = controller;
+    readerRef.current = reader;
+    setIsLoading(true);
+    setActiveStreamAgentIds([reconnectAgentId]);
+
+    const baseMessages = messagesStateRef.current; // ends in the user message
+    const baseTimeline = buildTimelineFromMessages(baseMessages);
+
+    try {
+      await processSSEStream({
+        reader,
+        gen,
+        allMessages: baseMessages,
+        baseTimeline,
+        effectiveAgentId: reconnectAgentId,
+        suppressSessionCreated: true,
+      });
+      return true;
+    } catch (err) {
+      if ((err as Error).name === "AbortError") return true;
+      return false; // caller falls back to polling / GET session
+    } finally {
+      if (requestGenRef.current === gen) {
+        abortRef.current = null;
+        readerRef.current = null;
+        setIsLoading(false);
+      }
+    }
+  }, [processSSEStream]);
+
   // Prepend older messages (for pagination / load-more)
   const prependMessages = useCallback((olderMessages: Message[]) => {
     if (isLoading) return; // Don't modify while streaming
@@ -1052,5 +1111,5 @@ export function useChat({
     });
   }, [isLoading]);
 
-  return { messages, timeline, input, setInput, sendMessage, sendMultiple, activeStreamAgentIds, isLoading, error, errorType, stop, retry, replaceMessages, prependMessages, isReconnecting };
+  return { messages, timeline, input, setInput, sendMessage, sendMultiple, activeStreamAgentIds, isLoading, error, errorType, stop, retry, replaceMessages, prependMessages, isReconnecting, reconnectToRun };
 }
