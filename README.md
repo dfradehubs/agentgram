@@ -184,6 +184,10 @@ The client runs the OAuth + DCR flow automatically. Then ask away:
 Ask logs-agent for the errors in the last 30 minutes of the payment-api service.
 ```
 
+The endpoint exposes both your **agents** (`ask_<agent-id>`) and the **tools of any MCP server
+registered in Agentgram** that you're allowed to use — Agentgram aggregates those upstream servers
+and re-exposes their tools, all filtered by your permissions.
+
 Full guide (client setup, automations, tuning): [docs/MCP.md](docs/MCP.md).
 
 ## Tech stack

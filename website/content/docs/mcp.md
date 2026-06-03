@@ -46,8 +46,14 @@ registers itself via DCR). In Claude Code, run `/mcp`, select `agentgram`, and s
 
 ## Use it
 
-Tools are generated dynamically from the agents you have access to. Each agent becomes an
-`ask_<agent-id>` tool:
+The exposed toolset is generated dynamically from what **you** are allowed to use:
+
+- **One `ask_<agent-id>` tool per agent** you have access to.
+- **The tools of every MCP server registered in Agentgram** (from the admin panel) that you have
+  permission to use. Agentgram aggregates those upstream MCP servers and re-exposes their tools
+  through its own endpoint, so a single connection gives your client both the agents and the tools.
+
+Everything is filtered by your identity and permissions — you only ever see what you're entitled to.
 
 ```text
 Ask logs-agent for the errors in the last 30 minutes of the payment-api service.
