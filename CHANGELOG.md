@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.1] - 2026-06-03
+
+### Fixed
+
+- Live reconnect after a real page reload (F5) now works. Two bugs prevented it: the recovery effect ran before the restored session's messages had loaded and never retried (messages was not a dependency), and the per-session run-event buffer was reused across runs, so the replay hit a previous run's `RUN_FINISHED` and closed before the current run's events. The buffer is now reset at run start and recovery fires once messages arrive.
+
 ## [0.2.0] - 2026-06-03
 
 ### Added
