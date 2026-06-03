@@ -356,7 +356,13 @@ export function useChat({
       abortRef.current &&
       readerRef.current &&
       activeSessionIdRef.current &&
-      isLoadingRef.current
+      isLoadingRef.current &&
+      // Only MCP streams are kept alive in the browser via the background stream.
+      // Single-agent runs are buffered server-side (Redis stream) and resumed on
+      // return via reconnectToRun, which replays the whole run cleanly — reusing
+      // the partial background reader here corrupted the message (showed only the
+      // tail and mislabelled it as "thinking").
+      mcpConfig
     ) {
       transferStream({
         sessionId: activeSessionIdRef.current,
@@ -366,11 +372,13 @@ export function useChat({
         controller: abortRef.current,
         reader: readerRef.current,
         baseMessages: streamMessagesRef.current,
-        streamType: mcpConfig ? "mcp" : "single",
-        isMultiAgent: mcpConfig ? mcpConfig.serverIds.length > 1 : false,
+        streamType: "mcp",
+        isMultiAgent: mcpConfig.serverIds.length > 1,
       });
       reportMetric({ name: "background_transfer", labels: { agent_id: streamAgentIdRef.current }, value: 1 });
     } else {
+      // Abort the fetch; the server keeps the run alive (drain mode) and buffers
+      // it, so returning to the session reconnects live via reconnectToRun.
       abortRef.current?.abort();
     }
     // Also abort any parallel streams
