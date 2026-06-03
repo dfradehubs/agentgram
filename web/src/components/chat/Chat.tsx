@@ -348,12 +348,6 @@ export function Chat() {
     pinnedRef.current = true;
   }, [chatSessionId, sessionResetKey]);
 
-  // Always-current snapshot of messages, read inside the recovery loop below
-  // without making it a dependency (which would restart/cancel it on every
-  // streaming delta).
-  const messagesRef = useRef(messages);
-  messagesRef.current = messages;
-
   // Recover an in-flight run after a page reload. When the last persisted
   // message is from the user, a run may still be running on the server (the
   // backend keeps it alive after the client disconnects). First try to RECONNECT
@@ -382,7 +376,10 @@ export function Chat() {
     if (!chatSessionId || isLoading || isChatReconnecting || isMCP) return;
     if (!agentIdForRecovery) return;
     if (recoveryRef.current.sessionId === chatSessionId) return; // already handled
-    const lastMsg = messagesRef.current[messagesRef.current.length - 1];
+    // Read `messages` directly (it's a dependency) so this re-evaluates once the
+    // session's messages finish loading after a reload — at first run they may
+    // still be empty, and the recovery must not be missed.
+    const lastMsg = messages[messages.length - 1];
     if (!lastMsg || lastMsg.role !== "user") return;
 
     let cancelled = false;
@@ -428,7 +425,7 @@ export function Chat() {
       startPolling();
     })();
     // No cleanup here — cancellation is handled by the [chatSessionId] effect.
-  }, [chatSessionId, isLoading, isChatReconnecting, isMCP, agentIdForRecovery, replaceMessages, retry, reconnectToRun]);
+  }, [chatSessionId, messages, isLoading, isChatReconnecting, isMCP, agentIdForRecovery, replaceMessages, retry, reconnectToRun]);
 
   // Focus input on agent/session change
   useEffect(() => {
