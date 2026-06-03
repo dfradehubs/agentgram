@@ -22,9 +22,9 @@ layout: hextra-home
 </div>
 
 <div class="hx:mb-6">
-{{< hextra/hero-button text="Get Started" link="docs/" >}}
+{{< hextra/hero-button text="Get Started" link="/docs/" >}}
 &nbsp;
-{{< hextra/hero-button text="View on GitHub" link="https://github.com/dfradehubs/agentgram" style="background: transparent; border: 1px solid rgba(120,120,120,0.4);" >}}
+{{< hextra/hero-button text="View on GitHub" link="https://github.com/dfradehubs/agentgram" style="background:#27272a;border:1px solid #3f3f46;" >}}
 </div>
 
 <div class="hx:mt-6"></div>
