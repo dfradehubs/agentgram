@@ -61,6 +61,27 @@ A2A peer or a Google ADK app.
 - 📊 **Built-in observability** — usage metrics, latency and cost dashboards out of the box.
 - 🧰 **Admin panel** — register agents, MCP servers, LLMs and permissions from the UI.
 
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><img src="website/static/images/screenshots/chat-single.webp" alt="Single-agent chat" /></td>
+    <td width="50%"><img src="website/static/images/screenshots/chat-multi-agent.webp" alt="Multi-agent chat" /></td>
+  </tr>
+  <tr>
+    <td align="center"><sub><b>Single-agent chat</b> — streaming AG-UI responses with tool calls.</sub></td>
+    <td align="center"><sub><b>Multi-agent chat</b> — several agents in one thread, sharing context.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="website/static/images/screenshots/admin-agents.webp" alt="Admin panel" /></td>
+    <td width="50%"><img src="website/static/images/screenshots/admin-observability.webp" alt="Observability dashboard" /></td>
+  </tr>
+  <tr>
+    <td align="center"><sub><b>Admin panel</b> — register agents, MCP servers, LLMs and permissions.</sub></td>
+    <td align="center"><sub><b>Observability</b> — usage, latency and cost dashboards out of the box.</sub></td>
+  </tr>
+</table>
+
 ## Architecture
 
 ```
