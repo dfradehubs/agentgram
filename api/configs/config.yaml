@@ -63,6 +63,13 @@ mcp_server:
   issuer: "${ENV:MCP_SERVER_ISSUER}"
   client_id: "${ENV:MCP_SERVER_CLIENT_ID}"
   dcr_mode: "${ENV:MCP_SERVER_DCR_MODE}"
+  # Extra OAuth scopes advertised to MCP clients on top of the required base set
+  # (openid, profile, email, groups, offline_access). Typically a Keycloak client
+  # scope carrying an audience mapper, so strict clients like Claude — which only
+  # request scopes advertised in the metadata — obtain a token whose `aud` the
+  # upstream agent (e.g. ADK) accepts. Omit if you don't enforce audience upstream.
+  # extra_scopes:
+  #   - "mcp:custom-audience"
   tool_call_timeout: "2m"
   max_tool_call_rounds: 10
 
