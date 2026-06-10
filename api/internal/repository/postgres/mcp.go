@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/dfradehubs/agentgram-api/internal/models"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -32,10 +33,12 @@ func (r *MCPServerRepository) Create(ctx context.Context, server *models.MCPServ
 
 	_, err = tx.Exec(ctx,
 		`INSERT INTO mcp_servers (id, name, description, transport, url, headers, forward_auth,
-		  auth_type, oauth2_auth_server_url, oauth2_client_id, oauth2_client_secret, oauth2_scopes, bearer_token)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+		  auth_type, oauth2_auth_server_url, oauth2_client_id, oauth2_client_secret, oauth2_scopes, bearer_token,
+		  auth_header_name)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
 		server.ID, server.Name, server.Description, server.Transport, server.URL, headersJSON, server.ForwardAuth,
 		authType, server.OAuth2AuthServerURL, server.OAuth2ClientID, server.OAuth2ClientSecret, server.OAuth2Scopes, server.BearerToken,
+		server.AuthHeaderName,
 	)
 	if err != nil {
 		return fmt.Errorf("insert mcp server: %w", err)
@@ -47,6 +50,9 @@ func (r *MCPServerRepository) Create(ctx context.Context, server *models.MCPServ
 	if err := insertPermissions(ctx, tx, "mcp_allowed_groups", "mcp_server_id", server.ID, "group_name", server.AllowedGroups); err != nil {
 		return err
 	}
+	if err := insertMCPAPIKeyRules(ctx, tx, server.ID, server.APIKeyRules); err != nil {
+		return err
+	}
 
 	return tx.Commit(ctx)
 }
@@ -56,10 +62,12 @@ func (r *MCPServerRepository) Get(ctx context.Context, id string) (*models.MCPSe
 	var headersJSON []byte
 	err := r.pool.QueryRow(ctx,
 		`SELECT id, name, description, transport, url, headers, forward_auth, created_at, updated_at,
-		        auth_type, oauth2_auth_server_url, oauth2_client_id, oauth2_client_secret, oauth2_scopes, bearer_token
+		        auth_type, oauth2_auth_server_url, oauth2_client_id, oauth2_client_secret, oauth2_scopes, bearer_token,
+		        auth_header_name
 		 FROM mcp_servers WHERE id = $1`, id,
 	).Scan(&s.ID, &s.Name, &s.Description, &s.Transport, &s.URL, &headersJSON, &s.ForwardAuth, &s.CreatedAt, &s.UpdatedAt,
-		&s.AuthType, &s.OAuth2AuthServerURL, &s.OAuth2ClientID, &s.OAuth2ClientSecret, &s.OAuth2Scopes, &s.BearerToken)
+		&s.AuthType, &s.OAuth2AuthServerURL, &s.OAuth2ClientID, &s.OAuth2ClientSecret, &s.OAuth2Scopes, &s.BearerToken,
+		&s.AuthHeaderName)
 	if err != nil {
 		return nil, fmt.Errorf("get mcp server: %w", err)
 	}
@@ -82,13 +90,20 @@ func (r *MCPServerRepository) Get(ctx context.Context, id string) (*models.MCPSe
 	s.AllowedUsers = users
 	s.AllowedGroups = groups
 
+	rules, err := r.ListAPIKeyRules(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	s.APIKeyRules = rules
+
 	return &s, nil
 }
 
 func (r *MCPServerRepository) List(ctx context.Context) ([]*models.MCPServer, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT id, name, description, transport, url, headers, forward_auth, created_at, updated_at,
-		        auth_type, oauth2_auth_server_url, oauth2_client_id, oauth2_client_secret, oauth2_scopes, bearer_token
+		        auth_type, oauth2_auth_server_url, oauth2_client_id, oauth2_client_secret, oauth2_scopes, bearer_token,
+		        auth_header_name
 		 FROM mcp_servers ORDER BY name`,
 	)
 	if err != nil {
@@ -101,7 +116,8 @@ func (r *MCPServerRepository) List(ctx context.Context) ([]*models.MCPServer, er
 		var s models.MCPServer
 		var headersJSON []byte
 		if err := rows.Scan(&s.ID, &s.Name, &s.Description, &s.Transport, &s.URL, &headersJSON, &s.ForwardAuth, &s.CreatedAt, &s.UpdatedAt,
-			&s.AuthType, &s.OAuth2AuthServerURL, &s.OAuth2ClientID, &s.OAuth2ClientSecret, &s.OAuth2Scopes, &s.BearerToken); err != nil {
+			&s.AuthType, &s.OAuth2AuthServerURL, &s.OAuth2ClientID, &s.OAuth2ClientSecret, &s.OAuth2Scopes, &s.BearerToken,
+			&s.AuthHeaderName); err != nil {
 			return nil, fmt.Errorf("scan mcp server: %w", err)
 		}
 		if len(headersJSON) > 0 {
@@ -122,6 +138,12 @@ func (r *MCPServerRepository) List(ctx context.Context) ([]*models.MCPServer, er
 		s.AllowedUsers = users
 		s.AllowedGroups = groups
 
+		rules, err := r.ListAPIKeyRules(ctx, s.ID)
+		if err != nil {
+			return nil, err
+		}
+		s.APIKeyRules = rules
+
 		servers = append(servers, &s)
 	}
 	return servers, nil
@@ -140,10 +162,11 @@ func (r *MCPServerRepository) Update(ctx context.Context, server *models.MCPServ
 	tag, err := tx.Exec(ctx,
 		`UPDATE mcp_servers SET name=$2, description=$3, transport=$4, url=$5, headers=$6, forward_auth=$7,
 		  auth_type=$8, oauth2_auth_server_url=$9, oauth2_client_id=$10, oauth2_client_secret=$11, oauth2_scopes=$12,
-		  bearer_token=$13, updated_at=NOW()
+		  bearer_token=$13, auth_header_name=$14, updated_at=NOW()
 		 WHERE id=$1`,
 		server.ID, server.Name, server.Description, server.Transport, server.URL, headersJSON, server.ForwardAuth,
 		authType, server.OAuth2AuthServerURL, server.OAuth2ClientID, server.OAuth2ClientSecret, server.OAuth2Scopes, server.BearerToken,
+		server.AuthHeaderName,
 	)
 	if err != nil {
 		return fmt.Errorf("update mcp server: %w", err)
@@ -241,6 +264,59 @@ func (r *MCPServerRepository) DeleteScopeMapping(ctx context.Context, id string)
 	}
 	if tag.RowsAffected() == 0 {
 		return fmt.Errorf("scope mapping not found: %s", id)
+	}
+	return nil
+}
+
+// ListAPIKeyRules returns the bearer-mode API key rules of an MCP server,
+// ordered by position (group precedence) then subject for determinism.
+func (r *MCPServerRepository) ListAPIKeyRules(ctx context.Context, serverID string) ([]models.MCPAPIKeyRule, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT id, mcp_server_id, subject_type, subject, api_key, position
+		 FROM mcp_api_key_rules WHERE mcp_server_id = $1 ORDER BY position, subject`, serverID)
+	if err != nil {
+		return nil, fmt.Errorf("list mcp api key rules: %w", err)
+	}
+	defer rows.Close()
+
+	var rules []models.MCPAPIKeyRule
+	for rows.Next() {
+		var rule models.MCPAPIKeyRule
+		if err := rows.Scan(&rule.ID, &rule.MCPServerID, &rule.SubjectType, &rule.Subject, &rule.APIKey, &rule.Position); err != nil {
+			return nil, fmt.Errorf("scan mcp api key rule: %w", err)
+		}
+		rules = append(rules, rule)
+	}
+	return rules, rows.Err()
+}
+
+// ReplaceAPIKeyRules atomically replaces all API key rules of an MCP server.
+func (r *MCPServerRepository) ReplaceAPIKeyRules(ctx context.Context, serverID string, rules []models.MCPAPIKeyRule) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, `DELETE FROM mcp_api_key_rules WHERE mcp_server_id = $1`, serverID); err != nil {
+		return fmt.Errorf("delete mcp api key rules: %w", err)
+	}
+	if err := insertMCPAPIKeyRules(ctx, tx, serverID, rules); err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
+}
+
+func insertMCPAPIKeyRules(ctx context.Context, tx pgx.Tx, serverID string, rules []models.MCPAPIKeyRule) error {
+	for i, rule := range rules {
+		_, err := tx.Exec(ctx,
+			`INSERT INTO mcp_api_key_rules (mcp_server_id, subject_type, subject, api_key, position)
+			 VALUES ($1,$2,$3,$4,$5)`,
+			serverID, rule.SubjectType, rule.Subject, rule.APIKey, i)
+		if err != nil {
+			return fmt.Errorf("insert mcp api key rule: %w", err)
+		}
 	}
 	return nil
 }

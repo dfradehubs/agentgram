@@ -169,11 +169,15 @@ export interface CustomFormatConfig {
   request_content_type?: string;
 }
 
-export interface AgentApiKeyRule {
+export interface ApiKeyRule {
   subject_type: "user" | "group";
   subject: string;
   api_key: string;
 }
+
+// Agent and MCP servers share the same per user/group API key rule shape.
+export type AgentApiKeyRule = ApiKeyRule;
+export type MCPApiKeyRule = ApiKeyRule;
 
 export interface AdminAgent {
   id: string;
@@ -224,6 +228,8 @@ export interface AdminMCPServer {
   oauth2_client_secret?: string;
   oauth2_scopes?: string;
   bearer_token?: string;
+  auth_header_name?: string;
+  api_key_rules?: MCPApiKeyRule[];
 }
 
 export interface MCPOAuth2ScopeMapping {
