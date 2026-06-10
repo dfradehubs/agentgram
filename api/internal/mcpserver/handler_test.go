@@ -5,7 +5,59 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/dfradehubs/agentgram-api/internal/config"
 )
+
+// TestSupportedScopes_AppendsExtraScopes guards the audience fix: deployments
+// add a Keycloak client scope carrying an audience mapper (e.g. "mcp:custom-audience")
+// via mcp_server.extra_scopes, and it MUST be advertised on top of the required
+// base set so strict clients like Claude request it. Without the advertised
+// scope the upstream agent (ADK) rejects the forwarded token with 401.
+func TestSupportedScopes_AppendsExtraScopes(t *testing.T) {
+	h := &Handler{cfg: &config.Config{}}
+	h.cfg.MCPServer.ExtraScopes = []string{"mcp:custom-audience", "email"} // "email" is a dup of a base scope
+
+	got := h.supportedScopes()
+
+	// Base scopes are always present.
+	for _, base := range mcpBaseScopes {
+		if !contains(got, base) {
+			t.Errorf("supportedScopes() = %v, missing required base scope %q", got, base)
+		}
+	}
+	// The extra scope is advertised.
+	if !contains(got, "mcp:custom-audience") {
+		t.Errorf("supportedScopes() = %v, missing extra scope %q", got, "mcp:custom-audience")
+	}
+	// Duplicates are dropped: "email" must appear exactly once.
+	if n := count(got, "email"); n != 1 {
+		t.Errorf("scope %q appears %d times, want 1 (duplicates must be dropped)", "email", n)
+	}
+}
+
+// TestSupportedScopes_NilConfig guards against a nil cfg (used by lightweight
+// handler tests) panicking on the extra-scopes lookup.
+func TestSupportedScopes_NilConfig(t *testing.T) {
+	h := &Handler{}
+	if got := h.supportedScopes(); len(got) != len(mcpBaseScopes) {
+		t.Errorf("supportedScopes() with nil cfg = %v, want the base set %v", got, mcpBaseScopes)
+	}
+}
+
+func contains(xs []string, x string) bool {
+	return count(xs, x) > 0
+}
+
+func count(xs []string, x string) int {
+	n := 0
+	for _, v := range xs {
+		if v == x {
+			n++
+		}
+	}
+	return n
+}
 
 // TestHandleResourceMetadata_AdvertisesSelfAsAuthorizationServer guards the DCR
 // fix: oauth-protected-resource MUST advertise this server's own host as the

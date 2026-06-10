@@ -78,6 +78,7 @@ type MCPServerConfig struct {
 	Issuer            string        `yaml:"issuer"`               // Independent Keycloak issuer for MCP server. Defaults to Auth.Keycloak.Issuer
 	ClientID          string        `yaml:"client_id"`            // Keycloak client ID for MCP clients (e.g. "agentgram-mcp")
 	DCRMode           string        `yaml:"dcr_mode"`             // Dynamic Client Registration mode: "static" (canned response), "upstream" (Keycloak DCR), or "disabled"
+	ExtraScopes       []string      `yaml:"extra_scopes"`         // Extra OAuth scopes advertised to MCP clients on top of the required base set. Typically a Keycloak client scope with an audience mapper (e.g. "mcp:custom-audience") so strict clients like Claude get a token whose aud the upstream agent accepts.
 	ToolCallTimeout   string        `yaml:"tool_call_timeout"`    // Max duration for a single MCP tool call (e.g. "2m", "5m"). Default: "2m"
 	MaxToolCallRounds int           `yaml:"max_tool_call_rounds"` // Max LLM ↔ tool iterations per chat request. Default: 10
 	StaticTokens      []StaticToken `yaml:"static_tokens"`        // Service-account tokens that bypass Keycloak (e.g. internal automation)
@@ -95,15 +96,15 @@ type StaticToken struct {
 
 // AuthConfig holds authentication configuration with nested providers
 type AuthConfig struct {
-	Enabled       bool     `yaml:"enabled"`
-	SessionMaxAge int      `yaml:"session_max_age"` // seconds, default 86400 (24h)
-	CookieSecure  bool     `yaml:"cookie_secure"`
-	AdminGroups   []string `yaml:"admin_groups"`
-	AdminUsers    []string `yaml:"admin_users"`
-	Keycloak      KeycloakConfig      `yaml:"keycloak"`
-	GitHub        GitHubOAuthConfig   `yaml:"github"`
-	Google        GoogleOAuthConfig   `yaml:"google"`
-	Basic         BasicAuthConfig     `yaml:"basic"`
+	Enabled       bool              `yaml:"enabled"`
+	SessionMaxAge int               `yaml:"session_max_age"` // seconds, default 86400 (24h)
+	CookieSecure  bool              `yaml:"cookie_secure"`
+	AdminGroups   []string          `yaml:"admin_groups"`
+	AdminUsers    []string          `yaml:"admin_users"`
+	Keycloak      KeycloakConfig    `yaml:"keycloak"`
+	GitHub        GitHubOAuthConfig `yaml:"github"`
+	Google        GoogleOAuthConfig `yaml:"google"`
+	Basic         BasicAuthConfig   `yaml:"basic"`
 }
 
 // KeycloakConfig holds Keycloak OIDC configuration
@@ -132,8 +133,8 @@ type GoogleOAuthConfig struct {
 
 // BasicAuthConfig holds basic auth configuration
 type BasicAuthConfig struct {
-	Enabled   bool              `yaml:"enabled"`
-	SeedUsers []BasicSeedUser   `yaml:"seed_users"` // Bootstrap users created on startup
+	Enabled   bool            `yaml:"enabled"`
+	SeedUsers []BasicSeedUser `yaml:"seed_users"` // Bootstrap users created on startup
 }
 
 // BasicSeedUser represents a user to seed on startup

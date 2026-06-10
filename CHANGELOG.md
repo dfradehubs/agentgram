@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.3] - 2026-06-10
+
+### Fixed
+
+- MCP OAuth metadata now advertises a configurable set of extra scopes (`mcp_server.extra_scopes`) on top of the required base set, surfaced in both `oauth-protected-resource` (RFC 9728) and `oauth-authorization-server` (RFC 8414). Strict MCP clients request only the scopes advertised in the metadata, so an audience-mapper client scope was never requested and the upstream agent rejected the forwarded token with `401`. Deployments that enforce a token audience on the agent can now advertise their audience scope and have clients include it, while the gateway keeps a curated base scope set instead of exposing every realm scope.
+
 ## [0.2.2] - 2026-06-03
 
 ### Fixed

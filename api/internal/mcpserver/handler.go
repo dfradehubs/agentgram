@@ -147,11 +147,41 @@ func (h *Handler) HandleSessionTerminate(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusOK)
 }
 
-// mcpSupportedScopes is the scope set advertised to MCP clients via both
+// mcpBaseScopes is the scope set always advertised to MCP clients via both
 // oauth-protected-resource (RFC 9728) and oauth-authorization-server (RFC 8414).
 // Kept in one place so both metadata endpoints stay in sync — clients rely on
 // the AS metadata for scopes_supported, so any drift breaks authorization UX.
-var mcpSupportedScopes = []string{"openid", "profile", "email", "groups", "offline_access"}
+// These are required for the gateway to work: groups drives permissions and
+// email drives identity. Deployments add their own scopes via
+// mcp_server.extra_scopes (see supportedScopes).
+var mcpBaseScopes = []string{"openid", "profile", "email", "groups", "offline_access"}
+
+// supportedScopes returns the scopes advertised to MCP clients: the required
+// base set plus any deployment-specific extras from mcp_server.extra_scopes.
+// The common extra is a Keycloak client scope carrying an audience mapper
+// (e.g. "mcp:custom-audience") so that strict clients like Claude — which only
+// request scopes advertised in the metadata — get a token whose `aud` the
+// upstream agent (ADK) accepts. Duplicates are dropped so a redundant base
+// scope in config doesn't appear twice.
+func (h *Handler) supportedScopes() []string {
+	var extra []string
+	if h.cfg != nil {
+		extra = h.cfg.MCPServer.ExtraScopes
+	}
+	scopes := make([]string, 0, len(mcpBaseScopes)+len(extra))
+	seen := make(map[string]struct{}, len(mcpBaseScopes)+len(extra))
+	for _, s := range append(append([]string{}, mcpBaseScopes...), extra...) {
+		if s == "" {
+			continue
+		}
+		if _, dup := seen[s]; dup {
+			continue
+		}
+		seen[s] = struct{}{}
+		scopes = append(scopes, s)
+	}
+	return scopes
+}
 
 // authServerMetadataTimeout bounds the upstream fetch to the Keycloak openid-configuration.
 const authServerMetadataTimeout = 5 * time.Second
@@ -199,7 +229,7 @@ func (h *Handler) HandleResourceMetadata(w http.ResponseWriter, r *http.Request)
 	metadata := map[string]interface{}{
 		"resource":              resource,
 		"authorization_servers": []string{resource},
-		"scopes_supported":      mcpSupportedScopes,
+		"scopes_supported":      h.supportedScopes(),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -238,8 +268,8 @@ func (h *Handler) HandleAuthServerMetadata(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	metadata["scopes_supported"] = mcpSupportedScopes
-	
+	metadata["scopes_supported"] = h.supportedScopes()
+
 	// Configure the Dynamic Client Registration (DCR - RFC 7591) based on selected mode
 	switch h.cfg.MCPServer.DCRMode {
 	case "upstream":
@@ -302,7 +332,7 @@ func (h *Handler) HandleClientRegistration(w http.ResponseWriter, r *http.Reques
 		"grant_types":                []string{"authorization_code", "refresh_token"},
 		"response_types":             []string{"code"},
 		"token_endpoint_auth_method": "none",
-		"scope":                      strings.Join(mcpSupportedScopes, " "),
+		"scope":                      strings.Join(h.supportedScopes(), " "),
 		"application_type":           "native",
 	}
 
@@ -893,4 +923,3 @@ func (s *sseCapture) Flush() {
 func (s *sseCapture) String() string {
 	return s.buf.String()
 }
-
