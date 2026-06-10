@@ -60,7 +60,9 @@ type MCPAPIKeyRule struct {
 	SubjectType string `json:"subject_type"` // "user" | "group"
 	Subject     string `json:"subject"`
 	APIKey      string `json:"api_key"`
-	Position    int    `json:"position,omitempty"`
+	// Priority orders group rules: lower is evaluated first (ASC). A user-exact
+	// rule always wins over group rules regardless of priority.
+	Priority int `json:"priority"`
 }
 
 // MCPOAuth2ScopeMapping maps an Agentgram group to additional OAuth2 scopes for an MCP server.

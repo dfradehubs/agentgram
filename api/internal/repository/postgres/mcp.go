@@ -272,8 +272,8 @@ func (r *MCPServerRepository) DeleteScopeMapping(ctx context.Context, id string)
 // ordered by position (group precedence) then subject for determinism.
 func (r *MCPServerRepository) ListAPIKeyRules(ctx context.Context, serverID string) ([]models.MCPAPIKeyRule, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, mcp_server_id, subject_type, subject, api_key, position
-		 FROM mcp_api_key_rules WHERE mcp_server_id = $1 ORDER BY position, subject`, serverID)
+		`SELECT id, mcp_server_id, subject_type, subject, api_key, priority
+		 FROM mcp_api_key_rules WHERE mcp_server_id = $1 ORDER BY priority, subject`, serverID)
 	if err != nil {
 		return nil, fmt.Errorf("list mcp api key rules: %w", err)
 	}
@@ -282,7 +282,7 @@ func (r *MCPServerRepository) ListAPIKeyRules(ctx context.Context, serverID stri
 	var rules []models.MCPAPIKeyRule
 	for rows.Next() {
 		var rule models.MCPAPIKeyRule
-		if err := rows.Scan(&rule.ID, &rule.MCPServerID, &rule.SubjectType, &rule.Subject, &rule.APIKey, &rule.Position); err != nil {
+		if err := rows.Scan(&rule.ID, &rule.MCPServerID, &rule.SubjectType, &rule.Subject, &rule.APIKey, &rule.Priority); err != nil {
 			return nil, fmt.Errorf("scan mcp api key rule: %w", err)
 		}
 		rules = append(rules, rule)
@@ -309,11 +309,11 @@ func (r *MCPServerRepository) ReplaceAPIKeyRules(ctx context.Context, serverID s
 }
 
 func insertMCPAPIKeyRules(ctx context.Context, tx pgx.Tx, serverID string, rules []models.MCPAPIKeyRule) error {
-	for i, rule := range rules {
+	for _, rule := range rules {
 		_, err := tx.Exec(ctx,
-			`INSERT INTO mcp_api_key_rules (mcp_server_id, subject_type, subject, api_key, position)
+			`INSERT INTO mcp_api_key_rules (mcp_server_id, subject_type, subject, api_key, priority)
 			 VALUES ($1,$2,$3,$4,$5)`,
-			serverID, rule.SubjectType, rule.Subject, rule.APIKey, i)
+			serverID, rule.SubjectType, rule.Subject, rule.APIKey, rule.Priority)
 		if err != nil {
 			return fmt.Errorf("insert mcp api key rule: %w", err)
 		}

@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-06-10
+
+### Added
+
+- **Explicit `priority` field on API key rules** (agents and MCP servers). When a user belongs to several groups that each have a rule, the matching group rule with the **lowest priority number** wins (evaluated ascending). A user-exact rule still always wins over group rules. The admin UI exposes a per-rule priority input (disabled for user rules, where it does not apply).
+
+### Changed
+
+- API key rule ordering is now driven by the explicit `priority` value instead of the implicit row order. Migration `000028` renames the internal `position` column to `priority` on `agent_api_key_rules` and `mcp_api_key_rules` (existing values preserved).
+
 ## [0.4.0] - 2026-06-10
 
 ### Added

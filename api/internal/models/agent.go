@@ -98,7 +98,9 @@ type AgentAPIKeyRule struct {
 	SubjectType string `yaml:"subject_type" json:"subject_type"` // "user" | "group"
 	Subject     string `yaml:"subject" json:"subject"`
 	APIKey      string `yaml:"api_key" json:"api_key"`
-	Position    int    `yaml:"-" json:"position,omitempty"`
+	// Priority orders group rules: lower is evaluated first (ASC). A user-exact
+	// rule always wins over group rules regardless of priority.
+	Priority int `yaml:"priority" json:"priority"`
 }
 
 // RateLimitConfig rate limiting configuration

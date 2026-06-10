@@ -213,8 +213,8 @@ func (r *AgentRepository) UpdatePermissions(ctx context.Context, agentID string,
 // by position (group precedence) then subject for determinism.
 func (r *AgentRepository) ListAPIKeyRules(ctx context.Context, agentID string) ([]models.AgentAPIKeyRule, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, agent_id, subject_type, subject, api_key, position
-		 FROM agent_api_key_rules WHERE agent_id = $1 ORDER BY position, subject`, agentID)
+		`SELECT id, agent_id, subject_type, subject, api_key, priority
+		 FROM agent_api_key_rules WHERE agent_id = $1 ORDER BY priority, subject`, agentID)
 	if err != nil {
 		return nil, fmt.Errorf("list api key rules: %w", err)
 	}
@@ -223,7 +223,7 @@ func (r *AgentRepository) ListAPIKeyRules(ctx context.Context, agentID string) (
 	var rules []models.AgentAPIKeyRule
 	for rows.Next() {
 		var rule models.AgentAPIKeyRule
-		if err := rows.Scan(&rule.ID, &rule.AgentID, &rule.SubjectType, &rule.Subject, &rule.APIKey, &rule.Position); err != nil {
+		if err := rows.Scan(&rule.ID, &rule.AgentID, &rule.SubjectType, &rule.Subject, &rule.APIKey, &rule.Priority); err != nil {
 			return nil, fmt.Errorf("scan api key rule: %w", err)
 		}
 		rules = append(rules, rule)
@@ -251,11 +251,11 @@ func (r *AgentRepository) ReplaceAPIKeyRules(ctx context.Context, agentID string
 }
 
 func insertAPIKeyRules(ctx context.Context, tx pgx.Tx, agentID string, rules []models.AgentAPIKeyRule) error {
-	for i, rule := range rules {
+	for _, rule := range rules {
 		_, err := tx.Exec(ctx,
-			`INSERT INTO agent_api_key_rules (agent_id, subject_type, subject, api_key, position)
+			`INSERT INTO agent_api_key_rules (agent_id, subject_type, subject, api_key, priority)
 			 VALUES ($1,$2,$3,$4,$5)`,
-			agentID, rule.SubjectType, rule.Subject, rule.APIKey, i)
+			agentID, rule.SubjectType, rule.Subject, rule.APIKey, rule.Priority)
 		if err != nil {
 			return fmt.Errorf("insert api key rule: %w", err)
 		}

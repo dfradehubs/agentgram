@@ -173,6 +173,9 @@ export interface ApiKeyRule {
   subject_type: "user" | "group";
   subject: string;
   api_key: string;
+  // Lower is evaluated first (ASC) among group rules; a user-exact rule always
+  // wins regardless of priority.
+  priority: number;
 }
 
 // Agent and MCP servers share the same per user/group API key rule shape.

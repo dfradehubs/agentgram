@@ -144,7 +144,7 @@ export const translations = {
     "admin.agents.authHeaderName": "Header de autenticación",
     "admin.agents.authHeaderNameHelp": "Con \"Authorization\" la key se envía con prefijo \"Bearer \". Con cualquier otro header (p.ej. X-API-Key) la key se envía tal cual.",
     "admin.agents.apiKeyRules": "Reglas por usuario/grupo",
-    "admin.agents.apiKeyRulesHelp": "Precedencia: regla de usuario exacto > primera regla de grupo (en orden) > API key por defecto. El orden de las reglas de grupo importa.",
+    "admin.agents.apiKeyRulesHelp": "Precedencia: regla de usuario exacto > regla de grupo con menor prioridad (número más bajo) entre tus grupos > API key por defecto.",
     "admin.agents.apiKeyRulesAdd": "Añadir regla",
     "admin.agents.apiKeyRuleUser": "Usuario",
     "admin.agents.apiKeyRuleGroup": "Grupo",
@@ -152,6 +152,7 @@ export const translations = {
     "admin.agents.apiKeyRuleSubjectGroup": "/google-workspace/grupo@ejemplo.com",
     "admin.agents.apiKeyRuleKey": "API key",
     "admin.agents.apiKeyRuleRemove": "Eliminar regla",
+    "admin.agents.apiKeyRulePriority": "Prioridad (menor = primero; no aplica a usuario)",
 
     // MCP
     "mcp.selectServer": "Selecciona un servidor MCP",
@@ -373,7 +374,7 @@ export const translations = {
     "admin.agents.authHeaderName": "Auth header",
     "admin.agents.authHeaderNameHelp": "With \"Authorization\" the key is sent with a \"Bearer \" prefix. Any other header (e.g. X-API-Key) sends the key verbatim.",
     "admin.agents.apiKeyRules": "Per user/group rules",
-    "admin.agents.apiKeyRulesHelp": "Precedence: exact user rule > first matching group rule (in order) > default API key. Group rule order matters.",
+    "admin.agents.apiKeyRulesHelp": "Precedence: exact user rule > matching group rule with the lowest priority (lowest number) among your groups > default API key.",
     "admin.agents.apiKeyRulesAdd": "Add rule",
     "admin.agents.apiKeyRuleUser": "User",
     "admin.agents.apiKeyRuleGroup": "Group",
@@ -381,6 +382,7 @@ export const translations = {
     "admin.agents.apiKeyRuleSubjectGroup": "/google-workspace/group@example.com",
     "admin.agents.apiKeyRuleKey": "API key",
     "admin.agents.apiKeyRuleRemove": "Remove rule",
+    "admin.agents.apiKeyRulePriority": "Priority (lower = first; not used for user rules)",
 
     // MCP
     "mcp.selectServer": "Select an MCP server",

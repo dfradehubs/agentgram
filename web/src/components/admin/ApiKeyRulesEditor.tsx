@@ -19,8 +19,10 @@ export function ApiKeyRulesEditor({ rules, onChange }: ApiKeyRulesEditorProps) {
   const removeRule = (index: number) =>
     onChange(rules.filter((_, i) => i !== index));
 
-  const addRule = () =>
-    onChange([...rules, { subject_type: "group", subject: "", api_key: "" }]);
+  const addRule = () => {
+    const nextPriority = rules.length ? Math.max(...rules.map(r => r.priority ?? 0)) + 10 : 0;
+    onChange([...rules, { subject_type: "group", subject: "", api_key: "", priority: nextPriority }]);
+  };
 
   return (
     <div>
@@ -30,6 +32,14 @@ export function ApiKeyRulesEditor({ rules, onChange }: ApiKeyRulesEditorProps) {
       <div className="space-y-2">
         {rules.map((rule, i) => (
           <div key={i} className="flex items-center gap-2">
+            <input
+              className="w-16 rounded-md border bg-background px-2 py-2 text-sm"
+              type="number"
+              value={rule.priority ?? 0}
+              onChange={e => updateRule(i, { priority: parseInt(e.target.value, 10) || 0 })}
+              title={t("admin.agents.apiKeyRulePriority")}
+              disabled={rule.subject_type === "user"}
+            />
             <select
               className="rounded-md border bg-background px-2 py-2 text-sm"
               value={rule.subject_type}
