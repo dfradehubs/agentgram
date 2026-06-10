@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import type { AdminAgent } from "@/lib/types";
+import type { AdminAgent, AgentApiKeyRule } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { TagInput } from "./TagInput";
+import { ApiKeyRulesEditor } from "./ApiKeyRulesEditor";
 import { SlackIntegration } from "./SlackIntegration";
 import { Info, Lock } from "lucide-react";
 import { useT } from "@/lib/i18n";
@@ -29,7 +30,10 @@ export function AgentForm({ agent, onSave, onCancel }: AgentFormProps) {
     protocol: agent?.protocol || "custom",
     endpoint: agent?.endpoint || "",
     agent_card_path: agent?.agent_card_path || "",
-    forward_authorization: agent?.forward_authorization || false,
+    auth_type: agent?.auth_type || (agent?.forward_authorization ? "forward" : "none"),
+    bearer_token: agent?.bearer_token || "",
+    auth_header_name: agent?.auth_header_name || "Authorization",
+    api_key_rules: (agent?.api_key_rules || []) as AgentApiKeyRule[],
     require_github_token: agent?.require_github_token || false,
     pipeline_final_agent: agent?.pipeline_final_agent || "",
     adk_app_name: agent?.adk_app_name || "",
@@ -77,7 +81,11 @@ export function AgentForm({ agent, onSave, onCancel }: AgentFormProps) {
       protocol: form.protocol,
       endpoint: form.endpoint,
       agent_card_path: form.agent_card_path,
-      forward_authorization: form.forward_authorization,
+      auth_type: form.auth_type,
+      forward_authorization: form.auth_type === "forward",
+      bearer_token: form.auth_type === "bearer" ? form.bearer_token : "",
+      auth_header_name: form.auth_type === "bearer" ? form.auth_header_name : "",
+      api_key_rules: form.auth_type === "bearer" ? form.api_key_rules : [],
       require_github_token: form.require_github_token,
       pipeline_final_agent: form.pipeline_final_agent,
       adk_app_name: form.adk_app_name,
@@ -272,15 +280,59 @@ export function AgentForm({ agent, onSave, onCancel }: AgentFormProps) {
         />
       </div>
 
-      <div className="flex gap-4">
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={form.forward_authorization}
-            onChange={e => update("forward_authorization", e.target.checked)}
+      <div>
+        <label className="mb-1 block text-sm font-medium">{t("admin.agents.authType")}</label>
+        <select
+          className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+          value={form.auth_type}
+          onChange={e => update("auth_type", e.target.value)}
+        >
+          <option value="none">{t("admin.agents.authTypeNone")}</option>
+          <option value="forward">{t("admin.agents.authTypeForward")}</option>
+          <option value="bearer">{t("admin.agents.authTypeBearer")}</option>
+          <option value="oauth2" disabled>{t("admin.agents.authTypeOAuth2Soon")}</option>
+        </select>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {form.auth_type === "none" && t("admin.agents.authTypeNoneHelp")}
+          {form.auth_type === "forward" && t("admin.agents.authTypeForwardHelp")}
+          {form.auth_type === "bearer" && t("admin.agents.authTypeBearerHelp")}
+        </p>
+      </div>
+
+      {form.auth_type === "bearer" && (
+        <div className="space-y-4 rounded-lg border border-dashed p-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="mb-1 block text-sm font-medium">{t("admin.agents.bearerToken")}</label>
+              <input
+                className="w-full rounded-md border bg-background px-3 py-2 font-mono text-sm"
+                type="password"
+                value={form.bearer_token}
+                onChange={e => update("bearer_token", e.target.value)}
+                autoComplete="off"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">{t("admin.agents.bearerTokenHelp")}</p>
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium">{t("admin.agents.authHeaderName")}</label>
+              <input
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                value={form.auth_header_name}
+                onChange={e => update("auth_header_name", e.target.value)}
+                placeholder="Authorization"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">{t("admin.agents.authHeaderNameHelp")}</p>
+            </div>
+          </div>
+
+          <ApiKeyRulesEditor
+            rules={form.api_key_rules}
+            onChange={rules => setForm(prev => ({ ...prev, api_key_rules: rules }))}
           />
-          Forward Authorization
-        </label>
+        </div>
+      )}
+
+      <div className="flex gap-4">
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"

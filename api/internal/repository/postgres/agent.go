@@ -38,14 +38,16 @@ func (r *AgentRepository) Create(ctx context.Context, agent *models.Agent, allow
 		  agent_card_path, forward_authorization, require_github_token,
 		  pipeline_final_agent, adk_app_name, adk_user_id, headers,
 		  rate_limit, health_check, polling, custom_format,
-		  max_context_tokens, summarize_threshold)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
+		  max_context_tokens, summarize_threshold,
+		  auth_type, bearer_token, auth_header_name)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
 		agent.ID, agent.Name, agent.Description, agent.Category,
 		agent.Protocol, agent.Endpoint, agent.AgentCardPath,
 		agent.ForwardAuthorization, agent.RequireGitHubToken,
 		agent.PipelineFinalAgent, agent.ADKAppName, agent.ADKUserID,
 		headersJSON, rateLimitJSON, healthCheckJSON, pollingJSON, customFormatJSON,
 		agent.MaxContextTokens, agent.SummarizeThreshold,
+		agent.AuthType, agent.BearerToken, agent.AuthHeaderName,
 	)
 	if err != nil {
 		return fmt.Errorf("insert agent: %w", err)
@@ -55,6 +57,9 @@ func (r *AgentRepository) Create(ctx context.Context, agent *models.Agent, allow
 		return err
 	}
 	if err := insertPermissions(ctx, tx, "agent_allowed_groups", "agent_id", agent.ID, "group_name", allowedGroups); err != nil {
+		return err
+	}
+	if err := insertAPIKeyRules(ctx, tx, agent.ID, agent.APIKeyRules); err != nil {
 		return err
 	}
 
@@ -67,7 +72,8 @@ func (r *AgentRepository) Get(ctx context.Context, id string) (*models.Agent, []
 		  agent_card_path, forward_authorization, require_github_token,
 		  pipeline_final_agent, adk_app_name, adk_user_id, headers,
 		  rate_limit, health_check, polling, custom_format,
-		  max_context_tokens, summarize_threshold, created_at, updated_at
+		  max_context_tokens, summarize_threshold,
+		  auth_type, bearer_token, auth_header_name, created_at, updated_at
 		 FROM agents WHERE id = $1`, id)
 	if err != nil {
 		return nil, nil, nil, err
@@ -78,6 +84,12 @@ func (r *AgentRepository) Get(ctx context.Context, id string) (*models.Agent, []
 		return nil, nil, nil, err
 	}
 
+	rules, err := r.ListAPIKeyRules(ctx, id)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	agent.APIKeyRules = rules
+
 	return agent, users, groups, nil
 }
 
@@ -87,7 +99,8 @@ func (r *AgentRepository) List(ctx context.Context) ([]*models.Agent, error) {
 		  agent_card_path, forward_authorization, require_github_token,
 		  pipeline_final_agent, adk_app_name, adk_user_id, headers,
 		  rate_limit, health_check, polling, custom_format,
-		  max_context_tokens, summarize_threshold, created_at, updated_at
+		  max_context_tokens, summarize_threshold,
+		  auth_type, bearer_token, auth_header_name, created_at, updated_at
 		 FROM agents ORDER BY name`,
 	)
 	if err != nil {
@@ -109,6 +122,12 @@ func (r *AgentRepository) List(ctx context.Context) ([]*models.Agent, error) {
 		}
 		agent.AllowedUsers = users
 		agent.AllowedGroups = groups
+
+		rules, err := r.ListAPIKeyRules(ctx, agent.ID)
+		if err != nil {
+			return nil, err
+		}
+		agent.APIKeyRules = rules
 		agents = append(agents, agent)
 	}
 	return agents, nil
@@ -127,7 +146,8 @@ func (r *AgentRepository) Update(ctx context.Context, agent *models.Agent) error
 		  require_github_token=$9, pipeline_final_agent=$10,
 		  adk_app_name=$11, adk_user_id=$12, headers=$13,
 		  rate_limit=$14, health_check=$15, polling=$16, custom_format=$17,
-		  max_context_tokens=$18, summarize_threshold=$19, updated_at=NOW()
+		  max_context_tokens=$18, summarize_threshold=$19,
+		  auth_type=$20, bearer_token=$21, auth_header_name=$22, updated_at=NOW()
 		 WHERE id=$1`,
 		agent.ID, agent.Name, agent.Description, agent.Category,
 		agent.Protocol, agent.Endpoint, agent.AgentCardPath,
@@ -135,6 +155,7 @@ func (r *AgentRepository) Update(ctx context.Context, agent *models.Agent) error
 		agent.PipelineFinalAgent, agent.ADKAppName, agent.ADKUserID,
 		headersJSON, rateLimitJSON, healthCheckJSON, pollingJSON, customFormatJSON,
 		agent.MaxContextTokens, agent.SummarizeThreshold,
+		agent.AuthType, agent.BearerToken, agent.AuthHeaderName,
 	)
 	if err != nil {
 		return fmt.Errorf("update agent: %w", err)
@@ -188,6 +209,60 @@ func (r *AgentRepository) UpdatePermissions(ctx context.Context, agentID string,
 	return tx.Commit(ctx)
 }
 
+// ListAPIKeyRules returns the bearer-mode API key rules of an agent, ordered
+// by position (group precedence) then subject for determinism.
+func (r *AgentRepository) ListAPIKeyRules(ctx context.Context, agentID string) ([]models.AgentAPIKeyRule, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT id, agent_id, subject_type, subject, api_key, position
+		 FROM agent_api_key_rules WHERE agent_id = $1 ORDER BY position, subject`, agentID)
+	if err != nil {
+		return nil, fmt.Errorf("list api key rules: %w", err)
+	}
+	defer rows.Close()
+
+	var rules []models.AgentAPIKeyRule
+	for rows.Next() {
+		var rule models.AgentAPIKeyRule
+		if err := rows.Scan(&rule.ID, &rule.AgentID, &rule.SubjectType, &rule.Subject, &rule.APIKey, &rule.Position); err != nil {
+			return nil, fmt.Errorf("scan api key rule: %w", err)
+		}
+		rules = append(rules, rule)
+	}
+	return rules, rows.Err()
+}
+
+// ReplaceAPIKeyRules atomically replaces all API key rules of an agent
+// (delete + insert in a tx, same pattern as UpdatePermissions).
+func (r *AgentRepository) ReplaceAPIKeyRules(ctx context.Context, agentID string, rules []models.AgentAPIKeyRule) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, `DELETE FROM agent_api_key_rules WHERE agent_id = $1`, agentID); err != nil {
+		return fmt.Errorf("delete api key rules: %w", err)
+	}
+	if err := insertAPIKeyRules(ctx, tx, agentID, rules); err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
+}
+
+func insertAPIKeyRules(ctx context.Context, tx pgx.Tx, agentID string, rules []models.AgentAPIKeyRule) error {
+	for i, rule := range rules {
+		_, err := tx.Exec(ctx,
+			`INSERT INTO agent_api_key_rules (agent_id, subject_type, subject, api_key, position)
+			 VALUES ($1,$2,$3,$4,$5)`,
+			agentID, rule.SubjectType, rule.Subject, rule.APIKey, i)
+		if err != nil {
+			return fmt.Errorf("insert api key rule: %w", err)
+		}
+	}
+	return nil
+}
+
 func (r *AgentRepository) Count(ctx context.Context) (int, error) {
 	var count int
 	err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM agents`).Scan(&count)
@@ -214,8 +289,8 @@ func (r *AgentRepository) scanAgentRow(rows pgx.Rows) (*models.Agent, error) {
 }
 
 type scannedAgent struct {
-	agent                                                                        *models.Agent
-	headersJSON, rateLimitJSON, healthCheckJSON, pollingJSON, customFormatJSON    []byte
+	agent                                                                      *models.Agent
+	headersJSON, rateLimitJSON, healthCheckJSON, pollingJSON, customFormatJSON []byte
 }
 
 func scanAgentFields(scan func(dest ...interface{}) error) (*scannedAgent, error) {
@@ -232,6 +307,7 @@ func scanAgentFields(scan func(dest ...interface{}) error) (*scannedAgent, error
 		&s.headersJSON, &s.rateLimitJSON, &s.healthCheckJSON, &s.pollingJSON,
 		&s.customFormatJSON,
 		&agent.MaxContextTokens, &agent.SummarizeThreshold,
+		&agent.AuthType, &agent.BearerToken, &agent.AuthHeaderName,
 		&createdAt, &updatedAt,
 	)
 	if err != nil {

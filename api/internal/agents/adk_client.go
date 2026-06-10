@@ -70,7 +70,7 @@ func baseURL(endpoint string) string {
 
 // CreateSession creates a new session on the ADK agent.
 // POST /apps/{appName}/users/{userId}/sessions
-func (c *ADKClient) CreateSession(ctx context.Context, agent *models.Agent, userID string, authHeader string, requestID string) (string, error) {
+func (c *ADKClient) CreateSession(ctx context.Context, agent *models.Agent, userID string, auth OutboundAuth, requestID string) (string, error) {
 	appName, userID := resolveADKParams(agent, userID)
 
 	url := fmt.Sprintf("%s/apps/%s/users/%s/sessions", baseURL(agent.Endpoint), appName, userID)
@@ -92,8 +92,8 @@ func (c *ADKClient) CreateSession(ctx context.Context, agent *models.Agent, user
 		httpReq.Header.Set(key, value)
 	}
 
-	if agent.ForwardAuthorization && authHeader != "" {
-		httpReq.Header.Set("Authorization", authHeader)
+	if auth.HeaderValue != "" {
+		httpReq.Header.Set(auth.HeaderName, auth.HeaderValue)
 	}
 
 	// Forward GitHub token only to agents that explicitly require it
@@ -130,12 +130,12 @@ func (c *ADKClient) CreateSession(ctx context.Context, agent *models.Agent, user
 // If sessionID is empty, a new session is created first.
 // Attachments are sent as native ADK InlineData parts alongside the text.
 // Returns the response and the sessionID used (which may be newly created).
-func (c *ADKClient) RunSSE(ctx context.Context, agent *models.Agent, message string, sessionID string, userID string, authHeader string, requestID string, attachments []models.Attachment) (*http.Response, string, error) {
+func (c *ADKClient) RunSSE(ctx context.Context, agent *models.Agent, message string, sessionID string, userID string, auth OutboundAuth, requestID string, attachments []models.Attachment) (*http.Response, string, error) {
 	appName, userID := resolveADKParams(agent, userID)
 
 	// Create session if none provided
 	if sessionID == "" {
-		newSessionID, err := c.CreateSession(ctx, agent, userID, authHeader, requestID)
+		newSessionID, err := c.CreateSession(ctx, agent, userID, auth, requestID)
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to create session: %w", err)
 		}
@@ -191,8 +191,8 @@ func (c *ADKClient) RunSSE(ctx context.Context, agent *models.Agent, message str
 		httpReq.Header.Set(key, value)
 	}
 
-	if agent.ForwardAuthorization && authHeader != "" {
-		httpReq.Header.Set("Authorization", authHeader)
+	if auth.HeaderValue != "" {
+		httpReq.Header.Set(auth.HeaderName, auth.HeaderValue)
 	}
 
 	// Forward GitHub token only to agents that explicitly require it

@@ -169,6 +169,12 @@ export interface CustomFormatConfig {
   request_content_type?: string;
 }
 
+export interface AgentApiKeyRule {
+  subject_type: "user" | "group";
+  subject: string;
+  api_key: string;
+}
+
 export interface AdminAgent {
   id: string;
   name: string;
@@ -178,6 +184,10 @@ export interface AdminAgent {
   endpoint: string;
   agent_card_path?: string;
   forward_authorization: boolean;
+  auth_type?: string;
+  bearer_token?: string;
+  auth_header_name?: string;
+  api_key_rules?: AgentApiKeyRule[];
   require_github_token: boolean;
   pipeline_final_agent?: string;
   adk_app_name?: string;

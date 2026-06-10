@@ -38,7 +38,7 @@ func NewA2AClient() *A2AClient {
 // SendMessageStream sends a message/stream request to an A2A agent and returns
 // the raw HTTP response for SSE streaming. The caller is responsible for closing the response body.
 // Attachments are sent as native A2A file parts alongside the text.
-func (c *A2AClient) SendMessageStream(ctx context.Context, agent *models.Agent, message string, contextID string, authHeader string, requestID string, attachments []models.Attachment) (*http.Response, error) {
+func (c *A2AClient) SendMessageStream(ctx context.Context, agent *models.Agent, message string, contextID string, auth OutboundAuth, requestID string, attachments []models.Attachment) (*http.Response, error) {
 	msgID := uuid.New().String()
 
 	parts := []a2a.Part{{Kind: "text", Text: message}}
@@ -93,8 +93,8 @@ func (c *A2AClient) SendMessageStream(ctx context.Context, agent *models.Agent, 
 		req.Header.Set(key, value)
 	}
 
-	if agent.ForwardAuthorization && authHeader != "" {
-		req.Header.Set("Authorization", authHeader)
+	if auth.HeaderValue != "" {
+		req.Header.Set(auth.HeaderName, auth.HeaderValue)
 	}
 
 	// Forward GitHub token only to agents that explicitly require it

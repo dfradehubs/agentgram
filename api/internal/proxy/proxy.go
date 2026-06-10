@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/dfradehubs/agentgram-api/internal/agents"
 	"github.com/dfradehubs/agentgram-api/internal/models"
 	"github.com/dfradehubs/agentgram-api/internal/tracing"
 	"go.opentelemetry.io/otel/attribute"
@@ -87,9 +88,11 @@ func NewProxy(logger *zap.Logger) *Proxy {
 // HandleOptions configures optional parameters for Handle.
 type HandleOptions struct {
 	ThreadID    string
-	SessionName string                 // Session display name (sent in RUN_STARTED)
-	Locale      string                 // "es", "en", etc. for localized messages
-	RequestID   string                 // X-Request-ID for end-to-end correlation
+	SessionName string                  // Session display name (sent in RUN_STARTED)
+	Locale      string                  // "es", "en", etc. for localized messages
+	RequestID   string                  // X-Request-ID for end-to-end correlation
+	UserEmail   string                  // Calling user's email, for per-user outbound auth (bearer rules)
+	UserGroups  []string                // Calling user's groups, for per-group outbound auth (bearer rules)
 	OnEvent     func(event interface{}) // Called for each AG-UI event (for Pub/Sub broadcast)
 }
 
@@ -107,19 +110,24 @@ func (p *Proxy) Handle(ctx context.Context, w http.ResponseWriter, agent *models
 		zap.String("agent_id", agent.ID),
 		zap.String("protocol", agent.Protocol))
 
+	// Resolve the outbound credential once for the whole call: the agent's
+	// auth method (forward/bearer/none) plus the user's identity decide what
+	// header — if any — is sent to the agent.
+	auth := agents.ResolveOutboundAuth(agent, opts.UserEmail, opts.UserGroups, authHeader)
+
 	switch agent.Protocol {
 	case "custom":
 		body, err := FormatRequestBody(agent, chatReq)
 		if err != nil {
 			return nil, err
 		}
-		return p.restProxy.Handle(ctx, w, agent, body, authHeader, opts.RequestID, opts.ThreadID, opts.SessionName, opts.OnEvent)
+		return p.restProxy.Handle(ctx, w, agent, body, auth, opts.RequestID, opts.ThreadID, opts.SessionName, opts.OnEvent)
 
 	case "a2a":
-		return p.a2aProxy.Handle(ctx, w, agent, chatReq, authHeader, opts.RequestID, opts.ThreadID, opts.SessionName, opts.OnEvent)
+		return p.a2aProxy.Handle(ctx, w, agent, chatReq, auth, opts.RequestID, opts.ThreadID, opts.SessionName, opts.OnEvent)
 
 	case "adk":
-		return p.adkProxy.Handle(ctx, w, agent, chatReq, authHeader, opts.RequestID, opts.ThreadID, opts.SessionName, opts.Locale, opts.OnEvent)
+		return p.adkProxy.Handle(ctx, w, agent, chatReq, auth, opts.RequestID, opts.ThreadID, opts.SessionName, opts.Locale, opts.OnEvent)
 
 	default:
 		return nil, fmt.Errorf("unknown protocol: %s", agent.Protocol)

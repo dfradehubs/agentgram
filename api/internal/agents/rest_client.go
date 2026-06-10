@@ -29,7 +29,7 @@ func NewRESTClient() *RESTClient {
 }
 
 // Request makes a request to the agent
-func (c *RESTClient) Request(ctx context.Context, agent *models.Agent, body io.Reader, authHeader string, requestID string) (*http.Response, error) {
+func (c *RESTClient) Request(ctx context.Context, agent *models.Agent, body io.Reader, auth OutboundAuth, requestID string) (*http.Response, error) {
 	// Use custom method if configured, default to POST
 	method := http.MethodPost
 	if agent.CustomFormat != nil && agent.CustomFormat.RequestMethod != "" {
@@ -62,8 +62,8 @@ func (c *RESTClient) Request(ctx context.Context, agent *models.Agent, body io.R
 	}
 
 	// Forward Authorization if configured
-	if agent.ForwardAuthorization && authHeader != "" {
-		req.Header.Set("Authorization", authHeader)
+	if auth.HeaderValue != "" {
+		req.Header.Set(auth.HeaderName, auth.HeaderValue)
 	}
 
 	// Forward GitHub token only to agents that explicitly require it

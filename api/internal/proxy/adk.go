@@ -57,7 +57,7 @@ func NewADKProxy(logger *zap.Logger) *ADKProxy {
 // It sends POST /run_sse to the agent, reads SSE events, and converts them to AG-UI events.
 // If the agent responds with a context-limit summary, it transparently creates a new session
 // and retries the request with the summary as context.
-func (p *ADKProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *models.Agent, chatReq *models.ChatRequest, authHeader string, requestID string, threadID string, sessionName string, locale string, onEvent func(interface{})) (*ProxyResult, error) {
+func (p *ADKProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *models.Agent, chatReq *models.ChatRequest, auth agents.OutboundAuth, requestID string, threadID string, sessionName string, locale string, onEvent func(interface{})) (*ProxyResult, error) {
 	sse, err := NewSSEWriter(w)
 	if err != nil {
 		return nil, err
@@ -156,7 +156,7 @@ func (p *ADKProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *mod
 				zap.Duration("delay", delay))
 			time.Sleep(delay)
 		}
-		resp, adkSessionID, lastErr = p.client.RunSSE(adkCtx, agent, userMessage, chatReq.SessionID, userID, authHeader, requestID, attachments)
+		resp, adkSessionID, lastErr = p.client.RunSSE(adkCtx, agent, userMessage, chatReq.SessionID, userID, auth, requestID, attachments)
 		if lastErr == nil {
 			break
 		}
@@ -251,7 +251,7 @@ func (p *ADKProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *mod
 	}
 
 	// Create new session (use adkCtx — decoupled from frontend)
-	newSessionID, err := p.client.CreateSession(adkCtx, agent, userID, authHeader, requestID)
+	newSessionID, err := p.client.CreateSession(adkCtx, agent, userID, auth, requestID)
 	if err != nil {
 		p.logger.Error("failed to create new ADK session for context-limit retry",
 			zap.String("agent_id", agent.ID),
@@ -283,7 +283,7 @@ func (p *ADKProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *mod
 		zap.String("retry_message_preview", truncateStr(retryMessage, 500)))
 
 	// Send retry request (use adkCtx — decoupled from frontend) — no attachments on retry
-	retryResp, _, err := p.client.RunSSE(adkCtx, agent, retryMessage, newSessionID, userID, authHeader, requestID, nil)
+	retryResp, _, err := p.client.RunSSE(adkCtx, agent, retryMessage, newSessionID, userID, auth, requestID, nil)
 	if err != nil {
 		p.logger.Error("failed to send retry run_sse to ADK agent",
 			zap.String("agent_id", agent.ID),

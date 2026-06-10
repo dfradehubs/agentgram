@@ -1,13 +1,22 @@
 package models
 
+// Agent outbound authentication methods. Mirrors the MCP server auth_type
+// enum (see mcp_server.go) so admins get the same mental model on both.
+const (
+	AgentAuthNone    = "none"
+	AgentAuthForward = "forward"
+	AgentAuthOAuth2  = "oauth2" // reserved for phase 2 — not implemented yet
+	AgentAuthBearer  = "bearer"
+)
+
 // Agent represents a remote agent configuration
 type Agent struct {
-	ID          string            `yaml:"id" json:"id"`
-	Name        string            `yaml:"name" json:"name"`
-	Description string            `yaml:"description" json:"description"`
-	Category    string            `yaml:"category" json:"category"`
-	Protocol    string            `yaml:"protocol" json:"protocol"` // "custom" | "a2a" | "adk"
-	Endpoint    string            `yaml:"endpoint" json:"-"`
+	ID          string `yaml:"id" json:"id"`
+	Name        string `yaml:"name" json:"name"`
+	Description string `yaml:"description" json:"description"`
+	Category    string `yaml:"category" json:"category"`
+	Protocol    string `yaml:"protocol" json:"protocol"` // "custom" | "a2a" | "adk"
+	Endpoint    string `yaml:"endpoint" json:"-"`
 
 	// Path to get agent-card.json (A2A only)
 	AgentCardPath string `yaml:"agent_card_path" json:"-"`
@@ -15,8 +24,25 @@ type Agent struct {
 	// Headers to send to the agent
 	Headers map[string]string `yaml:"headers" json:"-"`
 
-	// If true, forwards the user's JWT to the agent
+	// If true, forwards the user's JWT to the agent.
+	// Legacy flag: superseded by AuthType ("forward"); see GetAuthType.
 	ForwardAuthorization bool `yaml:"forward_authorization" json:"-"`
+
+	// Outbound auth method: "none" | "forward" | "bearer" ("oauth2" reserved).
+	// Empty falls back to ForwardAuthorization for backwards compatibility.
+	AuthType string `yaml:"auth_type" json:"-"`
+
+	// Bearer mode: fallback API key when no APIKeyRules entry matches the user.
+	BearerToken string `yaml:"bearer_token" json:"-"`
+
+	// Bearer mode: header that carries the key. Default "Authorization"
+	// (sent as "Bearer <key>"); any other header (e.g. "X-API-Key") sends
+	// the key verbatim without prefix.
+	AuthHeaderName string `yaml:"auth_header_name" json:"-"`
+
+	// Bearer mode: per user/group API keys. Resolution: user match >
+	// group match (by position) > BearerToken fallback.
+	APIKeyRules []AgentAPIKeyRule `yaml:"api_key_rules" json:"-"`
 
 	// Permissions
 	AllowedGroups []string `yaml:"allowed_groups" json:"-"`
@@ -41,7 +67,7 @@ type Agent struct {
 	ADKUserID  string `yaml:"adk_user_id" json:"-"`  // User ID for ADK protocol (default: "agentgram")
 
 	// Context management (multi-agent)
-	MaxContextTokens   int     `yaml:"max_context_tokens" json:"max_context_tokens"`     // Max tokens for context window (default 200000)
+	MaxContextTokens   int     `yaml:"max_context_tokens" json:"max_context_tokens"`   // Max tokens for context window (default 200000)
 	SummarizeThreshold float64 `yaml:"summarize_threshold" json:"summarize_threshold"` // Fraction of max tokens to trigger summarization (default 0.8)
 
 	// If true, the agent benefits from a GitHub token for full read/write access
@@ -49,6 +75,30 @@ type Agent struct {
 
 	// Health status (runtime)
 	Status string `json:"status"` // "healthy" | "unhealthy" | "unknown"
+}
+
+// GetAuthType returns the effective outbound auth method, falling back to
+// the legacy ForwardAuthorization flag when auth_type is not set (mirrors
+// MCPServer.GetAuthType).
+func (a *Agent) GetAuthType() string {
+	if a.AuthType != "" {
+		return a.AuthType
+	}
+	if a.ForwardAuthorization {
+		return AgentAuthForward
+	}
+	return AgentAuthNone
+}
+
+// AgentAPIKeyRule maps a user email or group to the API key agentgram sends
+// to the agent in bearer mode.
+type AgentAPIKeyRule struct {
+	ID          string `yaml:"-" json:"id,omitempty"`
+	AgentID     string `yaml:"-" json:"agent_id,omitempty"`
+	SubjectType string `yaml:"subject_type" json:"subject_type"` // "user" | "group"
+	Subject     string `yaml:"subject" json:"subject"`
+	APIKey      string `yaml:"api_key" json:"api_key"`
+	Position    int    `yaml:"-" json:"position,omitempty"`
 }
 
 // RateLimitConfig rate limiting configuration
@@ -60,8 +110,8 @@ type RateLimitConfig struct {
 // HealthCheckConfig health check configuration
 type HealthCheckConfig struct {
 	Enabled         bool   `yaml:"enabled" json:"enabled"`
-	URL             string `yaml:"url" json:"url,omitempty"`                         // Full URL (optional, overrides endpoint + path)
-	Endpoint        string `yaml:"endpoint" json:"endpoint,omitempty"`               // Path appended to agent endpoint (default: /health)
+	URL             string `yaml:"url" json:"url,omitempty"`           // Full URL (optional, overrides endpoint + path)
+	Endpoint        string `yaml:"endpoint" json:"endpoint,omitempty"` // Path appended to agent endpoint (default: /health)
 	IntervalSeconds int    `yaml:"interval_seconds" json:"interval_seconds"`
 	TimeoutSeconds  int    `yaml:"timeout_seconds" json:"timeout_seconds"`
 }
@@ -103,4 +153,3 @@ func (a *Agent) ToResponse() AgentResponse {
 		RequireGitHubToken: a.RequireGitHubToken,
 	}
 }
-

@@ -25,6 +25,8 @@ type AgentRepository interface {
 	Delete(ctx context.Context, id string) error
 	GetPermissions(ctx context.Context, agentID string) (users []string, groups []string, err error)
 	UpdatePermissions(ctx context.Context, agentID string, users, groups []string) error
+	ListAPIKeyRules(ctx context.Context, agentID string) ([]models.AgentAPIKeyRule, error)
+	ReplaceAPIKeyRules(ctx context.Context, agentID string, rules []models.AgentAPIKeyRule) error
 	Count(ctx context.Context) (int, error)
 }
 

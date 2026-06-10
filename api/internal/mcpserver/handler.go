@@ -497,7 +497,7 @@ func (h *Handler) handleToolsCall(w http.ResponseWriter, r *http.Request, req js
 	}
 	done := make(chan callResult, 1)
 	go func() {
-		result, resultSessionID, err := h.callAgent(r.Context(), agent, args.Question, sessionID, userEmail)
+		result, resultSessionID, err := h.callAgent(r.Context(), agent, args.Question, sessionID, userEmail, userGroups)
 		done <- callResult{text: result, sessionID: resultSessionID, err: err}
 	}()
 
@@ -761,7 +761,7 @@ func (h *Handler) handleMCPToolCall(w http.ResponseWriter, r *http.Request, req 
 
 // callAgent invokes an agent via the Agentgram proxy and returns the full text response.
 // This consumes the SSE stream internally and accumulates the response.
-func (h *Handler) callAgent(ctx context.Context, agent *models.Agent, question string, sessionID string, userEmail string) (string, string, error) {
+func (h *Handler) callAgent(ctx context.Context, agent *models.Agent, question string, sessionID string, userEmail string, userGroups []string) (string, string, error) {
 	// Create Agentgram session for message persistence
 	session, err := h.sessionStore.CreateSession(ctx, userEmail, agent.ID, truncateString(question, 50))
 	if err != nil {
@@ -784,17 +784,21 @@ func (h *Handler) callAgent(ctx context.Context, agent *models.Agent, question s
 	// Use a buffer to capture the SSE response instead of writing to http.ResponseWriter
 	buf := &sseCapture{}
 
-	// Forward the MCP user's JWT to agents. Without audience mappers in Keycloak,
-	// the token has no aud claim — same as the web frontend token.
+	// The MCP user's JWT, used only when the agent's auth method is "forward".
+	// In bearer mode the proxy resolves a per-user/group API key instead.
 	authHeader := middleware.GetAuthHeaderFromContext(ctx)
 
 	reqIDSuffix := agentgramSessionID
 	if len(reqIDSuffix) > 8 {
 		reqIDSuffix = reqIDSuffix[:8]
 	}
+	// UserEmail/UserGroups travel as explicit options (not via context):
+	// the proxy call below runs on a detached context.Background().
 	opts := proxy.HandleOptions{
-		ThreadID:  agentgramSessionID,
-		RequestID: fmt.Sprintf("mcp-%s", reqIDSuffix),
+		ThreadID:   agentgramSessionID,
+		RequestID:  fmt.Sprintf("mcp-%s", reqIDSuffix),
+		UserEmail:  userEmail,
+		UserGroups: userGroups,
 	}
 
 	// Call the proxy with its own context, independent of the HTTP request.
