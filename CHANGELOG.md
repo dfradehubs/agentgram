@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-06-10
+
+### Added
+
+- **Per-agent outbound authentication method**, mirroring the MCP server auth model. Agents now have an `auth_type` (`none` | `forward` | `bearer`; `oauth2` reserved for a future release) replacing the lone forward-authorization checkbox. In **bearer** mode, agentgram authenticates to the agent as a service with an API key sent on a **configurable header** (`Authorization` with `Bearer ` prefix by default, or any custom header such as `X-API-Key` verbatim).
+- **Per user/group API key rules** (bearer mode): map a user email or group to a specific API key, with precedence exact-user > first matching group (ordered) > agent-level fallback key. This lets a gateway deployment authenticate to upstream agents with service keys while preserving per-user identity, instead of forwarding the user's JWT across token audiences/issuers the agent may not trust.
+- Admin UI: authentication type selector on the agent form with a conditional bearer section (fallback key, auth header, and a rules editor).
+
+### Compatibility
+
+- Existing agents keep working: `forward_authorization: true` still means forward (`GetAuthType` fallback), the legacy flag stays in sync, and API clients that omit `api_key_rules` on update do not wipe existing rules.
+
 ## [0.2.3] - 2026-06-10
 
 ### Fixed

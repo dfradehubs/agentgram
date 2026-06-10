@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -38,54 +39,67 @@ func NewAdminAgentsHandler(agentRepo repository.AgentRepository, auditRepo repos
 
 // AdminAgentRequest is the request body for creating/updating agents
 type AdminAgentRequest struct {
-	ID                   string            `json:"id"`
-	Name                 string            `json:"name"`
-	Description          string            `json:"description"`
-	Category             string            `json:"category"`
-	Protocol             string            `json:"protocol"`
-	Endpoint             string            `json:"endpoint"`
-	AgentCardPath        string            `json:"agent_card_path"`
-	ForwardAuthorization bool              `json:"forward_authorization"`
-	RequireGitHubToken   bool              `json:"require_github_token"`
-	PipelineFinalAgent   string            `json:"pipeline_final_agent"`
-	ADKAppName           string            `json:"adk_app_name"`
-	ADKUserID            string            `json:"adk_user_id"`
-	Headers              map[string]string `json:"headers"`
-	RateLimit            *models.RateLimitConfig  `json:"rate_limit"`
-	HealthCheck          *models.HealthCheckConfig `json:"health_check"`
-	Polling              *models.PollingConfig        `json:"polling"`
-	CustomFormat         *models.CustomFormatConfig   `json:"custom_format"`
-	MaxContextTokens     *int              `json:"max_context_tokens"`
-	SummarizeThreshold   *float64          `json:"summarize_threshold"`
-	AllowedUsers         []string          `json:"allowed_users"`
-	AllowedGroups        []string          `json:"allowed_groups"`
+	ID                   string                     `json:"id"`
+	Name                 string                     `json:"name"`
+	Description          string                     `json:"description"`
+	Category             string                     `json:"category"`
+	Protocol             string                     `json:"protocol"`
+	Endpoint             string                     `json:"endpoint"`
+	AgentCardPath        string                     `json:"agent_card_path"`
+	ForwardAuthorization bool                       `json:"forward_authorization"`
+	RequireGitHubToken   bool                       `json:"require_github_token"`
+	PipelineFinalAgent   string                     `json:"pipeline_final_agent"`
+	ADKAppName           string                     `json:"adk_app_name"`
+	ADKUserID            string                     `json:"adk_user_id"`
+	Headers              map[string]string          `json:"headers"`
+	RateLimit            *models.RateLimitConfig    `json:"rate_limit"`
+	HealthCheck          *models.HealthCheckConfig  `json:"health_check"`
+	Polling              *models.PollingConfig      `json:"polling"`
+	CustomFormat         *models.CustomFormatConfig `json:"custom_format"`
+	MaxContextTokens     *int                       `json:"max_context_tokens"`
+	SummarizeThreshold   *float64                   `json:"summarize_threshold"`
+	AllowedUsers         []string                   `json:"allowed_users"`
+	AllowedGroups        []string                   `json:"allowed_groups"`
+
+	// Outbound auth. AuthType: "" | "none" | "forward" | "bearer" ("oauth2"
+	// is reserved and rejected). Empty keeps the legacy ForwardAuthorization
+	// semantics. APIKeyRules nil means "leave existing rules untouched" so
+	// older API clients don't wipe them on update.
+	AuthType       string                   `json:"auth_type"`
+	BearerToken    string                   `json:"bearer_token"`
+	AuthHeaderName string                   `json:"auth_header_name"`
+	APIKeyRules    []models.AgentAPIKeyRule `json:"api_key_rules"`
 }
 
 // AdminAgentResponse includes agent data + permissions for admin view
 type AdminAgentResponse struct {
-	ID                    string                    `json:"id"`
-	Name                  string                    `json:"name"`
-	Description           string                    `json:"description"`
-	Category              string                    `json:"category"`
-	Protocol              string                    `json:"protocol"`
-	Endpoint              string                    `json:"endpoint"`
-	AgentCardPath         string                    `json:"agent_card_path,omitempty"`
-	ForwardAuthorization  bool                      `json:"forward_authorization"`
-	RequireGitHubToken    bool                      `json:"require_github_token"`
-	PipelineFinalAgent    string                    `json:"pipeline_final_agent,omitempty"`
-	ADKAppName            string                    `json:"adk_app_name,omitempty"`
-	ADKUserID             string                    `json:"adk_user_id,omitempty"`
-	Headers               map[string]string         `json:"headers"`
-	RateLimit             *models.RateLimitConfig   `json:"rate_limit,omitempty"`
-	HealthCheck           *models.HealthCheckConfig `json:"health_check,omitempty"`
-	Polling               *models.PollingConfig        `json:"polling,omitempty"`
-	CustomFormat          *models.CustomFormatConfig   `json:"custom_format,omitempty"`
-	MaxContextTokens      int                          `json:"max_context_tokens"`
-	SummarizeThreshold    float64                      `json:"summarize_threshold"`
-	AllowedUsers          []string                     `json:"allowed_users"`
-	AllowedGroups         []string                     `json:"allowed_groups"`
-	InheritedPermissions  *models.InheritedPerms    `json:"inherited_permissions,omitempty"`
-	Status                string                    `json:"status"`
+	ID                   string                     `json:"id"`
+	Name                 string                     `json:"name"`
+	Description          string                     `json:"description"`
+	Category             string                     `json:"category"`
+	Protocol             string                     `json:"protocol"`
+	Endpoint             string                     `json:"endpoint"`
+	AgentCardPath        string                     `json:"agent_card_path,omitempty"`
+	ForwardAuthorization bool                       `json:"forward_authorization"`
+	RequireGitHubToken   bool                       `json:"require_github_token"`
+	PipelineFinalAgent   string                     `json:"pipeline_final_agent,omitempty"`
+	ADKAppName           string                     `json:"adk_app_name,omitempty"`
+	ADKUserID            string                     `json:"adk_user_id,omitempty"`
+	Headers              map[string]string          `json:"headers"`
+	RateLimit            *models.RateLimitConfig    `json:"rate_limit,omitempty"`
+	HealthCheck          *models.HealthCheckConfig  `json:"health_check,omitempty"`
+	Polling              *models.PollingConfig      `json:"polling,omitempty"`
+	CustomFormat         *models.CustomFormatConfig `json:"custom_format,omitempty"`
+	MaxContextTokens     int                        `json:"max_context_tokens"`
+	SummarizeThreshold   float64                    `json:"summarize_threshold"`
+	AllowedUsers         []string                   `json:"allowed_users"`
+	AllowedGroups        []string                   `json:"allowed_groups"`
+	InheritedPermissions *models.InheritedPerms     `json:"inherited_permissions,omitempty"`
+	Status               string                     `json:"status"`
+	AuthType             string                     `json:"auth_type"`
+	BearerToken          string                     `json:"bearer_token,omitempty"`
+	AuthHeaderName       string                     `json:"auth_header_name,omitempty"`
+	APIKeyRules          []models.AgentAPIKeyRule   `json:"api_key_rules,omitempty"`
 }
 
 func agentToAdminResponse(a *models.Agent, users, groups []string) AdminAgentResponse {
@@ -112,7 +126,51 @@ func agentToAdminResponse(a *models.Agent, users, groups []string) AdminAgentRes
 		AllowedUsers:         users,
 		AllowedGroups:        groups,
 		Status:               a.Status,
+		AuthType:             a.GetAuthType(),
+		BearerToken:          a.BearerToken,
+		AuthHeaderName:       a.AuthHeaderName,
+		APIKeyRules:          a.APIKeyRules,
 	}
+}
+
+// validateAgentAuth validates the outbound-auth fields shared by Create/Update.
+// Returns a client-facing error message, or "" when valid.
+func validateAgentAuth(req *AdminAgentRequest) string {
+	switch req.AuthType {
+	case "", models.AgentAuthNone, models.AgentAuthForward, models.AgentAuthBearer:
+	case models.AgentAuthOAuth2:
+		return "auth_type oauth2 is not yet supported for agents"
+	default:
+		return fmt.Sprintf("invalid auth_type: %s", req.AuthType)
+	}
+
+	if req.AuthHeaderName != "" {
+		if err := security.ValidateHeaders(map[string]string{req.AuthHeaderName: "x"}); err != nil {
+			return fmt.Sprintf("invalid auth_header_name: %s", err.Error())
+		}
+		// Headers that would corrupt the outbound HTTP request itself
+		// (not covered by the SSRF blocklist, which targets metadata APIs).
+		switch strings.ToLower(req.AuthHeaderName) {
+		case "host", "content-length", "content-type", "transfer-encoding", "connection":
+			return fmt.Sprintf("invalid auth_header_name: %s", req.AuthHeaderName)
+		}
+	}
+
+	seen := make(map[string]struct{}, len(req.APIKeyRules))
+	for _, rule := range req.APIKeyRules {
+		if rule.SubjectType != "user" && rule.SubjectType != "group" {
+			return fmt.Sprintf("invalid api_key_rules subject_type: %s", rule.SubjectType)
+		}
+		if rule.Subject == "" || rule.APIKey == "" {
+			return "api_key_rules entries require subject and api_key"
+		}
+		key := rule.SubjectType + "\x00" + rule.Subject
+		if _, dup := seen[key]; dup {
+			return fmt.Sprintf("duplicate api_key_rules entry: %s %s", rule.SubjectType, rule.Subject)
+		}
+		seen[key] = struct{}{}
+	}
+	return ""
 }
 
 // ListAgents handles GET /api/admin/agents
@@ -244,6 +302,11 @@ func (h *AdminAgentsHandler) CreateAgent(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
+	if msg := validateAgentAuth(&req); msg != "" {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, msg), http.StatusBadRequest)
+		return
+	}
+
 	agent := &models.Agent{
 		ID:                   req.ID,
 		Name:                 req.Name,
@@ -264,7 +327,13 @@ func (h *AdminAgentsHandler) CreateAgent(w http.ResponseWriter, r *http.Request)
 		CustomFormat:         req.CustomFormat,
 		MaxContextTokens:     derefInt(req.MaxContextTokens, 200000),
 		SummarizeThreshold:   derefFloat(req.SummarizeThreshold, 0.8),
+		AuthType:             req.AuthType,
+		BearerToken:          req.BearerToken,
+		AuthHeaderName:       req.AuthHeaderName,
+		APIKeyRules:          req.APIKeyRules,
 	}
+	// Keep the legacy flag in sync for old readers of forward_authorization.
+	agent.ForwardAuthorization = req.ForwardAuthorization || req.AuthType == models.AgentAuthForward
 
 	if err := h.agentRepo.Create(r.Context(), agent, req.AllowedUsers, req.AllowedGroups); err != nil {
 		h.logger.Error("create agent failed", zap.Error(err))
@@ -344,6 +413,11 @@ func (h *AdminAgentsHandler) UpdateAgent(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
+	if msg := validateAgentAuth(&req); msg != "" {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, msg), http.StatusBadRequest)
+		return
+	}
+
 	agent := &models.Agent{
 		ID:                   id,
 		Name:                 req.Name,
@@ -364,12 +438,30 @@ func (h *AdminAgentsHandler) UpdateAgent(w http.ResponseWriter, r *http.Request)
 		CustomFormat:         req.CustomFormat,
 		MaxContextTokens:     derefInt(req.MaxContextTokens, 200000),
 		SummarizeThreshold:   derefFloat(req.SummarizeThreshold, 0.8),
+		AuthType:             req.AuthType,
+		BearerToken:          req.BearerToken,
+		AuthHeaderName:       req.AuthHeaderName,
 	}
+	// Keep the legacy flag in sync for old readers of forward_authorization.
+	agent.ForwardAuthorization = req.ForwardAuthorization || req.AuthType == models.AgentAuthForward
 
 	if err := h.agentRepo.Update(r.Context(), agent); err != nil {
 		h.logger.Error("update agent failed", zap.Error(err))
 		http.Error(w, `{"error":"failed to update agent"}`, http.StatusInternalServerError)
 		return
+	}
+
+	// Replace API key rules only when the field is present in the request,
+	// so older API clients that omit it don't wipe existing rules.
+	if req.APIKeyRules != nil {
+		if err := h.agentRepo.ReplaceAPIKeyRules(r.Context(), id, req.APIKeyRules); err != nil {
+			h.logger.Error("replace api key rules failed", zap.Error(err))
+			http.Error(w, `{"error":"failed to update api key rules"}`, http.StatusInternalServerError)
+			return
+		}
+		agent.APIKeyRules = req.APIKeyRules
+	} else {
+		agent.APIKeyRules, _ = h.agentRepo.ListAPIKeyRules(r.Context(), id)
 	}
 
 	// Audit

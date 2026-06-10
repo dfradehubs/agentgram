@@ -478,6 +478,8 @@ func (h *ProxyHandler) Chat(w http.ResponseWriter, r *http.Request) {
 		SessionName: session.SessionName,
 		Locale:      locale,
 		RequestID:   requestID,
+		UserEmail:   claims.GetEmail(),
+		UserGroups:  claims.GetGroups(),
 		OnEvent:     onEvent,
 	})
 	proxyErr = err
@@ -702,7 +704,6 @@ func (h *ProxyHandler) Chat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
-
 
 // maxMessageContentBytes is the maximum allowed size for a single message content (100KB).
 const maxMessageContentBytes = 100 * 1024

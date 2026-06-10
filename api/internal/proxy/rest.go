@@ -34,7 +34,7 @@ func NewRESTProxy(logger *zap.Logger) *RESTProxy {
 }
 
 // Handle handles a request to a REST agent using AG-UI protocol
-func (p *RESTProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *models.Agent, body io.Reader, authHeader string, requestID string, threadID string, sessionName string, onEvent func(interface{})) (*ProxyResult, error) {
+func (p *RESTProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *models.Agent, body io.Reader, auth agents.OutboundAuth, requestID string, threadID string, sessionName string, onEvent func(interface{})) (*ProxyResult, error) {
 	// Create SSE writer
 	sse, err := NewSSEWriter(w)
 	if err != nil {
@@ -93,7 +93,7 @@ func (p *RESTProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *mo
 				zap.Duration("delay", delay))
 			time.Sleep(delay)
 		}
-		resp, lastErr = p.client.Request(agentCtx, agent, bytes.NewReader(bodyBytes), authHeader, requestID)
+		resp, lastErr = p.client.Request(agentCtx, agent, bytes.NewReader(bodyBytes), auth, requestID)
 		if lastErr == nil {
 			break
 		}

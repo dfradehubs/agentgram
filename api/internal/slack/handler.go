@@ -13,9 +13,9 @@ import (
 
 	"github.com/dfradehubs/agentgram-api/internal/agents"
 	"github.com/dfradehubs/agentgram-api/internal/auth"
-	"github.com/dfradehubs/agentgram-api/internal/middleware"
 	"github.com/dfradehubs/agentgram-api/internal/crypto"
 	lf "github.com/dfradehubs/agentgram-api/internal/langfuse"
+	"github.com/dfradehubs/agentgram-api/internal/middleware"
 	"github.com/dfradehubs/agentgram-api/internal/models"
 	"github.com/dfradehubs/agentgram-api/internal/proxy"
 	"github.com/dfradehubs/agentgram-api/internal/repository"
@@ -78,7 +78,6 @@ type MessageHandler struct {
 	// Groups cache (email → groups)
 	groupsCache   map[string]cachedGroups
 	groupsCacheMu sync.Mutex
-
 }
 
 // NewMessageHandler creates a new MessageHandler.
@@ -325,7 +324,9 @@ func (h *MessageHandler) HandleMessage(ctx context.Context, client *slackapi.Cli
 	sw := NewStreamingWriter(client, channelID, threadTS, agentID, h.formatter, logger)
 	sw.PostInitialMessage()
 	result, err := h.proxy.Handle(ctx, sw, agent, chatReq, authHeader, proxy.HandleOptions{
-		ThreadID: sessionID,
+		ThreadID:   sessionID,
+		UserEmail:  email,
+		UserGroups: groups,
 	})
 	sw.Finalize()
 
@@ -816,7 +817,6 @@ func (h *MessageHandler) sendLinkViaDM(client *slackapi.Client, slackUserID, msg
 			zap.String("channel", channel.ID), zap.Error(err))
 	}
 }
-
 
 func truncateString(s string, maxLen int) string {
 	s = strings.TrimSpace(s)

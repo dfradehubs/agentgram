@@ -82,6 +82,10 @@ func handleRESTChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Log auth headers so e2e tests can assert what credential the gateway sent
+	log.Printf("chat auth headers: Authorization=%q X-API-Key=%q",
+		r.Header.Get("Authorization"), r.Header.Get("X-API-Key"))
+
 	// Parse request - supports both formats:
 	// Standard REST: {"query": "...", "conversation_id": "..."}
 	// Messages:      {"messages": [...], "session_id": "..."}
