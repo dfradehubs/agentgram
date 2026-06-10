@@ -51,6 +51,25 @@ func TestResolveBearerHeader(t *testing.T) {
 	}
 }
 
+// TestResolveBearerHeader_GroupPriority documents that group precedence is
+// driven by the order the rules are loaded in (ListAPIKeyRules sorts by
+// priority ASC), so the lowest-priority matching group wins when a user is in
+// several groups. The resolver iterates the slice as given.
+func TestResolveBearerHeader_GroupPriority(t *testing.T) {
+	// Rules as loaded from the DB: ORDER BY priority ASC → prod-readonly (0)
+	// before prod-admin (10). User is in both groups; lowest priority wins.
+	cfg := MCPServerConfig{
+		AuthType:    models.MCPAuthBearer,
+		BearerToken: "fallback",
+		APIKeyRules: []models.MCPAPIKeyRule{
+			{SubjectType: "group", Subject: "/g/a", APIKey: "a-key", Priority: 0},
+			{SubjectType: "group", Subject: "/g/b", APIKey: "b-key", Priority: 10},
+		},
+	}
+	_, value := ResolveBearerHeader(cfg, "u@x.com", []string{"/g/b", "/g/a"})
+	assert.Equal(t, "Bearer a-key", value, "lowest-priority matching group rule wins")
+}
+
 func TestIsBearerPerUser(t *testing.T) {
 	withRules := MCPServerConfig{AuthType: models.MCPAuthBearer, APIKeyRules: []models.MCPAPIKeyRule{{SubjectType: "user", Subject: "a", APIKey: "k"}}}
 	assert.True(t, withRules.IsBearerPerUser())
