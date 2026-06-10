@@ -24,12 +24,14 @@ type MCPServerConfig struct {
 	AllowedUsers  []string
 	AllowedGroups []string
 
-	AuthType             string
-	OAuth2AuthServerURL  string
-	OAuth2ClientID       string
-	OAuth2ClientSecret   string
-	OAuth2Scopes         string
-	BearerToken          string
+	AuthType            string
+	OAuth2AuthServerURL string
+	OAuth2ClientID      string
+	OAuth2ClientSecret  string
+	OAuth2Scopes        string
+	BearerToken         string
+	AuthHeaderName      string
+	APIKeyRules         []models.MCPAPIKeyRule
 }
 
 // IsOAuth2 returns true if the server uses OAuth2 authentication.
@@ -40,6 +42,13 @@ func (c *MCPServerConfig) IsOAuth2() bool {
 // IsBearer returns true if the server uses a static bearer token.
 func (c *MCPServerConfig) IsBearer() bool {
 	return c.AuthType == models.MCPAuthBearer
+}
+
+// IsBearerPerUser returns true for bearer servers that resolve the key per
+// user/group. These initialize lazily (like forward/oauth2) so each request
+// carries the calling user's key instead of a shared static token.
+func (c *MCPServerConfig) IsBearerPerUser() bool {
+	return c.IsBearer() && len(c.APIKeyRules) > 0
 }
 
 // ServerInfo holds MCP server config, its client, and runtime status
@@ -156,7 +165,7 @@ func (r *Registry) LoadFromDB(ctx context.Context) error {
 		}
 		r.servers[s.ID] = info
 
-		if serverCfg.ForwardAuth || serverCfg.IsOAuth2() {
+		if serverCfg.ForwardAuth || serverCfg.IsOAuth2() || serverCfg.IsBearerPerUser() {
 			r.logger.Info("MCP server requires per-user auth, will init on first user request",
 				zap.String("id", s.ID),
 				zap.String("name", s.Name),
@@ -192,6 +201,8 @@ func mcpServerToConfig(s *models.MCPServer) MCPServerConfig {
 		OAuth2ClientSecret:  s.OAuth2ClientSecret,
 		OAuth2Scopes:        s.OAuth2Scopes,
 		BearerToken:         s.BearerToken,
+		AuthHeaderName:      s.AuthHeaderName,
+		APIKeyRules:         s.APIKeyRules,
 	}
 }
 
@@ -200,12 +211,15 @@ func mcpServerToConfig(s *models.MCPServer) MCPServerConfig {
 // The configured Headers take precedence, so an explicit "Authorization" in
 // Headers won't be overwritten by a stale BearerToken.
 func effectiveHeaders(cfg MCPServerConfig) map[string]string {
-	if !cfg.IsBearer() || cfg.BearerToken == "" {
+	// Per-user bearer servers resolve the key per request (extraHeaders), so no
+	// shared credential is baked into the static client headers.
+	if !cfg.IsBearer() || cfg.IsBearerPerUser() || cfg.BearerToken == "" {
 		return cfg.Headers
 	}
 
+	name, value := bearerHeader(cfg.AuthHeaderName, cfg.BearerToken)
 	merged := make(map[string]string, len(cfg.Headers)+1)
-	merged["Authorization"] = "Bearer " + cfg.BearerToken
+	merged[name] = value
 	for k, v := range cfg.Headers {
 		merged[k] = v
 	}

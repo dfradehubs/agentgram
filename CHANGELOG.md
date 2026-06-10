@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] - 2026-06-10
+
+### Added
+
+- **MCP servers now have the same outbound auth model as agents.** Bearer mode gains a configurable auth header (`auth_header_name` — `Authorization` with `Bearer ` prefix by default, or any custom header such as `X-API-Key` verbatim) and **per user/group API key rules** (`api_key_rules`), resolved with precedence exact-user > first matching group (ordered) > the server's fallback key. agentgram can now authenticate to an MCP server as a service while sending a different key per calling user or group.
+- Admin UI: the MCP form bearer section gains the auth header field and a per user/group rules editor (the rules editor component is now shared between the agent and MCP forms).
+
+### Changed
+
+- Bearer MCP servers configured with `api_key_rules` initialize lazily per user (like forward/oauth2 servers), so each request carries the calling user's resolved key. Static bearer servers (no rules) keep eager initialization with the shared token. API clients that omit `api_key_rules` on update do not wipe existing rules.
+
 ## [0.3.0] - 2026-06-10
 
 ### Added

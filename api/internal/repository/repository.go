@@ -42,6 +42,8 @@ type MCPServerRepository interface {
 	ListScopeMappings(ctx context.Context, serverID string) ([]models.MCPOAuth2ScopeMapping, error)
 	UpsertScopeMapping(ctx context.Context, mapping *models.MCPOAuth2ScopeMapping) error
 	DeleteScopeMapping(ctx context.Context, id string) error
+	ListAPIKeyRules(ctx context.Context, serverID string) ([]models.MCPAPIKeyRule, error)
+	ReplaceAPIKeyRules(ctx context.Context, serverID string, rules []models.MCPAPIKeyRule) error
 }
 
 // LLMModelRepository manages LLM model persistence

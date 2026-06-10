@@ -1,19 +1,19 @@
 "use client";
 
-import type { AgentApiKeyRule } from "@/lib/types";
+import type { ApiKeyRule } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Plus, Trash2 } from "lucide-react";
 import { useT } from "@/lib/i18n";
 
 interface ApiKeyRulesEditorProps {
-  rules: AgentApiKeyRule[];
-  onChange: (rules: AgentApiKeyRule[]) => void;
+  rules: ApiKeyRule[];
+  onChange: (rules: ApiKeyRule[]) => void;
 }
 
 export function ApiKeyRulesEditor({ rules, onChange }: ApiKeyRulesEditorProps) {
   const t = useT();
 
-  const updateRule = (index: number, patch: Partial<AgentApiKeyRule>) =>
+  const updateRule = (index: number, patch: Partial<ApiKeyRule>) =>
     onChange(rules.map((rule, i) => (i === index ? { ...rule, ...patch } : rule)));
 
   const removeRule = (index: number) =>
@@ -33,7 +33,7 @@ export function ApiKeyRulesEditor({ rules, onChange }: ApiKeyRulesEditorProps) {
             <select
               className="rounded-md border bg-background px-2 py-2 text-sm"
               value={rule.subject_type}
-              onChange={e => updateRule(i, { subject_type: e.target.value as AgentApiKeyRule["subject_type"] })}
+              onChange={e => updateRule(i, { subject_type: e.target.value as ApiKeyRule["subject_type"] })}
             >
               <option value="user">{t("admin.agents.apiKeyRuleUser")}</option>
               <option value="group">{t("admin.agents.apiKeyRuleGroup")}</option>

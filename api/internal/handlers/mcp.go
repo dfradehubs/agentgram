@@ -74,15 +74,15 @@ func NewMCPHandler(llmRepo repository.LLMModelRepository, registry *mcp.Registry
 
 // MCPServerResponse is the public representation of an MCP server
 type MCPServerResponse struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	Description   string `json:"description"`
-	Transport     string `json:"transport"`
-	Status        string `json:"status"`
-	StatusError   string `json:"status_error,omitempty"`
-	ToolCount     int    `json:"tool_count"`
-	AuthType      string `json:"auth_type,omitempty"`
-	OAuth2Connected bool  `json:"oauth2_connected,omitempty"`
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Description     string `json:"description"`
+	Transport       string `json:"transport"`
+	Status          string `json:"status"`
+	StatusError     string `json:"status_error,omitempty"`
+	ToolCount       int    `json:"tool_count"`
+	AuthType        string `json:"auth_type,omitempty"`
+	OAuth2Connected bool   `json:"oauth2_connected,omitempty"`
 }
 
 func serverToResponse(s *mcp.ServerInfo) MCPServerResponse {
@@ -104,13 +104,24 @@ func serverToResponse(s *mcp.ServerInfo) MCPServerResponse {
 // For forward_auth: forwards the user's JWT.
 // For oauth2: retrieves the user's OAuth2 token from the store.
 // Returns nil headers and "oauth2_consent_required" error string if the user needs to authorize.
-func (h *MCPHandler) resolveExtraHeaders(ctx context.Context, server *mcp.ServerInfo, userEmail string) (map[string]string, string) {
+func (h *MCPHandler) resolveExtraHeaders(ctx context.Context, server *mcp.ServerInfo, userEmail string, userGroups []string) (map[string]string, string) {
 	if server.Config.ForwardAuth {
 		authHeader := middleware.GetAuthHeaderFromContext(ctx)
 		if authHeader != "" {
 			return map[string]string{"Authorization": authHeader}, ""
 		}
 		return nil, ""
+	}
+
+	// Bearer with per user/group API key rules: resolve the key for this user
+	// and send it on the configured header (Authorization → "Bearer <key>", or
+	// a custom header verbatim).
+	if server.Config.IsBearerPerUser() {
+		name, value := mcp.ResolveBearerHeader(server.Config, userEmail, userGroups)
+		if value == "" {
+			return nil, ""
+		}
+		return map[string]string{name: value}, ""
 	}
 
 	if server.Config.IsOAuth2() && h.oauth2Mgr != nil && h.mcpRepo != nil {
@@ -164,11 +175,11 @@ func (h *MCPHandler) ListServers(w http.ResponseWriter, r *http.Request) {
 	{
 		var wg sync.WaitGroup
 		for _, s := range accessible {
-			if (s.Config.ForwardAuth || s.Config.IsOAuth2()) && !s.Client.IsInitialized() {
+			if (s.Config.ForwardAuth || s.Config.IsOAuth2() || s.Config.IsBearerPerUser()) && !s.Client.IsInitialized() {
 				wg.Add(1)
 				go func(info *mcp.ServerInfo) {
 					defer wg.Done()
-					headers, _ := h.resolveExtraHeaders(r.Context(), info, userEmail)
+					headers, _ := h.resolveExtraHeaders(r.Context(), info, userEmail, userGroups)
 					if headers == nil {
 						return
 					}
@@ -226,8 +237,8 @@ func (h *MCPHandler) ListTools(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if server.Config.ForwardAuth || server.Config.IsOAuth2() {
-		extraHeaders, authErr := h.resolveExtraHeaders(r.Context(), server, claims.GetEmail())
+	if server.Config.ForwardAuth || server.Config.IsOAuth2() || server.Config.IsBearerPerUser() {
+		extraHeaders, authErr := h.resolveExtraHeaders(r.Context(), server, claims.GetEmail(), claims.GetGroups())
 		if authErr != "" {
 			writeJSONError(w, authErr, http.StatusForbidden)
 			return
@@ -270,7 +281,7 @@ func (h *MCPHandler) Reconnect(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build extra headers for authenticated servers
-	extraHeaders, authErr := h.resolveExtraHeaders(r.Context(), server, claims.GetEmail())
+	extraHeaders, authErr := h.resolveExtraHeaders(r.Context(), server, claims.GetEmail(), claims.GetGroups())
 	if authErr != "" {
 		writeJSONError(w, authErr, http.StatusForbidden)
 		return
@@ -315,12 +326,12 @@ func (h *MCPHandler) Chat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build extra headers for authenticated MCP servers
-	extraHeaders, authErr := h.resolveExtraHeaders(r.Context(), server, userEmail)
+	extraHeaders, authErr := h.resolveExtraHeaders(r.Context(), server, userEmail, claims.GetGroups())
 	if authErr != "" {
 		writeJSONError(w, authErr, http.StatusForbidden)
 		return
 	}
-	if server.Config.ForwardAuth || server.Config.IsOAuth2() {
+	if server.Config.ForwardAuth || server.Config.IsOAuth2() || server.Config.IsBearerPerUser() {
 		if err := h.registry.EnsureInitialized(server, extraHeaders); err != nil {
 			h.logger.Error("MCP lazy-init failed",
 				zap.String("server_id", serverID),
@@ -535,8 +546,8 @@ func (h *MCPHandler) ChatMulti(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Lazy-initialize servers that require per-user auth
-		if server.Config.ForwardAuth || server.Config.IsOAuth2() {
-			headers, authErr := h.resolveExtraHeaders(r.Context(), server, userEmail)
+		if server.Config.ForwardAuth || server.Config.IsOAuth2() || server.Config.IsBearerPerUser() {
+			headers, authErr := h.resolveExtraHeaders(r.Context(), server, userEmail, claims.GetGroups())
 			if authErr != "" {
 				writeJSONError(w, authErr, http.StatusForbidden)
 				return

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -47,12 +48,47 @@ type AdminMCPRequest struct {
 	AllowedUsers  []string          `json:"allowed_users"`
 	AllowedGroups []string          `json:"allowed_groups"`
 
-	AuthType             string `json:"auth_type"`
-	OAuth2AuthServerURL  string `json:"oauth2_auth_server_url"`
-	OAuth2ClientID       string `json:"oauth2_client_id"`
-	OAuth2ClientSecret   string `json:"oauth2_client_secret"`
-	OAuth2Scopes         string `json:"oauth2_scopes"`
-	BearerToken          string `json:"bearer_token"`
+	AuthType            string `json:"auth_type"`
+	OAuth2AuthServerURL string `json:"oauth2_auth_server_url"`
+	OAuth2ClientID      string `json:"oauth2_client_id"`
+	OAuth2ClientSecret  string `json:"oauth2_client_secret"`
+	OAuth2Scopes        string `json:"oauth2_scopes"`
+	BearerToken         string `json:"bearer_token"`
+
+	// Bearer mode: configurable auth header + per user/group API key rules.
+	// APIKeyRules nil means "leave existing rules untouched" on update.
+	AuthHeaderName string                 `json:"auth_header_name"`
+	APIKeyRules    []models.MCPAPIKeyRule `json:"api_key_rules"`
+}
+
+// validateMCPAuth validates the bearer-mode auth header and API key rules.
+// Returns a client-facing error message, or "" when valid.
+func validateMCPAuth(req *AdminMCPRequest) string {
+	if req.AuthHeaderName != "" {
+		if err := security.ValidateHeaders(map[string]string{req.AuthHeaderName: "x"}); err != nil {
+			return fmt.Sprintf("invalid auth_header_name: %s", err.Error())
+		}
+		switch strings.ToLower(req.AuthHeaderName) {
+		case "host", "content-length", "content-type", "transfer-encoding", "connection":
+			return fmt.Sprintf("invalid auth_header_name: %s", req.AuthHeaderName)
+		}
+	}
+
+	seen := make(map[string]struct{}, len(req.APIKeyRules))
+	for _, rule := range req.APIKeyRules {
+		if rule.SubjectType != "user" && rule.SubjectType != "group" {
+			return fmt.Sprintf("invalid api_key_rules subject_type: %s", rule.SubjectType)
+		}
+		if rule.Subject == "" || rule.APIKey == "" {
+			return "api_key_rules entries require subject and api_key"
+		}
+		key := rule.SubjectType + "\x00" + rule.Subject
+		if _, dup := seen[key]; dup {
+			return fmt.Sprintf("duplicate api_key_rules entry: %s %s", rule.SubjectType, rule.Subject)
+		}
+		seen[key] = struct{}{}
+	}
+	return ""
 }
 
 // ListMCPServers handles GET /api/admin/mcp
@@ -107,22 +143,29 @@ func (h *AdminMCPHandler) CreateMCPServer(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	if msg := validateMCPAuth(&req); msg != "" {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, msg), http.StatusBadRequest)
+		return
+	}
+
 	server := &models.MCPServer{
-		ID:                   req.ID,
-		Name:                 req.Name,
-		Description:          req.Description,
-		Transport:            req.Transport,
-		URL:                  req.URL,
-		Headers:              req.Headers,
-		ForwardAuth:          req.ForwardAuth,
-		AllowedUsers:         req.AllowedUsers,
-		AllowedGroups:        req.AllowedGroups,
-		AuthType:             req.AuthType,
-		OAuth2AuthServerURL:  req.OAuth2AuthServerURL,
-		OAuth2ClientID:       req.OAuth2ClientID,
-		OAuth2ClientSecret:   req.OAuth2ClientSecret,
-		OAuth2Scopes:         req.OAuth2Scopes,
-		BearerToken:          req.BearerToken,
+		ID:                  req.ID,
+		Name:                req.Name,
+		Description:         req.Description,
+		Transport:           req.Transport,
+		URL:                 req.URL,
+		Headers:             req.Headers,
+		ForwardAuth:         req.ForwardAuth,
+		AllowedUsers:        req.AllowedUsers,
+		AllowedGroups:       req.AllowedGroups,
+		AuthType:            req.AuthType,
+		OAuth2AuthServerURL: req.OAuth2AuthServerURL,
+		OAuth2ClientID:      req.OAuth2ClientID,
+		OAuth2ClientSecret:  req.OAuth2ClientSecret,
+		OAuth2Scopes:        req.OAuth2Scopes,
+		BearerToken:         req.BearerToken,
+		AuthHeaderName:      req.AuthHeaderName,
+		APIKeyRules:         req.APIKeyRules,
 	}
 
 	if server.GetAuthType() == models.MCPAuthOAuth2 && h.oauth2Mgr != nil {
@@ -203,22 +246,29 @@ func (h *AdminMCPHandler) UpdateMCPServer(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	if msg := validateMCPAuth(&req); msg != "" {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, msg), http.StatusBadRequest)
+		return
+	}
+
 	server := &models.MCPServer{
-		ID:                   id,
-		Name:                 req.Name,
-		Description:          req.Description,
-		Transport:            req.Transport,
-		URL:                  req.URL,
-		Headers:              req.Headers,
-		ForwardAuth:          req.ForwardAuth,
-		AllowedUsers:         req.AllowedUsers,
-		AllowedGroups:        req.AllowedGroups,
-		AuthType:             req.AuthType,
-		OAuth2AuthServerURL:  req.OAuth2AuthServerURL,
-		OAuth2ClientID:       req.OAuth2ClientID,
-		OAuth2ClientSecret:   req.OAuth2ClientSecret,
-		OAuth2Scopes:         req.OAuth2Scopes,
-		BearerToken:          req.BearerToken,
+		ID:                  id,
+		Name:                req.Name,
+		Description:         req.Description,
+		Transport:           req.Transport,
+		URL:                 req.URL,
+		Headers:             req.Headers,
+		ForwardAuth:         req.ForwardAuth,
+		AllowedUsers:        req.AllowedUsers,
+		AllowedGroups:       req.AllowedGroups,
+		AuthType:            req.AuthType,
+		OAuth2AuthServerURL: req.OAuth2AuthServerURL,
+		OAuth2ClientID:      req.OAuth2ClientID,
+		OAuth2ClientSecret:  req.OAuth2ClientSecret,
+		OAuth2Scopes:        req.OAuth2Scopes,
+		BearerToken:         req.BearerToken,
+		AuthHeaderName:      req.AuthHeaderName,
+		APIKeyRules:         req.APIKeyRules,
 	}
 
 	if server.GetAuthType() == models.MCPAuthOAuth2 && h.oauth2Mgr != nil {
@@ -258,6 +308,16 @@ func (h *AdminMCPHandler) UpdateMCPServer(w http.ResponseWriter, r *http.Request
 		h.logger.Error("update mcp server failed", zap.Error(err))
 		http.Error(w, `{"error":"failed to update mcp server"}`, http.StatusInternalServerError)
 		return
+	}
+
+	// Replace API key rules only when present in the request, so older API
+	// clients that omit the field don't wipe existing rules.
+	if req.APIKeyRules != nil {
+		if err := h.mcpRepo.ReplaceAPIKeyRules(r.Context(), id, req.APIKeyRules); err != nil {
+			h.logger.Error("replace mcp api key rules failed", zap.Error(err))
+			http.Error(w, `{"error":"failed to update api key rules"}`, http.StatusInternalServerError)
+			return
+		}
 	}
 
 	claims := middleware.GetUserFromContext(r.Context())

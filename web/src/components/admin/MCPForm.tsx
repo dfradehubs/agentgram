@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import type { AdminMCPServer } from "@/lib/types";
+import type { AdminMCPServer, MCPApiKeyRule } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { TagInput } from "./TagInput";
+import { ApiKeyRulesEditor } from "./ApiKeyRulesEditor";
 
 interface MCPFormProps {
   server?: AdminMCPServer;
@@ -27,6 +28,8 @@ export function MCPForm({ server, onSave, onCancel }: MCPFormProps) {
     oauth2_client_secret: server?.oauth2_client_secret || "",
     oauth2_scopes: server?.oauth2_scopes || "",
     bearer_token: server?.bearer_token || "",
+    auth_header_name: server?.auth_header_name || "Authorization",
+    api_key_rules: (server?.api_key_rules || []) as MCPApiKeyRule[],
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -37,6 +40,8 @@ export function MCPForm({ server, onSave, onCancel }: MCPFormProps) {
       forward_auth: form.auth_type === "forward",
       allowed_users: form.allowed_users,
       allowed_groups: form.allowed_groups,
+      auth_header_name: form.auth_type === "bearer" ? form.auth_header_name : "",
+      api_key_rules: form.auth_type === "bearer" ? form.api_key_rules : [],
     });
   };
 
@@ -126,25 +131,44 @@ export function MCPForm({ server, onSave, onCancel }: MCPFormProps) {
 
       {form.auth_type === "bearer" && (
         <div className="space-y-4 rounded-lg border border-dashed p-4">
-          <h3 className="text-sm font-semibold">Bearer Token</h3>
+          <h3 className="text-sm font-semibold">Bearer / API Key</h3>
           <p className="text-xs text-muted-foreground">
-            Static token added as an <code>Authorization: Bearer &lt;token&gt;</code> header on every call to the MCP server. Shares the same identity for all Agentgram users.
+            Agentgram authenticates to the MCP server as a service with an API key. Optionally send a different key per user or group; otherwise the default key (fallback) is used.
           </p>
 
-          <div>
-            <label className="mb-1 block text-sm font-medium">Token</label>
-            <input
-              className="w-full rounded-md border bg-background px-3 py-2 text-sm font-mono"
-              type="password"
-              value={form.bearer_token}
-              onChange={e => update("bearer_token", e.target.value)}
-              placeholder="Paste the bearer token here"
-              autoComplete="off"
-            />
-            <p className="mt-1 text-xs text-muted-foreground">
-              Stored in the API database. Any administrator with access to the panel can retrieve it.
-            </p>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="mb-1 block text-sm font-medium">Default API key (fallback)</label>
+              <input
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm font-mono"
+                type="password"
+                value={form.bearer_token}
+                onChange={e => update("bearer_token", e.target.value)}
+                placeholder="Paste the API key here"
+                autoComplete="off"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Used when no rule matches. Stored in the API database; any administrator with panel access can retrieve it.
+              </p>
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium">Auth header</label>
+              <input
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                value={form.auth_header_name}
+                onChange={e => update("auth_header_name", e.target.value)}
+                placeholder="Authorization"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                &quot;Authorization&quot; sends the key with a &quot;Bearer &quot; prefix. Any other header (e.g. X-API-Key) sends the key verbatim.
+              </p>
+            </div>
           </div>
+
+          <ApiKeyRulesEditor
+            rules={form.api_key_rules}
+            onChange={rules => setForm(prev => ({ ...prev, api_key_rules: rules }))}
+          />
         </div>
       )}
 
