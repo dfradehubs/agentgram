@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] - 2026-06-11
+
+### Added
+
+- **User identity forwarded to agents and MCP servers.** Every outbound request now carries `X-User-Email` and `X-User-Groups` headers with the calling user's email and groups, taken from the validated JWT/session claims. This applies to all agent protocols (REST/A2A/ADK), all MCP server calls (tool calls and the initialize handshake), and Slack-originated chats. Header values are sanitized against injection and the groups list is capped at 4KB (whole groups dropped past the limit, never truncated mid-value).
+
+### Security
+
+- The new identity headers are plain, unsigned assertions: downstream services should trust them only when the caller is provably agentgram (private network and/or the bearer API key). For cryptographic proof of identity, use `auth_type: forward`, where the service receives the user's signed JWT and can verify it itself.
+
 ## [0.5.0] - 2026-06-10
 
 ### Added
