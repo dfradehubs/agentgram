@@ -56,6 +56,19 @@ Web ──> API (Proxy) ──> Agent (Custom) → SSE/JSON → AG-UI
 - **`pubsub/`**: Real-time event distribution via Redis Pub/Sub.
 - **`models/`**: Data types including `agui.go` for AG-UI events and `session.go` for session types.
 
+### Outbound Headers to Agents and MCP Servers
+
+Every agent request (REST/A2A/ADK clients in `agents/`) carries:
+
+- `X-Agent-ID` — always (agents scope sessions by it)
+- `X-Request-ID` — when present (end-to-end tracing)
+- `X-User-Email` / `X-User-Groups` — calling user's identity from validated JWT/session claims in context (`identity.SetHeaders`). Unsigned assertions: agents must trust them only when the caller is provably agentgram. Groups are CSV, capped at 4KB
+- `X-GitHub-Token` — only if agent has `require_github_token: true`
+- Credential per `auth_type` (`agents.ResolveOutboundAuth`): `forward` → user's `Authorization` as-is; `bearer` → resolved API key; `none` → nothing
+- Admin-configured agent headers, filtered by `security.FilterHeaders` (SSRF)
+
+MCP server requests (`mcp.Client`) carry the same `X-User-Email` / `X-User-Groups`: tool calls get them from the request context at the client level; the `initialize` handshake (background context) gets them merged into the credential headers via `identity.Merge` in `resolveExtraHeaders` (web) and `handleMCPToolCall` (MCP facade).
+
 ## Configuration
 
 Single YAML file loaded via env var:

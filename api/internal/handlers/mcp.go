@@ -12,6 +12,7 @@ import (
 	chiMiddleware "github.com/go-chi/chi/v5/middleware"
 
 	"github.com/dfradehubs/agentgram-api/internal/audit"
+	"github.com/dfradehubs/agentgram-api/internal/identity"
 	lf "github.com/dfradehubs/agentgram-api/internal/langfuse"
 	"github.com/dfradehubs/agentgram-api/internal/llm"
 	"github.com/dfradehubs/agentgram-api/internal/mcp"
@@ -104,11 +105,14 @@ func serverToResponse(s *mcp.ServerInfo) MCPServerResponse {
 // For forward_auth: forwards the user's JWT.
 // For oauth2: retrieves the user's OAuth2 token from the store.
 // Returns nil headers and "oauth2_consent_required" error string if the user needs to authorize.
+// Identity headers (X-User-Email / X-User-Groups) ride along with any resolved
+// credential so the initialize handshake (which runs on a background context,
+// out of reach of the client's context-based injection) also carries them.
 func (h *MCPHandler) resolveExtraHeaders(ctx context.Context, server *mcp.ServerInfo, userEmail string, userGroups []string) (map[string]string, string) {
 	if server.Config.ForwardAuth {
 		authHeader := middleware.GetAuthHeaderFromContext(ctx)
 		if authHeader != "" {
-			return map[string]string{"Authorization": authHeader}, ""
+			return identity.Merge(ctx, map[string]string{"Authorization": authHeader}), ""
 		}
 		return nil, ""
 	}
@@ -121,7 +125,7 @@ func (h *MCPHandler) resolveExtraHeaders(ctx context.Context, server *mcp.Server
 		if value == "" {
 			return nil, ""
 		}
-		return map[string]string{name: value}, ""
+		return identity.Merge(ctx, map[string]string{name: value}), ""
 	}
 
 	if server.Config.IsOAuth2() && h.oauth2Mgr != nil && h.mcpRepo != nil {
@@ -137,7 +141,7 @@ func (h *MCPHandler) resolveExtraHeaders(ctx context.Context, server *mcp.Server
 		if token == nil {
 			return nil, "oauth2_consent_required"
 		}
-		return map[string]string{"Authorization": "Bearer " + token.AccessToken}, ""
+		return identity.Merge(ctx, map[string]string{"Authorization": "Bearer " + token.AccessToken}), ""
 	}
 
 	return nil, ""

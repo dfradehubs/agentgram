@@ -14,6 +14,7 @@ import (
 	"github.com/dfradehubs/agentgram-api/internal/agents"
 	"github.com/dfradehubs/agentgram-api/internal/auth"
 	"github.com/dfradehubs/agentgram-api/internal/config"
+	"github.com/dfradehubs/agentgram-api/internal/identity"
 	lf "github.com/dfradehubs/agentgram-api/internal/langfuse"
 	"github.com/dfradehubs/agentgram-api/internal/mcp"
 	"github.com/dfradehubs/agentgram-api/internal/middleware"
@@ -628,6 +629,11 @@ func (h *Handler) handleMCPToolCall(w http.ResponseWriter, r *http.Request, req 
 			}
 		}
 	}
+
+	// Identity headers ride along with the credential so the initialize
+	// handshake (background context) also carries them; the tool call itself
+	// gets them from r.Context() at the MCP client level.
+	extraHeaders = identity.Merge(r.Context(), extraHeaders)
 
 	// Lazy-initialize server if needed
 	if (server.Config.ForwardAuth || server.Config.IsOAuth2()) && extraHeaders != nil {

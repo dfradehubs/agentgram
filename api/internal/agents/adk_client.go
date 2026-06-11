@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/dfradehubs/agentgram-api/internal/adk"
+	"github.com/dfradehubs/agentgram-api/internal/identity"
 	"github.com/dfradehubs/agentgram-api/internal/middleware"
 	"github.com/dfradehubs/agentgram-api/internal/models"
 	"github.com/dfradehubs/agentgram-api/internal/security"
@@ -95,6 +96,9 @@ func (c *ADKClient) CreateSession(ctx context.Context, agent *models.Agent, user
 	if auth.HeaderValue != "" {
 		httpReq.Header.Set(auth.HeaderName, auth.HeaderValue)
 	}
+
+	// Identify the calling user to the agent (X-User-Email / X-User-Groups)
+	identity.SetHeaders(ctx, httpReq)
 
 	// Forward GitHub token only to agents that explicitly require it
 	if agent.RequireGitHubToken {
@@ -194,6 +198,9 @@ func (c *ADKClient) RunSSE(ctx context.Context, agent *models.Agent, message str
 	if auth.HeaderValue != "" {
 		httpReq.Header.Set(auth.HeaderName, auth.HeaderValue)
 	}
+
+	// Identify the calling user to the agent (X-User-Email / X-User-Groups)
+	identity.SetHeaders(ctx, httpReq)
 
 	// Forward GitHub token only to agents that explicitly require it
 	if agent.RequireGitHubToken {

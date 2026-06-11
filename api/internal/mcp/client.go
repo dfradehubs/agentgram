@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/dfradehubs/agentgram-api/internal/identity"
 	"github.com/dfradehubs/agentgram-api/internal/security"
 	"go.uber.org/zap"
 )
@@ -233,6 +234,9 @@ func (c *Client) terminateSession(ctx context.Context, extraHeaders map[string]s
 		req.Header.Set(k, v)
 	}
 
+	// Identify the calling user to the MCP server (X-User-Email / X-User-Groups)
+	identity.SetHeaders(ctx, req)
+
 	resp, err := c.client.Do(req)
 	if err != nil {
 		c.logger.Warn("MCP session termination request failed", zap.Error(err))
@@ -280,6 +284,9 @@ func (c *Client) sendNotificationWithHeaders(ctx context.Context, method string,
 	for k, v := range security.FilterHeaders(extraHeaders) {
 		req.Header.Set(k, v)
 	}
+
+	// Identify the calling user to the MCP server (X-User-Email / X-User-Groups)
+	identity.SetHeaders(ctx, req)
 
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -338,6 +345,9 @@ func (c *Client) jsonRPCRawWithHeaders(ctx context.Context, method string, param
 	for k, v := range security.FilterHeaders(extraHeaders) {
 		req.Header.Set(k, v)
 	}
+
+	// Identify the calling user to the MCP server (X-User-Email / X-User-Groups)
+	identity.SetHeaders(ctx, req)
 
 	c.logger.Debug("MCP request sending",
 		zap.String("method", method),

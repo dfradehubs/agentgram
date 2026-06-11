@@ -320,6 +320,10 @@ func (h *MessageHandler) HandleMessage(ctx context.Context, client *slackapi.Cli
 		})
 	}
 
+	// Put the resolved identity in ctx so agent clients send
+	// X-User-Email / X-User-Groups, same as web-originated chats
+	ctx = context.WithValue(ctx, middleware.UserContextKey, &auth.Claims{Email: email, Groups: groups})
+
 	// 10. Post "Escribiendo..." immediately BEFORE calling the proxy
 	sw := NewStreamingWriter(client, channelID, threadTS, agentID, h.formatter, logger)
 	sw.PostInitialMessage()

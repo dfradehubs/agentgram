@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/dfradehubs/agentgram-api/internal/identity"
 	"github.com/dfradehubs/agentgram-api/internal/middleware"
 	"github.com/dfradehubs/agentgram-api/internal/models"
 	"github.com/dfradehubs/agentgram-api/internal/security"
@@ -65,6 +66,9 @@ func (c *RESTClient) Request(ctx context.Context, agent *models.Agent, body io.R
 	if auth.HeaderValue != "" {
 		req.Header.Set(auth.HeaderName, auth.HeaderValue)
 	}
+
+	// Identify the calling user to the agent (X-User-Email / X-User-Groups)
+	identity.SetHeaders(ctx, req)
 
 	// Forward GitHub token only to agents that explicitly require it
 	if agent.RequireGitHubToken {
