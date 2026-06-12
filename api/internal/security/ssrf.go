@@ -36,7 +36,7 @@ var metadataNetworks []*net.IPNet
 
 func init() {
 	cidrs := []string{
-		"169.254.0.0/16", // Link-local (cloud metadata: 169.254.169.254)
+		"169.254.0.0/16",    // Link-local (cloud metadata: 169.254.169.254)
 		"fd00:ec2::254/128", // AWS IPv6 metadata
 	}
 	for _, cidr := range cidrs {
@@ -47,14 +47,14 @@ func init() {
 
 // blockedHostnames contains hostnames that must never be targeted.
 var blockedHostnames = map[string]bool{
-	"metadata.google.internal":              true,
-	"metadata.goog":                         true,
-	"169.254.169.254":                       true,
-	"[fd00:ec2::254]":                       true,
-	"metadata.azure.internal":               true,
-	"kubernetes.default":                    true,
-	"kubernetes.default.svc":                true,
-	"kubernetes.default.svc.cluster.local":  true,
+	"metadata.google.internal":             true,
+	"metadata.goog":                        true,
+	"169.254.169.254":                      true,
+	"[fd00:ec2::254]":                      true,
+	"metadata.azure.internal":              true,
+	"kubernetes.default":                   true,
+	"kubernetes.default.svc":               true,
+	"kubernetes.default.svc.cluster.local": true,
 }
 
 // ValidateEndpointURL validates that a URL is safe to use as an outbound endpoint.
@@ -176,8 +176,10 @@ func NewSafeTransport() *http.Transport {
 			}
 			return dialer.DialContext(ctx, network, net.JoinHostPort(ips[0].IP.String(), port))
 		},
-		TLSHandshakeTimeout:   10 * time.Second,
-		ResponseHeaderTimeout: 60 * time.Second,
+		TLSHandshakeTimeout: 10 * time.Second,
+		// 5m: fan-out agents can take >150s before emitting the first byte.
+		// Callers with stricter needs cap it via Client.Timeout or context.
+		ResponseHeaderTimeout: 5 * time.Minute,
 		IdleConnTimeout:       90 * time.Second,
 	}
 }
