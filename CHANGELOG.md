@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.1] - 2026-06-12
+
+### Fixed
+
+- **Agent response header timeout raised from 60s to 5 minutes.** Agents that fan out work (e.g. querying multiple providers at once) can take >150s before emitting the first byte; the previous 60s `ResponseHeaderTimeout` in the outbound transport aborted those requests with `net/http: timeout awaiting response headers`, and each automatic retry launched a duplicate full run against the agent. Applies to all agent protocols (REST/A2A/ADK). MCP tool calls keep their own `tool_call_timeout` cap.
+
 ## [0.6.0] - 2026-06-11
 
 ### Added
