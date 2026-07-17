@@ -30,8 +30,8 @@ func (r *GroupRepository) Create(ctx context.Context, group *models.AgentGroup, 
 	agentIDsJSON, _ := json.Marshal(group.AgentIDs)
 
 	_, err = tx.Exec(ctx,
-		`INSERT INTO agent_groups (id, name, agent_ids, created_by) VALUES ($1, $2, $3, $4)`,
-		group.ID, group.Name, agentIDsJSON, group.CreatedBy,
+		`INSERT INTO agent_groups (id, name, agent_ids, created_by, max_turns) VALUES ($1, $2, $3, $4, $5)`,
+		group.ID, group.Name, agentIDsJSON, group.CreatedBy, group.MaxTurns,
 	)
 	if err != nil {
 		return fmt.Errorf("insert group: %w", err)
@@ -64,8 +64,8 @@ func (r *GroupRepository) Get(ctx context.Context, id string) (*models.AgentGrou
 	var agentIDsJSON []byte
 
 	err := r.pool.QueryRow(ctx,
-		`SELECT id, name, agent_ids, created_by, created_at, updated_at FROM agent_groups WHERE id = $1`, id,
-	).Scan(&group.ID, &group.Name, &agentIDsJSON, &group.CreatedBy, &group.CreatedAt, &group.UpdatedAt)
+		`SELECT id, name, agent_ids, created_by, max_turns, created_at, updated_at FROM agent_groups WHERE id = $1`, id,
+	).Scan(&group.ID, &group.Name, &agentIDsJSON, &group.CreatedBy, &group.MaxTurns, &group.CreatedAt, &group.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("get group: %w", err)
 	}
@@ -86,7 +86,7 @@ func (r *GroupRepository) Get(ctx context.Context, id string) (*models.AgentGrou
 
 func (r *GroupRepository) List(ctx context.Context) ([]*models.AgentGroup, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, name, agent_ids, created_by, created_at, updated_at FROM agent_groups ORDER BY name`,
+		`SELECT id, name, agent_ids, created_by, max_turns, created_at, updated_at FROM agent_groups ORDER BY name`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list groups: %w", err)
@@ -97,7 +97,7 @@ func (r *GroupRepository) List(ctx context.Context) ([]*models.AgentGroup, error
 	for rows.Next() {
 		g := &models.AgentGroup{}
 		var agentIDsJSON []byte
-		if err := rows.Scan(&g.ID, &g.Name, &agentIDsJSON, &g.CreatedBy, &g.CreatedAt, &g.UpdatedAt); err != nil {
+		if err := rows.Scan(&g.ID, &g.Name, &agentIDsJSON, &g.CreatedBy, &g.MaxTurns, &g.CreatedAt, &g.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan group: %w", err)
 		}
 		if len(agentIDsJSON) > 0 {
@@ -119,8 +119,8 @@ func (r *GroupRepository) Update(ctx context.Context, group *models.AgentGroup) 
 	agentIDsJSON, _ := json.Marshal(group.AgentIDs)
 
 	tag, err := r.pool.Exec(ctx,
-		`UPDATE agent_groups SET name=$2, agent_ids=$3, updated_at=NOW() WHERE id=$1`,
-		group.ID, group.Name, agentIDsJSON,
+		`UPDATE agent_groups SET name=$2, agent_ids=$3, max_turns=$4, updated_at=NOW() WHERE id=$1`,
+		group.ID, group.Name, agentIDsJSON, group.MaxTurns,
 	)
 	if err != nil {
 		return fmt.Errorf("update group: %w", err)

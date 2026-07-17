@@ -335,8 +335,12 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 		return result.AssistantText, nil
 	}
 
+	maxTurns := mcpGroupMaxTurns
+	if group.MaxTurns > 0 {
+		maxTurns = group.MaxTurns
+	}
 	transcript := orchestrator.RenderTranscript(session.Messages)
-	results, debateErr := h.moderator.Debate(callCtx, roster, transcript, run, mcpGroupMaxTurns)
+	results, debateErr := h.moderator.Debate(callCtx, roster, transcript, run, maxTurns)
 	if debateErr != nil && len(results) == 0 {
 		return "", session.SessionID, debateErr
 	}

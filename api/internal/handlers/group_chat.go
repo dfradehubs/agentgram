@@ -291,8 +291,12 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 		return result.AssistantText, nil
 	}
 
+	maxTurns := groupChatMaxTurns
+	if group.MaxTurns > 0 {
+		maxTurns = group.MaxTurns
+	}
 	transcript := orchestrator.RenderTranscript(session.Messages)
-	results, debateErr := h.moderator.Debate(ctx, roster, transcript, run, groupChatMaxTurns)
+	results, debateErr := h.moderator.Debate(ctx, roster, transcript, run, maxTurns)
 
 	if debateErr != nil && len(results) == 0 {
 		// Moderator failed before anyone spoke: surface as a run error.

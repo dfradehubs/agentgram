@@ -36,6 +36,7 @@ type AdminGroupRequest struct {
 	AgentIDs      []string `json:"agent_ids"`
 	AllowedUsers  []string `json:"allowed_users"`
 	AllowedGroups []string `json:"allowed_groups"`
+	MaxTurns      int      `json:"max_turns"`
 }
 
 // AdminGroupResponse is the response for admin group views
@@ -46,6 +47,7 @@ type AdminGroupResponse struct {
 	CreatedBy     string   `json:"created_by"`
 	AllowedUsers  []string `json:"allowed_users"`
 	AllowedGroups []string `json:"allowed_groups"`
+	MaxTurns      int      `json:"max_turns"`
 	CreatedAt     string   `json:"created_at"`
 	UpdatedAt     string   `json:"updated_at"`
 }
@@ -58,6 +60,7 @@ func groupToAdminResponse(g *models.AgentGroup) AdminGroupResponse {
 		CreatedBy:     g.CreatedBy,
 		AllowedUsers:  g.AllowedUsers,
 		AllowedGroups: g.AllowedGroups,
+		MaxTurns:      g.MaxTurns,
 		CreatedAt:     g.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		UpdatedAt:     g.UpdatedAt.Format("2006-01-02T15:04:05Z"),
 	}
@@ -108,13 +111,19 @@ func (h *AdminGroupsHandler) CreateGroup(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	if req.MaxTurns < 0 {
+		http.Error(w, `{"error":"max_turns must be >= 0 (0 = default)"}`, http.StatusBadRequest)
+		return
+	}
+
 	claims := middleware.GetUserFromContext(r.Context())
 
 	group := &models.AgentGroup{
-		ID:       req.ID,
-		Name:     req.Name,
-		AgentIDs: req.AgentIDs,
+		ID:        req.ID,
+		Name:      req.Name,
+		AgentIDs:  req.AgentIDs,
 		CreatedBy: claims.GetEmail(),
+		MaxTurns:  req.MaxTurns,
 	}
 
 	if err := h.groupRepo.Create(r.Context(), group, req.AllowedUsers, req.AllowedGroups); err != nil {
@@ -161,10 +170,16 @@ func (h *AdminGroupsHandler) UpdateGroup(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	if req.MaxTurns < 0 {
+		http.Error(w, `{"error":"max_turns must be >= 0 (0 = default)"}`, http.StatusBadRequest)
+		return
+	}
+
 	group := &models.AgentGroup{
 		ID:       id,
 		Name:     req.Name,
 		AgentIDs: req.AgentIDs,
+		MaxTurns: req.MaxTurns,
 	}
 
 	if err := h.groupRepo.Update(r.Context(), group); err != nil {

@@ -22,6 +22,7 @@ export function GroupForm({ group, onSave, onCancel }: GroupFormProps) {
     agent_ids: group?.agent_ids || [],
     allowed_users: group?.allowed_users || [],
     allowed_groups: group?.allowed_groups || [],
+    max_turns: group?.max_turns ?? 0,
   });
 
   useEffect(() => {
@@ -45,6 +46,7 @@ export function GroupForm({ group, onSave, onCancel }: GroupFormProps) {
       agent_ids: form.agent_ids,
       allowed_users: form.allowed_users,
       allowed_groups: form.allowed_groups,
+      max_turns: form.max_turns,
     });
   };
 
@@ -120,6 +122,20 @@ export function GroupForm({ group, onSave, onCancel }: GroupFormProps) {
         onChange={(v) => setForm((prev) => ({ ...prev, allowed_groups: v }))}
         placeholder="/google-workspace/group@example.com"
       />
+
+      <div>
+        <label className="mb-1 block text-sm font-medium">Max debate turns</label>
+        <input
+          type="number"
+          min={0}
+          className="w-32 rounded-md border bg-background px-3 py-2 text-sm"
+          value={form.max_turns}
+          onChange={(e) => setForm((prev) => ({ ...prev, max_turns: Math.max(0, parseInt(e.target.value, 10) || 0) }))}
+        />
+        <p className="mt-1 text-xs text-muted-foreground">
+          Max agents the moderator can call per message. 0 = default (6 via API/web, 3 via MCP).
+        </p>
+      </div>
 
       <div className="flex gap-2 pt-4">
         <Button type="submit" disabled={form.agent_ids.length < 2}>

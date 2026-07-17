@@ -141,6 +141,7 @@ export interface AdminGroup {
   created_by: string;
   allowed_users: string[];
   allowed_groups: string[];
+  max_turns?: number; // Cap on moderated-debate turns; 0/undefined = surface default
   created_at: string;
   updated_at: string;
 }
