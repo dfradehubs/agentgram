@@ -358,7 +358,7 @@ func SetupRoutes(cfg *config.Config, registry *agents.Registry, sessionStore sto
 		r.Get("/sessions/{sessionId}/subscribe", subscribeHandler.Subscribe)
 
 		// Live reconnect to an in-flight run after a page reload (SSE replay + live)
-		runStreamHandler := handlers.NewRunStreamHandler(adminDeps.RedisClient, sessionStore, registry, adminDeps.GroupRepo, adminDeps.UserService, logger)
+		runStreamHandler := handlers.NewRunStreamHandler(adminDeps.RedisClient, sessionStore, registry, adminDeps.GroupRepo, adminDeps.UserService, adminDeps.SettingsService, logger)
 		r.Get("/agents/{agentId}/sessions/{sessionId}/stream", runStreamHandler.Stream)
 
 		// Agent groups (user-facing, read + use only — creation/editing is admin-only)

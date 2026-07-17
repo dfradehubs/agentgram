@@ -115,7 +115,6 @@ func (h *AdminGroupsHandler) CreateGroup(w http.ResponseWriter, r *http.Request)
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
 		return
 	}
-
 	if req.MaxTurns < 0 || req.MaxTurns > 50 {
 		http.Error(w, `{"error":"max_turns must be between 0 (default) and 50"}`, http.StatusBadRequest)
 		return
@@ -172,6 +171,10 @@ func (h *AdminGroupsHandler) UpdateGroup(w http.ResponseWriter, r *http.Request)
 	var req AdminGroupRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	if req.Name == "" || len(req.AgentIDs) < 2 {
+		http.Error(w, `{"error":"name and at least 2 agent_ids are required"}`, http.StatusBadRequest)
 		return
 	}
 

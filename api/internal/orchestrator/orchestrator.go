@@ -25,10 +25,11 @@ type AgentBrief struct {
 
 // TurnResult is the outcome of one agent turn in a debate.
 type TurnResult struct {
-	AgentID     string
-	Text        string
-	Err         error // per-turn failure; the debate continues
-	FailureKind TurnFailureKind
+	AgentID      string
+	Text         string
+	Err          error // per-turn failure; the debate continues
+	FailureKind  TurnFailureKind
+	FailureKinds []TurnFailureKind
 }
 
 type TurnFailureKind string
@@ -36,6 +37,7 @@ type TurnFailureKind string
 const (
 	TurnFailureAgent       TurnFailureKind = "agent"
 	TurnFailurePersistence TurnFailureKind = "persistence"
+	TurnFailureMapping     TurnFailureKind = "session_mapping"
 )
 
 type turnError struct {
@@ -58,10 +60,35 @@ func TurnErrorKind(err error) TurnFailureKind {
 	if hasTurnFailure(err, TurnFailurePersistence) {
 		return TurnFailurePersistence
 	}
+	if hasTurnFailure(err, TurnFailureMapping) {
+		return TurnFailureMapping
+	}
 	if err != nil {
 		return TurnFailureAgent
 	}
 	return ""
+}
+
+// TurnErrorKinds returns every independent failure carried by a joined turn
+// error. A turn can fail at the agent and persistence layers simultaneously.
+func TurnErrorKinds(err error) []TurnFailureKind {
+	kinds := make([]TurnFailureKind, 0, 3)
+	for _, kind := range []TurnFailureKind{TurnFailureAgent, TurnFailurePersistence, TurnFailureMapping} {
+		if hasTurnFailure(err, kind) {
+			kinds = append(kinds, kind)
+		}
+	}
+	return kinds
+}
+
+// HasFailure reports whether a turn result contains a specific failure cause.
+func (r TurnResult) HasFailure(kind TurnFailureKind) bool {
+	for _, failure := range r.FailureKinds {
+		if failure == kind {
+			return true
+		}
+	}
+	return r.FailureKind == kind
 }
 
 func hasTurnFailure(err error, kind TurnFailureKind) bool {
@@ -84,7 +111,10 @@ func hasTurnFailure(err error, kind TurnFailureKind) bool {
 	return false
 }
 
-var ErrMaxTurnsReached = errors.New("maximum debate turns reached")
+var (
+	ErrMaxTurnsReached   = errors.New("maximum debate turns reached")
+	ErrModeratorProtocol = errors.New("moderator returned an invalid next-speaker response")
+)
 
 // TurnRunner executes one agent turn and returns the agent's reply text.
 // The API implements it by streaming SSE; MCP by collecting text. The runner
@@ -124,7 +154,7 @@ func NewWithProvider(provider llm.Provider, logger *zap.Logger) *Moderator {
 // Security note: agent replies and user text are interpolated verbatim into
 // the transcript, so a malicious participant can try to steer turn selection
 // (prompt injection). Blast radius is bounded by design: NextSpeaker output is
-// validated against the roster (anything else means FINISH), turns are capped,
+// validated against the roster (invalid output aborts the debate), turns are capped,
 // and agents can already emit arbitrary text to the user directly.
 const nextSpeakerPrompt = `You are the moderator of a group conversation between a user and several specialized AI agents, like a Telegram group. Your only job is to decide who speaks next.
 
@@ -162,7 +192,8 @@ const moderatorMaxTokens = 64
 const synthesisMaxTokens = 1024
 
 // NextSpeaker asks the LLM who should speak next. Returns done=true when the
-// debate should end (explicit FINISH, empty answer, or an id not in the roster).
+// debate should end only for explicit FINISH. Empty or unknown output is a
+// moderator protocol error so callers never mistake a model failure for success.
 func (m *Moderator) NextSpeaker(ctx context.Context, roster []AgentBrief, transcript string) (string, bool, error) {
 	var rosterDesc strings.Builder
 	ids := make([]string, 0, len(roster))
@@ -181,17 +212,19 @@ func (m *Moderator) NextSpeaker(ctx context.Context, roster []AgentBrief, transc
 	}
 
 	answer := strings.TrimSpace(resp.Text)
-	if answer == "" || strings.EqualFold(answer, "FINISH") {
+	if strings.EqualFold(answer, "FINISH") {
 		return "", true, nil
+	}
+	if answer == "" {
+		return "", false, fmt.Errorf("%w: empty response", ErrModeratorProtocol)
 	}
 	for _, id := range ids {
 		if answer == id {
 			return id, false, nil
 		}
 	}
-	// Unknown id: safe default is to end the debate rather than guess.
 	m.logger.Warn("moderator returned unknown agent id", zap.String("answer", answer))
-	return "", true, nil
+	return "", false, fmt.Errorf("%w: unknown agent id %q", ErrModeratorProtocol, answer)
 }
 
 // Debate runs the moderated turn loop: ask NextSpeaker, run the turn, append
@@ -226,7 +259,7 @@ func (m *Moderator) Debate(ctx context.Context, roster []AgentBrief, transcript 
 			} else {
 				transcript += fmt.Sprintf("\nAgent[%s]: [error: %v]", agentID, err)
 			}
-			results = append(results, TurnResult{AgentID: agentID, Text: text, Err: err, FailureKind: TurnErrorKind(err)})
+			results = append(results, TurnResult{AgentID: agentID, Text: text, Err: err, FailureKind: TurnErrorKind(err), FailureKinds: TurnErrorKinds(err)})
 			continue
 		}
 

@@ -575,11 +575,12 @@ func TestGroupChatDeadlineBoundsAllTurns(t *testing.T) {
 
 func TestGroupChatPersistenceFailuresAreIncomplete(t *testing.T) {
 	tests := []struct {
-		name      string
-		configure func(*fakeSessionStore)
+		name       string
+		wantReason string
+		configure  func(*fakeSessionStore)
 	}{
-		{"reply", func(s *fakeSessionStore) { s.failReplyAdd = true }},
-		{"mapping", func(s *fakeSessionStore) { s.failSetAgent = true }},
+		{"reply", "persistence_error", func(s *fakeSessionStore) { s.failReplyAdd = true }},
+		{"mapping", "session_mapping_error", func(s *fakeSessionStore) { s.failSetAgent = true }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -588,7 +589,7 @@ func TestGroupChatPersistenceFailuresAreIncomplete(t *testing.T) {
 
 			rec := fx.post(t, "g1", `{"messages":[{"role":"user","content":"status"}]}`)
 			events := parseSSEEvents(t, rec.Body.String())
-			if got := incompleteReasonFromEvents(events); got != "persistence_error" {
+			if got := incompleteReasonFromEvents(events); got != tt.wantReason {
 				t.Fatalf("persistence failure ended as clean success; reason = %q", got)
 			}
 			if !strings.Contains(contentByAgent(events)["agent-a"], "reply from agent-a") {
@@ -693,6 +694,35 @@ func TestChatPersistenceFailureOwnsTerminalLifecycle(t *testing.T) {
 	}
 	if strings.Contains(rec.Body.String(), "simulated reply persistence failure") {
 		t.Fatal("internal persistence error leaked into SSE")
+	}
+}
+
+func TestDirectAgentChatRejectsGroupSession(t *testing.T) {
+	fx := newGroupChatFixture(t, http.StatusOK, http.StatusOK, "FINISH")
+	fx.post(t, "g1", `{"messages":[{"role":"user","content":"status"}]}`)
+	sessionID := fx.store.sessionID(0)
+
+	req := httptest.NewRequest("POST", "/api/agents/agent-a/chat", strings.NewReader(fmt.Sprintf(`{"messages":[{"role":"user","content":"bypass"}],"session_id":%q}`, sessionID)))
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(context.WithValue(req.Context(), middleware.UserContextKey, &auth.Claims{Email: testUserEmail}))
+	rec := httptest.NewRecorder()
+	fx.router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "group sessions must use") {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestDirectAgentChatRejectsGroupID(t *testing.T) {
+	fx := newGroupChatFixture(t, http.StatusOK, http.StatusOK)
+	req := httptest.NewRequest("POST", "/api/agents/agent-a/chat", strings.NewReader(`{"messages":[{"role":"user","content":"bypass"}],"group_id":"g1"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(context.WithValue(req.Context(), middleware.UserContextKey, &auth.Claims{Email: testUserEmail}))
+	rec := httptest.NewRecorder()
+	fx.router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest || len(fx.store.order) != 0 {
+		t.Fatalf("status=%d sessions=%d body=%s", rec.Code, len(fx.store.order), rec.Body.String())
 	}
 }
 

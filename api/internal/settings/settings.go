@@ -30,7 +30,7 @@ type Def struct {
 	Type        Type   `json:"type"`
 	Default     string `json:"default"`
 	Description string `json:"description"`
-	Min         int    `json:"min,omitempty"` // int type only (0 = no lower bound beyond >=0)
+	Min         int    `json:"min,omitempty"` // int type only (0 = use the global minimum of 1)
 	Max         int    `json:"max,omitempty"` // int type only (0 = no upper bound)
 }
 

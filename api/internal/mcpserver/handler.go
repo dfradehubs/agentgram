@@ -32,21 +32,22 @@ import (
 
 // Handler is the HTTP handler for MCP protocol requests
 type Handler struct {
-	server         *Server
-	registry       *agents.Registry
-	mcpRegistry    *mcp.Registry
-	proxy          *proxy.Proxy
-	sessionStore   store.SessionStore
-	userService    *service.UserService
-	groupRepo      repository.GroupRepository
-	oidcClient     *auth.OIDCClient
-	langfuseTracer *lf.Tracer
-	cfg            *config.Config
-	oauth2Mgr      *mcp.OAuth2Manager
-	mcpRepo        repository.MCPServerRepository
-	moderator      *orchestrator.Moderator
-	settings       *appsettings.Service
-	logger         *zap.Logger
+	server           *Server
+	registry         *agents.Registry
+	mcpRegistry      *mcp.Registry
+	proxy            *proxy.Proxy
+	sessionStore     store.SessionStore
+	userService      *service.UserService
+	groupRepo        repository.GroupRepository
+	oidcClient       *auth.OIDCClient
+	langfuseTracer   *lf.Tracer
+	cfg              *config.Config
+	oauth2Mgr        *mcp.OAuth2Manager
+	mcpRepo          repository.MCPServerRepository
+	moderator        *orchestrator.Moderator
+	moderatorLoadErr error
+	settings         *appsettings.Service
+	logger           *zap.Logger
 }
 
 // NewHandler creates a new MCP HTTP handler
@@ -67,37 +68,43 @@ func NewHandler(
 ) *Handler {
 	// Moderator LLM for group debate tools (role "moderator"); nil when unconfigured
 	var moderator *orchestrator.Moderator
+	var moderatorLoadErr error
 	if llmRepo != nil {
-		if modModels, err := llmRepo.ListByRole(context.Background(), "moderator"); err == nil && len(modModels) > 0 {
+		if modModels, err := llmRepo.ListByRole(context.Background(), "moderator"); err != nil {
+			moderatorLoadErr = fmt.Errorf("load moderator model: %w", err)
+			logger.Error("failed to load MCP moderator model", zap.Error(err))
+		} else if len(modModels) > 0 {
 			model := modModels[0]
 			provider, provErr := llm.NewProvider(model)
-			if provErr == nil && lfTracer != nil && lfTracer.Enabled() {
-				provider = lf.WrapProvider(provider, "moderator", model.Model)
-			}
-			if provErr == nil {
-				moderator = orchestrator.NewWithProvider(provider, logger)
+			if provErr != nil {
+				moderatorLoadErr = fmt.Errorf("create moderator provider: %w", provErr)
+				logger.Error("failed to create MCP moderator provider", zap.Error(provErr))
 			} else {
-				moderator = orchestrator.New(model, logger)
+				if lfTracer != nil && lfTracer.Enabled() {
+					provider = lf.WrapProvider(provider, "moderator", model.Model)
+				}
+				moderator = orchestrator.NewWithProvider(provider, logger)
 			}
 		}
 	}
 
 	return &Handler{
-		server:         NewServer(registry, mcpRegistry, userService, groupRepo, logger),
-		registry:       registry,
-		mcpRegistry:    mcpRegistry,
-		proxy:          proxy.NewProxy(logger),
-		sessionStore:   sessionStore,
-		userService:    userService,
-		groupRepo:      groupRepo,
-		oidcClient:     oidcClient,
-		langfuseTracer: lfTracer,
-		cfg:            cfg,
-		oauth2Mgr:      oauth2Mgr,
-		mcpRepo:        mcpRepo,
-		moderator:      moderator,
-		settings:       settingsService,
-		logger:         logger,
+		server:           NewServer(registry, mcpRegistry, userService, groupRepo, logger),
+		registry:         registry,
+		mcpRegistry:      mcpRegistry,
+		proxy:            proxy.NewProxy(logger),
+		sessionStore:     sessionStore,
+		userService:      userService,
+		groupRepo:        groupRepo,
+		oidcClient:       oidcClient,
+		langfuseTracer:   lfTracer,
+		cfg:              cfg,
+		oauth2Mgr:        oauth2Mgr,
+		mcpRepo:          mcpRepo,
+		moderator:        moderator,
+		moderatorLoadErr: moderatorLoadErr,
+		settings:         settingsService,
+		logger:           logger,
 	}
 }
 
@@ -820,13 +827,17 @@ func (h *Handler) callAgent(ctx context.Context, agent *models.Agent, question s
 		return "", "", fmt.Errorf("failed to create session: %w", err)
 	}
 	agentgramSessionID := session.SessionID
-	saveCtx, saveCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer saveCancel()
-	if err := h.sessionStore.AddMessage(saveCtx, agentgramSessionID, models.ChatMessage{
+	userSaveCtx, userSaveCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	err = h.sessionStore.AddMessage(userSaveCtx, agentgramSessionID, models.ChatMessage{
 		Role: "user", Content: question, UserEmail: userEmail,
-	}); err != nil {
+	})
+	userSaveCancel()
+	if err != nil {
 		h.logger.Error("failed to persist user message", zap.String("session_id", agentgramSessionID), zap.Error(err))
-		if deleteErr := h.sessionStore.DeleteSession(saveCtx, agentgramSessionID, userEmail, agent.ID); deleteErr != nil {
+		deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		deleteErr := h.sessionStore.DeleteSession(deleteCtx, agentgramSessionID, userEmail, agent.ID)
+		deleteCancel()
+		if deleteErr != nil {
 			h.logger.Warn("failed to clean up MCP session after persistence failure", zap.String("session_id", agentgramSessionID), zap.Error(deleteErr))
 		}
 		return "", agentgramSessionID, fmt.Errorf("persist user message: %w", err)
@@ -889,7 +900,10 @@ func (h *Handler) callAgent(ctx context.Context, agent *models.Agent, question s
 			rawResultErr = errors.Join(rawResultErr, errors.New(proxyResult.Error))
 		}
 		assistantMsg := proxyResult.ToChatMessage(agent.ID, proxy.PublicErrorMessage(rawResultErr))
-		if err := h.sessionStore.AddMessage(saveCtx, agentgramSessionID, assistantMsg); err != nil {
+		assistantSaveCtx, assistantSaveCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		err := h.sessionStore.AddMessage(assistantSaveCtx, agentgramSessionID, assistantMsg)
+		assistantSaveCancel()
+		if err != nil {
 			h.logger.Error("failed to persist assistant message", zap.String("session_id", agentgramSessionID), zap.Error(err))
 			persistenceErr = fmt.Errorf("persist assistant message: %w", err)
 		}

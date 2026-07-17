@@ -37,6 +37,11 @@ func (h *Handler) handleGroupToolCall(w http.ResponseWriter, r *http.Request, re
 		return
 	}
 
+	if h.moderatorLoadErr != nil {
+		h.logger.Error("MCP moderator is unavailable", zap.Error(h.moderatorLoadErr))
+		h.writeJSON(w, http.StatusOK, h.server.MarshalToolResult(req.ID, "Moderator LLM is temporarily unavailable", true))
+		return
+	}
 	if h.moderator == nil {
 		h.writeJSON(w, http.StatusOK, h.server.MarshalToolResult(req.ID, "No moderator LLM configured (admin: add an LLM model with role 'moderator')", true))
 		return
@@ -324,7 +329,10 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 			return "", context.DeadlineExceeded
 		}
 
-		agentSessionID, _ := h.sessionStore.GetAgentSessionID(turnCtx, session.SessionID, agentID)
+		agentSessionID, mappingErr := h.sessionStore.GetAgentSessionID(turnCtx, session.SessionID, agentID)
+		if mappingErr != nil {
+			return "", orchestrator.NewTurnError(orchestrator.TurnFailureMapping, fmt.Errorf("load agent session mapping: %w", mappingErr))
+		}
 		hasAgentSession := agentSessionID != ""
 
 		// No summarizer on this surface — context is capped by maxContextMessages anyway
@@ -391,7 +399,7 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 			if mappingID != "" {
 				if err := h.sessionStore.SetAgentSessionID(saveCtx, session.SessionID, agentID, mappingID); err != nil {
 					h.logger.Error("failed to persist agent session mapping", zap.Error(err))
-					turnErr = orchestrator.NewTurnError(orchestrator.TurnFailurePersistence, fmt.Errorf("session mapping persistence failed: %w", err))
+					turnErr = orchestrator.NewTurnError(orchestrator.TurnFailureMapping, fmt.Errorf("session mapping persistence failed: %w", err))
 				}
 			}
 		}
@@ -423,8 +431,10 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 		}
 		if res.Err != nil {
 			publicTurnError := "agent response could not be completed"
-			if res.FailureKind == orchestrator.TurnFailurePersistence {
+			if res.HasFailure(orchestrator.TurnFailurePersistence) {
 				publicTurnError = "reply could not be saved"
+			} else if res.HasFailure(orchestrator.TurnFailureMapping) {
+				publicTurnError = "agent session continuity could not be saved"
 			}
 			if res.Text != "" {
 				parts = append(parts, fmt.Sprintf("**[%s]**\n\n%s\n\n_error: %s_", name, res.Text, publicTurnError))
@@ -451,7 +461,7 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 
 	resultIncomplete := debateErr != nil
 	for _, result := range results {
-		if result.FailureKind == orchestrator.TurnFailurePersistence {
+		if result.HasFailure(orchestrator.TurnFailurePersistence) || result.HasFailure(orchestrator.TurnFailureMapping) {
 			resultIncomplete = true
 		}
 	}
@@ -515,7 +525,7 @@ func (h *Handler) deleteOrphanSession(groupID, sessionID, userEmail, agentID str
 func distinctSpeakers(results []orchestrator.TurnResult) int {
 	seen := make(map[string]bool)
 	for _, r := range results {
-		if r.Text != "" && r.FailureKind != orchestrator.TurnFailureAgent {
+		if r.Text != "" && !r.HasFailure(orchestrator.TurnFailureAgent) {
 			seen[r.AgentID] = true
 		}
 	}

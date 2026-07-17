@@ -54,7 +54,7 @@ make web              # Terminal 2: Next.js on :3000
 2. **Protocol Abstraction**: Web doesn't know if agent uses REST or A2A - API handles conversion
 3. **Sessions in Redis**: The API manages sessions directly via `store.SessionStore` (Redis); agents are stateless with respect to sessions
 4. **Permission Model**: Access controlled by Google Workspace groups + individual users per agent
-5. **Config as YAML**: All configuration in YAML files with `${ENV:VAR}` syntax for secrets
+5. **Configuration**: Bootstrap and secret-bearing configuration lives in YAML with `${ENV:VAR}` syntax; operational settings that admins can tune at runtime live in the `runtime_config` database table
 6. **Security Layers**: Security headers, body size limits, JWT audience+nonce validation, rate limiting, sanitized error responses
 
 ## API Contract

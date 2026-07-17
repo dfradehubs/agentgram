@@ -129,10 +129,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       // Clear MCP state so ChatArea switches to agent chat
       selectMCPServer(null);
 
-      // Clear group state for Slack sessions (they're not groups)
-      setActiveGroupId(null);
-
-      // Clear immediately to avoid stale data while fetching
+	  // Clear immediately to avoid stale data while fetching
       setCurrentSession(null);
       setWantsNewChat(false);
       setHasMoreMessages(false);
@@ -145,7 +142,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           ...resp.session,
           messages: resp.messages,
         };
-        setCurrentSession(session);
+		setCurrentSession(session);
+		setActiveGroupId(session.group_id ?? null);
         setHasMoreMessages(resp.has_more);
         setNextCursor(resp.next_cursor);
         try { sessionStorage.setItem("agentgram-current-session", sessionId); } catch {}

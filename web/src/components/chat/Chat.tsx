@@ -101,7 +101,7 @@ export function Chat() {
   // A moderated group is the only multi-agent surface now: the moderator picks
   // who answers (optionally steered by @mentions). Slack multi-agent threads
   // are read-only from the web — respond from Slack.
-  const isGroup = !isMCP && !!effectiveGroupId && multiAgentIds.length >= 2;
+  const isGroup = !isMCP && !!effectiveGroupId;
   const isMultiAgent = isGroup || (!isMCP && isSlackSession);
   const isReadOnly = isSlackSession && !effectiveGroupId;
 
@@ -618,7 +618,7 @@ export function Chat() {
     }
   }
 
-  const githubRequired = !isMCP && !user?.githubConnected && (activeGroupId
+  const githubRequired = !isMCP && !user?.githubConnected && (effectiveGroupId
     ? groupRequiresGitHubConnection(activeGroup?.agentIds ?? [], agents, false)
     : !!currentAgent?.require_github_token);
   const widthCls = chatWidthClass[preferences.chatWidth] || chatWidthClass.wide;

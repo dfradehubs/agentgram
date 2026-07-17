@@ -49,10 +49,11 @@ func TestSSEWriterTagsEventsWithAgentID(t *testing.T) {
 	_ = sse.SendTextMessageContent("hello")
 	_ = sse.SendTextMessageEnd()
 	_ = sse.SendToolCallStart("tc1", "SearchTool")
+	_ = sse.SendCustomEvent("CHART", map[string]interface{}{"type": "bar"})
 
 	body := rec.Body.String()
-	if got := strings.Count(body, `"agentId":"kube-agent"`); got != 4 {
-		t.Errorf("expected 4 agentId-tagged events, got %d:\n%s", got, body)
+	if got := strings.Count(body, `"agentId":"kube-agent"`); got != 5 {
+		t.Errorf("expected 5 agentId-tagged events, got %d:\n%s", got, body)
 	}
 }
 

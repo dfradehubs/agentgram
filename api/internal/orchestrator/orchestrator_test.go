@@ -68,10 +68,11 @@ func TestDebate(t *testing.T) {
 			wantDebateErr: ErrMaxTurnsReached,
 		},
 		{
-			name:          "unknown agent id treated as FINISH",
+			name:          "unknown agent id aborts debate",
 			moderatorSays: []string{"logs-agent", "nonexistent-agent"},
 			maxTurns:      6,
 			wantTurns:     []string{"logs-agent"},
+			wantDebateErr: ErrModeratorProtocol,
 		},
 		{
 			name:          "failed turn does not abort debate",
@@ -183,19 +184,26 @@ func TestNextSpeakerParsing(t *testing.T) {
 		response string
 		wantID   string
 		wantDone bool
+		wantErr  bool
 	}{
-		{"plain id", "logs-agent", "logs-agent", false},
-		{"id with whitespace", "  kube-agent\n", "kube-agent", false},
-		{"finish", "FINISH", "", true},
-		{"finish lowercase", "finish", "", true},
-		{"unknown id", "made-up-agent", "", true},
-		{"empty", "", "", true},
+		{"plain id", "logs-agent", "logs-agent", false, false},
+		{"id with whitespace", "  kube-agent\n", "kube-agent", false, false},
+		{"finish", "FINISH", "", true, false},
+		{"finish lowercase", "finish", "", true, false},
+		{"unknown id", "made-up-agent", "", false, true},
+		{"empty", "", "", false, true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mod, _ := newTestModerator(tt.response)
 			id, done, err := mod.NextSpeaker(context.Background(), testRoster, "User: hi")
+			if tt.wantErr {
+				if !errors.Is(err, ErrModeratorProtocol) {
+					t.Fatalf("NextSpeaker error = %v, want ErrModeratorProtocol", err)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("NextSpeaker error: %v", err)
 			}

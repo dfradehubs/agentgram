@@ -18,7 +18,7 @@ type SSEWriter struct {
 	runID             string
 	messageID         string
 	sessionName       string
-	agentID           string // When set, TEXT_MESSAGE_*/TOOL_CALL_START events are tagged with it (group debates)
+	agentID           string // When set, TEXT_MESSAGE_*, TOOL_CALL_*, and CUSTOM events are tagged with it (group debates)
 	suppressLifecycle bool   // When true, RUN_STARTED/RUN_FINISHED are no-ops (outer run owns the lifecycle)
 	deferLifecycle    bool   // When true, all RUN_* events are owned by the caller
 	mu                sync.Mutex
@@ -157,7 +157,8 @@ func (s *SSEWriter) SendAGUIEvent(event interface{}) error {
 }
 
 // SendRunStarted sends the AG-UI RUN_STARTED event.
-// No-op when lifecycle is suppressed (an outer run owns RUN_STARTED/RUN_FINISHED).
+// No-op when lifecycle is suppressed or deferred (the surface handler or an
+// outer run owns RUN_STARTED/RUN_FINISHED).
 func (s *SSEWriter) SendRunStarted() error {
 	s.mu.Lock()
 	threadID := s.threadID
@@ -175,7 +176,8 @@ func (s *SSEWriter) SendRunStarted() error {
 }
 
 // SendRunFinished sends the AG-UI RUN_FINISHED event.
-// No-op when lifecycle is suppressed (an outer run owns RUN_STARTED/RUN_FINISHED).
+// No-op when lifecycle is suppressed or deferred (the surface handler or an
+// outer run owns RUN_STARTED/RUN_FINISHED).
 func (s *SSEWriter) SendRunFinished() error {
 	s.mu.Lock()
 	threadID := s.threadID
@@ -190,7 +192,8 @@ func (s *SSEWriter) SendRunFinished() error {
 }
 
 // SendRunError sends the AG-UI RUN_ERROR event.
-// When lifecycle is suppressed (a debate turn inside an outer run), a bare
+// When lifecycle is deferred, the surface handler owns the terminal event and
+// this is a no-op. When suppressed (a debate turn inside an outer run), a bare
 // RUN_ERROR would abort the whole run on the client even though the debate
 // continues — emit an agent-scoped CUSTOM event instead. Persistence is owned
 // by the surface handler and may independently fail.
@@ -312,9 +315,13 @@ func (s *SSEWriter) SendToolCallEnd(toolCallID, result string) error {
 
 // SendCustomEvent sends an AG-UI CUSTOM event with the given subType and data
 func (s *SSEWriter) SendCustomEvent(subType string, data map[string]interface{}) error {
+	s.mu.Lock()
+	agentID := s.agentID
+	s.mu.Unlock()
 	return s.SendAGUIEvent(&models.AGUICustomEvent{
 		Type:    models.AGUIEventCustom,
 		SubType: subType,
 		Data:    data,
+		AgentID: agentID,
 	})
 }

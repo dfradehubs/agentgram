@@ -534,9 +534,21 @@ Deletes a session and all its messages.
 
 ---
 
+## Admin Group Endpoints
+
+Administrator authentication is required for every endpoint in this section.
+
+- `GET /api/admin/groups` lists all configured groups; `GET /api/admin/groups/{id}` returns one.
+- `POST /api/admin/groups` creates a group. The JSON body requires `id`, `name`, and at least two `agent_ids`; optional fields are `allowed_users`, `allowed_groups`, and `max_turns` (`0` uses the runtime default, maximum `50`).
+- `PUT /api/admin/groups/{id}` updates `name`, `agent_ids`, and `max_turns`, preserving the invariant that every group has at least two agents.
+- `PUT /api/admin/groups/{id}/permissions` replaces `allowed_users` and `allowed_groups`.
+- `DELETE /api/admin/groups/{id}` deletes the group.
+
+---
+
 ## Agent Group Endpoints
 
-Agent **groups** are created by administrators (see *Admin Group Endpoints*). A user chats with a group and an LLM **moderator** picks which member agents respond, in sequence, each seeing the previous replies. **Group sessions are personal** — each user only ever sees and resumes their own.
+Agent **groups** are created by administrators with `POST /api/admin/groups` and updated with `PUT /api/admin/groups/{id}`. A user chats with a group and an LLM **moderator** picks which member agents respond, in sequence, each seeing the previous replies. **Group sessions are personal** — each user only ever sees and resumes their own.
 
 ### GET /api/groups
 
@@ -561,7 +573,7 @@ Sends a message to the group; the moderator decides who answers.
 | `session_id` | string | no | Resume an existing session **you own** in this group |
 | `agent_ids` | array | no | @mention roster override: only these members may answer (omit = moderator chooses) |
 
-**Response**: `text/event-stream` (AG-UI). Exactly one `RUN_STARTED` and one terminal `RUN_FINISHED` or `RUN_ERROR`. `TEXT_MESSAGE_*` and `TOOL_CALL_*` events carry an `agentId`; `CUSTOM moderator.select` announces each turn and `CUSTOM turn.error` reports a failed agent turn without aborting the debate. A partial outcome emits exactly one `CUSTOM debate.incomplete` before the terminal event, with `data.reason` equal to `timeout`, `moderator_error`, or `all_agents_failed`.
+**Response**: `text/event-stream` (AG-UI). Exactly one `RUN_STARTED` and one terminal `RUN_FINISHED` or `RUN_ERROR`. `TEXT_MESSAGE_*`, `TOOL_CALL_*`, and agent-originated `CUSTOM` events carry an `agentId`; `CUSTOM moderator.select` announces each turn and `CUSTOM turn.error` reports a failed agent turn without aborting the debate. A partial outcome emits `CUSTOM debate.incomplete` before the terminal event, with `data.reason` equal to `timeout`, `max_turns`, `moderator_error`, `persistence_error`, `session_mapping_error`, or `all_agents_failed`.
 
 **Errors**: `403` (no access to the group, or `session_id` not owned by the caller), `404` (unknown `session_id`), `500` (session store error), `503` (no moderator LLM configured).
 
@@ -1075,7 +1087,8 @@ Creates a new LLM model.
 | `provider` | string | yes | LLM provider (e.g., `"openai"`, `"anthropic"`) |
 | `model` | string | yes | Provider model name |
 | `api_key` | string | yes | API key for the provider |
-| `role` | string | no | Model role: `"chat"` (default), `"summarizer"`, or `"file_processor"` |
+| `role` | string | no | Model role: `"chat"` (default), `"summarizer"`, `"file_processor"`, `"session_namer"`, or `"moderator"` |
+| `endpoint` | string | no | Optional HTTP(S) endpoint override for OpenAI-compatible providers |
 | `enabled` | boolean | no | Whether the model is active |
 | `is_default` | boolean | no | Whether this is the default model for its role |
 
@@ -1100,6 +1113,22 @@ Deletes an LLM model.
 **Response**: `204 No Content`
 
 **Errors**: `404` (not found).
+
+---
+
+## Admin Runtime Settings
+
+Authentication and the admin role are required. `GET /api/admin/settings` returns every supported runtime key with its type, default, bounds, and effective value. `PUT /api/admin/settings` accepts an object of string overrides, validates the complete request, persists it atomically, and reloads the in-memory cache.
+
+```json
+{
+  "group_debate_timeout_api": "15m",
+  "group_max_turns_api": "8",
+  "group_max_turns_mcp": "4"
+}
+```
+
+Unknown keys and invalid duration/integer values return `400`; persistence or cache-reload failures return `500`.
 
 ---
 

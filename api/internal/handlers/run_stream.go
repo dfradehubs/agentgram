@@ -15,6 +15,7 @@ import (
 	"github.com/dfradehubs/agentgram-api/internal/middleware"
 	"github.com/dfradehubs/agentgram-api/internal/repository"
 	"github.com/dfradehubs/agentgram-api/internal/service"
+	appsettings "github.com/dfradehubs/agentgram-api/internal/settings"
 	"github.com/dfradehubs/agentgram-api/internal/store"
 )
 
@@ -36,17 +37,19 @@ type RunStreamHandler struct {
 	registry    *agents.Registry
 	groupRepo   repository.GroupRepository
 	userService *service.UserService
+	settings    *appsettings.Service
 	logger      *zap.Logger
 }
 
 // NewRunStreamHandler creates a new run stream handler.
-func NewRunStreamHandler(rdb *redis.Client, sessionStore store.SessionStore, registry *agents.Registry, groupRepo repository.GroupRepository, userService *service.UserService, logger *zap.Logger) *RunStreamHandler {
+func NewRunStreamHandler(rdb *redis.Client, sessionStore store.SessionStore, registry *agents.Registry, groupRepo repository.GroupRepository, userService *service.UserService, settings *appsettings.Service, logger *zap.Logger) *RunStreamHandler {
 	return &RunStreamHandler{
 		rdb:         rdb,
 		store:       sessionStore,
 		registry:    registry,
 		groupRepo:   groupRepo,
 		userService: userService,
+		settings:    settings,
 		logger:      logger,
 	}
 }
@@ -118,7 +121,13 @@ func (h *RunStreamHandler) Stream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Accel-Buffering", "no")
 	flusher.Flush()
 
-	ctx, cancel := context.WithTimeout(r.Context(), runStreamMaxDuration)
+	maxDuration := runStreamMaxDuration
+	if h.settings != nil {
+		if debateDuration := h.settings.Duration(appsettings.KeyGroupDebateTimeout) + time.Minute; debateDuration > maxDuration {
+			maxDuration = debateDuration
+		}
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), maxDuration)
 	defer cancel()
 
 	h.logger.Debug("client reconnected to run stream",

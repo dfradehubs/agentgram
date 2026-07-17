@@ -99,7 +99,6 @@ export function useChat({
   const [errorType, setErrorType] = useState<"github_auth" | "mcp_oauth2" | null>(null);
   const [activeStreamAgentIds, setActiveStreamAgentIds] = useState<string[]>([]);
   const [isReconnecting, setIsReconnecting] = useState(false);
-  const retryCountRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const readerRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
   // Track active session ID across messages (set immediately on RUN_STARTED)
@@ -150,8 +149,8 @@ export function useChat({
       const finalized = buildFinalizedSegments(segments, hasOpenMessage, currentContent, currentIsThinking);
       const finalContent = finalizeSegments(finalized);
       const agentItems = streamItems.slice(agentStartIdx);
-      const hasToolItems = agentItems.some((i) => i.type === "tool_group");
-      if (finalContent || hasToolItems) {
+      const hasStructuredItems = agentItems.some((i) => i.type === "tool_group" || i.type === "chart");
+      if (finalContent || hasStructuredItems) {
         const finalMsg: Message = attachToolCalls(
           { role: "assistant" as const, content: finalContent, agent_id: currentAgentId },
           agentItems,
@@ -342,6 +341,7 @@ export function useChat({
             }
 
             case "CUSTOM": {
+			  maybeSwitchAgent(event.agentId);
               const reason = debateIncompleteReason(event);
               if (reason) incompleteReason = reason;
               if (event.subType === "CHART" && isValidChartData(event.data)) {
@@ -379,7 +379,6 @@ export function useChat({
 
             case "RUN_FINISHED": {
               runFinished = true;
-              retryCountRef.current = 0;
               finalizeCurrentAgent();
               flushUpdate();
               if (incompleteReason) {
@@ -558,8 +557,6 @@ export function useChat({
     // arrive tagged on the stream events (see maybeSwitchAgent).
     setActiveStreamAgentIds(groupDebate && groupId ? [] : [effectiveAgentId]);
 
-    retryCountRef.current = 0;
-
     const controller = new AbortController();
     abortRef.current = controller;
     const thisGen = ++requestGenRef.current;
@@ -653,25 +650,6 @@ export function useChat({
         if (err.name === "AbortError") return;
         if (requestGenRef.current !== thisGen) return;
 
-        if (isRetryableError(err) && retryCountRef.current < 3) {
-          retryCountRef.current++;
-          const delay = Math.pow(2, retryCountRef.current - 1) * 1000; // 1s, 2s, 4s
-          setIsReconnecting(true);
-          setError(null);
-          reportMetric({ name: "sse_reconnect", labels: { agent_id: effectiveAgentId, attempt: String(retryCountRef.current) }, value: 1 });
-
-          setTimeout(() => {
-            if (requestGenRef.current !== thisGen) {
-              setIsReconnecting(false);
-              return;
-            }
-            setIsReconnecting(false);
-            retry();
-          }, delay);
-          return;
-        }
-
-        retryCountRef.current = 0;
         setIsReconnecting(false);
         setError(err.message);
         setErrorType(err instanceof GitHubAuthError ? "github_auth" : err instanceof MCPOAuth2Error ? "mcp_oauth2" : null);
@@ -679,8 +657,6 @@ export function useChat({
       })
       .finally(() => {
         if (requestGenRef.current !== thisGen) return;
-        // Don't reset loading state if a reconnection retry is pending
-        if (retryCountRef.current > 0) return;
         abortRef.current = null;
         readerRef.current = null;
         setIsLoading(false);

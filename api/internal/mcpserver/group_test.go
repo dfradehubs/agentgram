@@ -69,15 +69,17 @@ func (f *mcpScriptedProvider) GenerateContent(_ context.Context, _ *llm.Request)
 
 type mcpFakeSessionStore struct {
 	store.SessionStore
-	mu            sync.Mutex
-	sessions      map[string]*models.Session
-	agentSessions map[string]string
-	failSave      bool // when true, SaveSession returns an error
-	failUserAdd   bool
-	failReplyAdd  bool
-	failReplyAdds int
-	failSetAgent  bool
-	deleted       []string // session IDs passed to DeleteSession
+	mu                    sync.Mutex
+	sessions              map[string]*models.Session
+	agentSessions         map[string]string
+	failSave              bool // when true, SaveSession returns an error
+	failUserAdd           bool
+	failReplyAdd          bool
+	failReplyAdds         int
+	failSetAgent          bool
+	rejectAddContextReuse bool
+	firstAddContext       context.Context
+	deleted               []string // session IDs passed to DeleteSession
 }
 
 func newMCPFakeSessionStore() *mcpFakeSessionStore {
@@ -114,9 +116,14 @@ func (f *mcpFakeSessionStore) SaveSession(_ context.Context, session *models.Ses
 	return nil
 }
 
-func (f *mcpFakeSessionStore) AddMessage(_ context.Context, sessionID string, msg models.ChatMessage) error {
+func (f *mcpFakeSessionStore) AddMessage(ctx context.Context, sessionID string, msg models.ChatMessage) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.firstAddContext == nil {
+		f.firstAddContext = ctx
+	} else if msg.Role == "assistant" && f.rejectAddContextReuse && ctx == f.firstAddContext {
+		return fmt.Errorf("assistant message reused the user-save context")
+	}
 	if (msg.Role == "user" && f.failUserAdd) || (msg.Role == "assistant" && f.failReplyAdd) {
 		return fmt.Errorf("simulated message persistence failure")
 	}
@@ -529,6 +536,28 @@ func TestCallAgentReplyPersistenceFailureReturnsError(t *testing.T) {
 	text, sessionID, err := h.callAgent(context.Background(), agent, "status", "", "user@example.com", nil)
 	if err == nil || text == "" || sessionID == "" {
 		t.Fatalf("persistence failure was hidden: text=%q session=%q err=%v", text, sessionID, err)
+	}
+}
+
+func TestCallAgentUsesFreshContextForAssistantPersistence(t *testing.T) {
+	h, _ := newGroupTestHandler(t, http.StatusOK, "FINISH")
+	store := h.sessionStore.(*mcpFakeSessionStore)
+	store.rejectAddContextReuse = true
+	agent, err := h.registry.Get("agent-a")
+	if err != nil {
+		t.Fatalf("Get agent: %v", err)
+	}
+
+	text, sessionID, err := h.callAgent(context.Background(), agent, "status", "", "user@example.com", nil)
+	if err != nil {
+		t.Fatalf("callAgent: %v", err)
+	}
+	session, err := store.GetSession(context.Background(), sessionID)
+	if err != nil {
+		t.Fatalf("GetSession: %v", err)
+	}
+	if text == "" || session == nil || len(session.Messages) != 2 {
+		t.Fatalf("assistant reply was not persisted: text=%q session=%+v", text, session)
 	}
 }
 

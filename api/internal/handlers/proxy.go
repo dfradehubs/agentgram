@@ -38,21 +38,22 @@ import (
 
 // ProxyHandler handles chat requests to agents
 type ProxyHandler struct {
-	registry       *agents.Registry
-	userService    *service.UserService
-	groupRepo      repository.GroupRepository
-	proxy          *proxy.Proxy
-	store          store.SessionStore
-	hub            *pubsub.Hub
-	summarizer     *summarizer.Summarizer
-	sessionNamer   *sessionnamer.Namer
-	fileProcessor  *fileprocessor.Processor
-	moderator      *orchestrator.Moderator
-	settings       *appsettings.Service
-	audit          *audit.Logger
-	chatEventRepo  repository.ChatEventRepository
-	langfuseTracer *lf.Tracer
-	logger         *zap.Logger
+	registry         *agents.Registry
+	userService      *service.UserService
+	groupRepo        repository.GroupRepository
+	proxy            *proxy.Proxy
+	store            store.SessionStore
+	hub              *pubsub.Hub
+	summarizer       *summarizer.Summarizer
+	sessionNamer     *sessionnamer.Namer
+	fileProcessor    *fileprocessor.Processor
+	moderator        *orchestrator.Moderator
+	moderatorLoadErr error
+	settings         *appsettings.Service
+	audit            *audit.Logger
+	chatEventRepo    repository.ChatEventRepository
+	langfuseTracer   *lf.Tracer
+	logger           *zap.Logger
 }
 
 // NewProxyHandler creates a new proxy handler
@@ -99,34 +100,40 @@ func NewProxyHandler(llmRepo repository.LLMModelRepository, registry *agents.Reg
 		}
 	}
 	var moderator *orchestrator.Moderator
-	if modModels, err := llmRepo.ListByRole(ctx, "moderator"); err == nil && len(modModels) > 0 {
+	var moderatorLoadErr error
+	if modModels, err := llmRepo.ListByRole(ctx, "moderator"); err != nil {
+		moderatorLoadErr = fmt.Errorf("load moderator model: %w", err)
+		logger.Error("failed to load moderator model", zap.Error(err))
+	} else if len(modModels) > 0 {
 		model := modModels[0]
 		provider, provErr := llm.NewProvider(model)
-		if provErr == nil && lfTracer != nil && lfTracer.Enabled() {
-			provider = lf.WrapProvider(provider, "moderator", model.Model)
-		}
-		if provErr == nil {
-			moderator = orchestrator.NewWithProvider(provider, logger)
+		if provErr != nil {
+			moderatorLoadErr = fmt.Errorf("create moderator provider: %w", provErr)
+			logger.Error("failed to create moderator provider", zap.Error(provErr))
 		} else {
-			moderator = orchestrator.New(model, logger)
+			if lfTracer != nil && lfTracer.Enabled() {
+				provider = lf.WrapProvider(provider, "moderator", model.Model)
+			}
+			moderator = orchestrator.NewWithProvider(provider, logger)
 		}
 	}
 
 	h := &ProxyHandler{
-		registry:       registry,
-		userService:    userService,
-		groupRepo:      groupRepo,
-		proxy:          proxy.NewProxy(logger),
-		store:          sessionStore,
-		hub:            hub,
-		summarizer:     sum,
-		sessionNamer:   namer,
-		fileProcessor:  fp,
-		moderator:      moderator,
-		settings:       settingsService,
-		audit:          auditLogger,
-		langfuseTracer: lfTracer,
-		logger:         logger,
+		registry:         registry,
+		userService:      userService,
+		groupRepo:        groupRepo,
+		proxy:            proxy.NewProxy(logger),
+		store:            sessionStore,
+		hub:              hub,
+		summarizer:       sum,
+		sessionNamer:     namer,
+		fileProcessor:    fp,
+		moderator:        moderator,
+		moderatorLoadErr: moderatorLoadErr,
+		settings:         settingsService,
+		audit:            auditLogger,
+		langfuseTracer:   lfTracer,
+		logger:           logger,
 	}
 	if len(chatEventRepo) > 0 {
 		h.chatEventRepo = chatEventRepo[0]
@@ -218,6 +225,10 @@ func (h *ProxyHandler) Chat(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, errMsg), http.StatusBadRequest)
 		return
 	}
+	if chatReq.GroupID != "" {
+		http.Error(w, `{"error":"group sessions must use /api/groups/{groupId}/chat"}`, http.StatusBadRequest)
+		return
+	}
 
 	userEmail := claims.GetEmail()
 
@@ -230,6 +241,16 @@ func (h *ProxyHandler) Chat(w http.ResponseWriter, r *http.Request) {
 		session, err = h.store.GetSession(ctx, chatReq.SessionID)
 		if err != nil {
 			h.logger.Error("failed to get session", zap.Error(err))
+			http.Error(w, `{"error":"failed to get session"}`, http.StatusInternalServerError)
+			return
+		}
+		if session == nil {
+			http.Error(w, `{"error":"session not found"}`, http.StatusNotFound)
+			return
+		}
+		if session.GroupID != "" {
+			http.Error(w, `{"error":"group sessions must use /api/groups/{groupId}/chat"}`, http.StatusBadRequest)
+			return
 		}
 		// Sessions are personal — only the owner may continue them (group
 		// membership does NOT grant access to another member's session). Slack
@@ -270,21 +291,7 @@ func (h *ProxyHandler) Chat(w http.ResponseWriter, r *http.Request) {
 		if chatReq.SendContext != nil && *chatReq.SendContext {
 			session.IsMultiAgent = true
 		}
-		// If group_id is set, verify access then mark session with group and persist the relationship
-		if chatReq.GroupID != "" {
-			if !CanAccessGroup(ctx, claims, chatReq.GroupID, h.groupRepo, h.userService) {
-				w.Header().Set("Content-Type", "application/json")
-				http.Error(w, `{"error":"access denied to group"}`, http.StatusForbidden)
-				return
-			}
-			session.GroupID = chatReq.GroupID
-			if err := h.groupRepo.AddSession(ctx, chatReq.GroupID, session.SessionID); err != nil {
-				h.logger.Error("failed to add session to group", zap.Error(err),
-					zap.String("group_id", chatReq.GroupID),
-					zap.String("session_id", session.SessionID))
-			}
-		}
-		if session.IsMultiAgent || session.GroupID != "" {
+		if session.IsMultiAgent {
 			if err := h.store.SaveSession(ctx, session); err != nil {
 				h.logger.Error("failed to save session flags", zap.Error(err))
 			}
@@ -667,7 +674,7 @@ func (h *ProxyHandler) persistTurnResult(ctx context.Context, session *models.Se
 			}
 			if err := h.store.AddMessage(saveCtx, session.SessionID, infoMsg); err != nil {
 				h.logger.Error("failed to save session rotation info message", zap.Error(err))
-				persistErr = errors.Join(persistErr, fmt.Errorf("rotation message persistence failed: %w", err))
+				persistErr = errors.Join(persistErr, orchestrator.NewTurnError(orchestrator.TurnFailurePersistence, fmt.Errorf("rotation message persistence failed: %w", err)))
 			}
 		}
 
@@ -682,7 +689,7 @@ func (h *ProxyHandler) persistTurnResult(ctx context.Context, session *models.Se
 		assistantPersisted := true
 		if err := h.store.AddMessage(saveCtx, session.SessionID, assistantMsg); err != nil {
 			h.logger.Error("failed to save assistant message", zap.Error(err))
-			persistErr = errors.Join(persistErr, fmt.Errorf("reply persistence failed: %w", err))
+			persistErr = errors.Join(persistErr, orchestrator.NewTurnError(orchestrator.TurnFailurePersistence, fmt.Errorf("reply persistence failed: %w", err)))
 			assistantPersisted = false
 		}
 
@@ -692,13 +699,13 @@ func (h *ProxyHandler) persistTurnResult(ctx context.Context, session *models.Se
 			if result.AgentSessionID != "" && result.AgentSessionID != agentSessionID {
 				if err := h.store.SetAgentSessionID(saveCtx, session.SessionID, agentID, result.AgentSessionID); err != nil {
 					h.logger.Error("failed to save agent session mapping", zap.Error(err))
-					persistErr = errors.Join(persistErr, fmt.Errorf("session mapping persistence failed: %w", err))
+					persistErr = errors.Join(persistErr, orchestrator.NewTurnError(orchestrator.TurnFailureMapping, fmt.Errorf("session mapping persistence failed: %w", err)))
 				}
 			} else if !hasAgentSession {
 				// No agent session ID returned - map our session ID
 				if err := h.store.SetAgentSessionID(saveCtx, session.SessionID, agentID, session.SessionID); err != nil {
 					h.logger.Error("failed to save agent session mapping", zap.Error(err))
-					persistErr = errors.Join(persistErr, fmt.Errorf("session mapping persistence failed: %w", err))
+					persistErr = errors.Join(persistErr, orchestrator.NewTurnError(orchestrator.TurnFailureMapping, fmt.Errorf("session mapping persistence failed: %w", err)))
 				}
 			}
 		}

@@ -62,6 +62,11 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.moderatorLoadErr != nil {
+		h.logger.Error("moderator is unavailable", zap.Error(h.moderatorLoadErr))
+		http.Error(w, `{"error":"moderator LLM is temporarily unavailable"}`, http.StatusServiceUnavailable)
+		return
+	}
 	if h.moderator == nil {
 		w.Header().Set("Content-Type", "application/json")
 		http.Error(w, `{"error":"no moderator LLM configured (admin: add an LLM model with role 'moderator')"}`, http.StatusServiceUnavailable)
@@ -231,7 +236,10 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 			return "", context.DeadlineExceeded
 		}
 
-		agentSessionID, _ := h.store.GetAgentSessionID(turnCtx, session.SessionID, agentID)
+		agentSessionID, mappingErr := h.store.GetAgentSessionID(turnCtx, session.SessionID, agentID)
+		if mappingErr != nil {
+			return "", orchestrator.NewTurnError(orchestrator.TurnFailureMapping, fmt.Errorf("load agent session mapping: %w", mappingErr))
+		}
 		hasAgentSession := agentSessionID != ""
 
 		prep := proxy.PrepareMessagesForMultiAgent(session, agentID, userMsg, hasAgentSession, true, agent.MaxContextTokens, agent.SummarizeThreshold, h.summarizer, turnCtx)
@@ -312,7 +320,7 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 
 		turnErr := orchestrator.NewTurnError(orchestrator.TurnFailureAgent, err)
 		if persistErr != nil {
-			turnErr = errors.Join(turnErr, orchestrator.NewTurnError(orchestrator.TurnFailurePersistence, persistErr))
+			turnErr = errors.Join(turnErr, persistErr)
 		}
 		if result == nil {
 			return "", turnErr
@@ -341,6 +349,22 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 	}
 	speakers := distinctRespondingSpeakers(results)
 	incompleteReason := debateIncompleteReason(debateErr, results)
+	emitModeratorMessage := func(agentID, text string) error {
+		if err := h.persistModeratorMessage(context.WithoutCancel(ctx), session.SessionID, agentID, text); err != nil {
+			return err
+		}
+		session.Messages = append(session.Messages, models.ChatMessage{Role: "assistant", Content: text, AgentID: agentID})
+		h.streamModeratorMessage(sse, agentID, text)
+		return nil
+	}
+	failModeratorPersistence := func(err error) {
+		h.logger.Error("failed to persist moderator message", zap.String("group_id", groupID), zap.Error(err))
+		_ = sse.SendCustomEvent("debate.incomplete", map[string]interface{}{"reason": "persistence_error"})
+		_ = sse.SendRunError("The response could not be saved.")
+		if lfTrace != nil {
+			lfTrace.End(false, err.Error())
+		}
+	}
 	if incompleteReason != "" {
 		if debateErr != nil {
 			h.logger.Warn("group debate ended early", zap.String("group_id", groupID), zap.Error(debateErr))
@@ -355,9 +379,13 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 				note = "⚠️ The debate reached its turn limit; the replies above may be incomplete."
 			case "persistence_error":
 				note = "⚠️ One or more replies could not be saved; the conversation history may be incomplete."
+			case "session_mapping_error":
+				note = "⚠️ Agent session continuity could not be saved; the replies above are preserved, but the debate may be incomplete."
 			}
-			h.streamModeratorMessage(sse, "moderator", note)
-			h.persistModeratorMessage(context.WithoutCancel(ctx), session.SessionID, "moderator", note)
+			if err := emitModeratorMessage("moderator", note); err != nil {
+				failModeratorPersistence(err)
+				return
+			}
 		}
 	}
 
@@ -368,8 +396,10 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 		if locale == "es" {
 			noAgentMsg = "Ningún agente de este grupo puede ayudar con esa petición."
 		}
-		h.streamModeratorMessage(sse, "moderator", noAgentMsg)
-		h.persistModeratorMessage(context.WithoutCancel(ctx), session.SessionID, "moderator", noAgentMsg)
+		if err := emitModeratorMessage("moderator", noAgentMsg); err != nil {
+			failModeratorPersistence(err)
+			return
+		}
 	case speakers == 0:
 		// Agents were selected but every turn failed (each already emitted a
 		// scoped turn.error). Emit a programmatic signal (the moderator may have
@@ -379,16 +409,20 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 		if locale == "es" {
 			failMsg = "Todos los agentes seleccionados fallaron al responder. Inténtalo de nuevo."
 		}
-		h.streamModeratorMessage(sse, "moderator", failMsg)
-		h.persistModeratorMessage(context.WithoutCancel(ctx), session.SessionID, "moderator", failMsg)
+		if err := emitModeratorMessage("moderator", failMsg); err != nil {
+			failModeratorPersistence(err)
+			return
+		}
 	case incompleteReason == "" && speakers >= 2 && ctx.Err() == nil:
 		// Optional synthesis when several agents contributed
 		synthesis, err := h.moderator.Synthesize(ctx, orchestrator.RenderTranscript(session.Messages))
 		if err != nil {
 			h.logger.Warn("group synthesis failed", zap.String("group_id", groupID), zap.Error(err))
 		} else if synthesis != "" {
-			h.streamModeratorMessage(sse, "moderator", synthesis)
-			h.persistModeratorMessage(context.WithoutCancel(ctx), session.SessionID, "moderator", synthesis)
+			if err := emitModeratorMessage("moderator", synthesis); err != nil {
+				failModeratorPersistence(err)
+				return
+			}
 		}
 	}
 
@@ -416,8 +450,11 @@ func debateIncompleteReason(debateErr error, results []orchestrator.TurnResult) 
 		return "moderator_error"
 	}
 	for _, result := range results {
-		if result.FailureKind == orchestrator.TurnFailurePersistence {
+		if result.HasFailure(orchestrator.TurnFailurePersistence) {
 			return "persistence_error"
+		}
+		if result.HasFailure(orchestrator.TurnFailureMapping) {
+			return "session_mapping_error"
 		}
 	}
 	if len(results) > 0 && distinctRespondingSpeakers(results) == 0 {
@@ -559,13 +596,14 @@ func (h *ProxyHandler) streamModeratorMessage(sse *proxy.SSEWriter, agentID, tex
 }
 
 // persistModeratorMessage saves a synthetic assistant message to the session.
-func (h *ProxyHandler) persistModeratorMessage(ctx context.Context, sessionID, agentID, text string) {
+func (h *ProxyHandler) persistModeratorMessage(ctx context.Context, sessionID, agentID, text string) error {
 	saveCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	msg := models.ChatMessage{Role: "assistant", Content: text, AgentID: agentID}
 	if err := h.store.AddMessage(saveCtx, sessionID, msg); err != nil {
-		h.logger.Error("failed to save moderator message", zap.Error(err))
+		return fmt.Errorf("save moderator message: %w", err)
 	}
+	return nil
 }
 
 // recordGroupTurnEvent records one debate turn as a chat event for observability.
@@ -608,7 +646,7 @@ func (h *ProxyHandler) recordGroupTurnEvent(agent *models.Agent, sessionID, user
 func distinctRespondingSpeakers(results []orchestrator.TurnResult) int {
 	seen := make(map[string]bool)
 	for _, r := range results {
-		if r.Text != "" && r.FailureKind != orchestrator.TurnFailureAgent {
+		if r.Text != "" && !r.HasFailure(orchestrator.TurnFailureAgent) {
 			seen[r.AgentID] = true
 		}
 	}
