@@ -75,6 +75,9 @@ func (p *RESTProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *mo
 			select {
 			case <-time.After(delay):
 			case <-agentCtx.Done():
+				// Emit a visible error (RUN_ERROR, or a scoped turn.error when
+				// lifecycle is suppressed) so an aborted turn is never silent.
+				sse.SendRunError(fmt.Sprintf("agent timed out: %v", agentCtx.Err()))
 				return nil, agentCtx.Err()
 			}
 		}

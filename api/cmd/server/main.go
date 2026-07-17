@@ -19,11 +19,11 @@ import (
 	"github.com/dfradehubs/agentgram-api/internal/metrics"
 	"github.com/dfradehubs/agentgram-api/internal/proxy"
 	"github.com/dfradehubs/agentgram-api/internal/pubsub"
-	slackpkg "github.com/dfradehubs/agentgram-api/internal/slack"
 	"github.com/dfradehubs/agentgram-api/internal/repository/postgres"
 	"github.com/dfradehubs/agentgram-api/internal/server"
 	"github.com/dfradehubs/agentgram-api/internal/service"
 	"github.com/dfradehubs/agentgram-api/internal/settings"
+	slackpkg "github.com/dfradehubs/agentgram-api/internal/slack"
 	"github.com/dfradehubs/agentgram-api/internal/store"
 	"github.com/dfradehubs/agentgram-api/internal/summarizer"
 	"github.com/dfradehubs/agentgram-api/internal/tracing"
@@ -178,6 +178,8 @@ func main() {
 	groupRepo := postgres.NewGroupRepository(pool)
 	settingsRepo := postgres.NewSettingsRepository(pool)
 	settingsService := settings.New(settingsRepo, logger)
+	// Converge settings across pods within one interval (matches the MCP registry).
+	settingsService.StartPeriodicReload(context.Background(), 30*time.Second)
 	shareRepo := postgres.NewSharedSessionRepository(pool)
 	slackRepo := postgres.NewSlackIntegrationRepository(pool, dataCipher)
 	slackLinkRepo := postgres.NewSlackUserLinkRepository(pool, dataCipher)
@@ -310,27 +312,27 @@ func main() {
 
 	// Build admin deps
 	adminDeps := &server.AdminDeps{
-		UserService:    userService,
-		AgentRepo:      agentRepo,
-		MCPRepo:        mcpRepo,
-		UserRepo:       userRepo,
-		AuditRepo:      auditRepo,
-		LLMRepo:        llmRepo,
+		UserService:     userService,
+		AgentRepo:       agentRepo,
+		MCPRepo:         mcpRepo,
+		UserRepo:        userRepo,
+		AuditRepo:       auditRepo,
+		LLMRepo:         llmRepo,
 		GroupRepo:       groupRepo,
 		SettingsRepo:    settingsRepo,
 		SettingsService: settingsService,
-		MCPRegistry:    mcpRegistry,
-		ChatEventRepo:  chatEventRepo,
-		BasicAuthRepo:  basicAuthRepo,
-		PubSubHub:      pubsubHub,
-		ShareRepo:      shareRepo,
-		LangfuseTracer: lfTracer,
-		SlackRepo:      slackRepo,
-		SlackLinkRepo:  slackLinkRepo,
-		BotManager:     slackBotManager,
-		DataCipher:     dataCipher,
-		RedisClient:    rdb,
-		OAuth2Manager:  oauth2Mgr,
+		MCPRegistry:     mcpRegistry,
+		ChatEventRepo:   chatEventRepo,
+		BasicAuthRepo:   basicAuthRepo,
+		PubSubHub:       pubsubHub,
+		ShareRepo:       shareRepo,
+		LangfuseTracer:  lfTracer,
+		SlackRepo:       slackRepo,
+		SlackLinkRepo:   slackLinkRepo,
+		BotManager:      slackBotManager,
+		DataCipher:      dataCipher,
+		RedisClient:     rdb,
+		OAuth2Manager:   oauth2Mgr,
 	}
 
 	// Create and start server (pass rdb as closer for graceful shutdown)

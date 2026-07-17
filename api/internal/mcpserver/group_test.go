@@ -70,7 +70,8 @@ type mcpFakeSessionStore struct {
 	mu            sync.Mutex
 	sessions      map[string]*models.Session
 	agentSessions map[string]string
-	failSave      bool // when true, SaveSession returns an error
+	failSave      bool     // when true, SaveSession returns an error
+	deleted       []string // session IDs passed to DeleteSession
 }
 
 func newMCPFakeSessionStore() *mcpFakeSessionStore {
@@ -128,6 +129,14 @@ func (f *mcpFakeSessionStore) SetAgentSessionID(_ context.Context, sessionID, ag
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.agentSessions[sessionID+"|"+agentID] = agentSessionID
+	return nil
+}
+
+func (f *mcpFakeSessionStore) DeleteSession(_ context.Context, sessionID, _, _ string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.deleted = append(f.deleted, sessionID)
+	delete(f.sessions, sessionID)
 	return nil
 }
 
@@ -350,11 +359,16 @@ func TestCallGroupPersistFailure(t *testing.T) {
 	h.sessionStore.(*mcpFakeSessionStore).failSave = true
 	roster, agentsByID := h.buildGroupRoster(context.Background(), group, "user@example.com", nil)
 
+	store := h.sessionStore.(*mcpFakeSessionStore)
 	_, _, isError, err := h.callGroup(context.Background(), group, roster, agentsByID, "hi", "", "user@example.com", nil, nil)
 	if err == nil {
 		t.Fatal("expected an error when the session flags fail to persist")
 	}
 	if !isError {
 		t.Error("expected isError=true on persist failure")
+	}
+	// The half-created session must be cleaned up, not left orphaned.
+	if len(store.deleted) == 0 {
+		t.Error("expected the orphan session to be deleted on persist failure")
 	}
 }

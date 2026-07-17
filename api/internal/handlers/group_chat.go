@@ -319,15 +319,21 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 		// deadline). Tell the user the answer may be incomplete instead of
 		// finishing silently.
 		h.logger.Warn("group debate ended early", zap.String("group_id", groupID), zap.Error(debateErr))
+		reason := "moderator_error"
 		note := "⚠️ The debate ended early (moderator error or timeout); the replies above may be incomplete."
 		if debateErr == context.DeadlineExceeded {
+			reason = "timeout"
 			note = "⚠️ The debate hit the time limit before finishing; the replies above may be incomplete."
 		}
+		// Programmatic signal for clients/automations, plus a human-readable note.
+		_ = sse.SendCustomEvent("debate.incomplete", map[string]interface{}{"reason": reason})
 		h.streamModeratorMessage(sse, "moderator", note)
 		h.persistModeratorMessage(session.SessionID, "moderator", note)
 	}
 
-	if len(results) == 0 {
+	speakers := distinctSuccessfulSpeakers(results)
+	switch {
+	case len(results) == 0:
 		// Moderator decided nobody applies: tell the user instead of silence.
 		noAgentMsg := "No agent in this group can help with that request."
 		if locale == "es" {
@@ -335,7 +341,16 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 		}
 		h.streamModeratorMessage(sse, "moderator", noAgentMsg)
 		h.persistModeratorMessage(session.SessionID, "moderator", noAgentMsg)
-	} else if speakers := distinctSuccessfulSpeakers(results); speakers >= 2 {
+	case speakers == 0:
+		// Agents were selected but every turn failed (each already emitted a
+		// scoped turn.error). Add a visible summary so the run isn't empty.
+		failMsg := "All selected agents failed to respond. Please try again."
+		if locale == "es" {
+			failMsg = "Todos los agentes seleccionados fallaron al responder. Inténtalo de nuevo."
+		}
+		h.streamModeratorMessage(sse, "moderator", failMsg)
+		h.persistModeratorMessage(session.SessionID, "moderator", failMsg)
+	case speakers >= 2:
 		// Optional synthesis when several agents contributed
 		synthesis, err := h.moderator.Synthesize(ctx, orchestrator.RenderTranscript(session.Messages))
 		if err != nil {
@@ -346,8 +361,11 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// End the trace faithfully: success only when at least one agent replied
+	// (or nobody was expected to) and the debate didn't end abnormally.
 	if lfTrace != nil {
-		lfTrace.End(true, truncate(orchestrator.RenderTranscript(session.Messages), 2000))
+		ok := debateErr == nil && (len(results) == 0 || speakers > 0)
+		lfTrace.End(ok, truncate(orchestrator.RenderTranscript(session.Messages), 2000))
 	}
 
 	_ = sse.SendRunFinished()
@@ -443,17 +461,33 @@ func (h *ProxyHandler) getOrCreateGroupSession(ctx context.Context, claims *auth
 	session.GroupID = groupID
 	session.AgentIDs = rosterIDs
 	// The group flags are load-bearing (they make this a personal group session);
-	// if they don't persist, fail rather than return a mislabeled session.
+	// if they don't persist, delete the half-created session and fail rather
+	// than leave an orphan (an empty 1:1 chat) or return a mislabeled session.
 	if err := h.store.SaveSession(ctx, session); err != nil {
 		h.logger.Error("failed to save group session flags", zap.String("session_id", session.SessionID), zap.Error(err))
+		h.deleteOrphanSession(session.SessionID, userEmail, firstAgentID)
 		return nil, errSessionStore
 	}
-	// Group↔session index is best-effort (drives the sidebar list, not access).
+	// Index the session for the sidebar. This is load-bearing for listing — if
+	// it fails the session would vanish from the user's view — so fail (and
+	// clean up) rather than hand back an unlisted session.
 	if err := h.groupRepo.AddSession(ctx, groupID, session.SessionID); err != nil {
-		h.logger.Error("failed to add session to group", zap.Error(err),
+		h.logger.Error("failed to index group session", zap.Error(err),
 			zap.String("group_id", groupID), zap.String("session_id", session.SessionID))
+		h.deleteOrphanSession(session.SessionID, userEmail, firstAgentID)
+		return nil, errSessionStore
 	}
 	return session, nil
+}
+
+// deleteOrphanSession best-effort removes a session that failed to fully
+// initialize, so a failed create doesn't leave a stray empty chat behind.
+func (h *ProxyHandler) deleteOrphanSession(sessionID, userEmail, agentID string) {
+	delCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := h.store.DeleteSession(delCtx, sessionID, userEmail, agentID); err != nil {
+		h.logger.Warn("failed to clean up orphan session", zap.String("session_id", sessionID), zap.Error(err))
+	}
 }
 
 // streamModeratorMessage streams a synthetic (non-proxied) assistant message,

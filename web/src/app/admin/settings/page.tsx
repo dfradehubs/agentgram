@@ -67,7 +67,8 @@ export default function AdminSettingsPage() {
         <div>
           <h1 className="text-2xl font-bold">General Configuration</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Runtime operational settings. Changes apply immediately — no redeploy.
+            Runtime operational settings — no redeploy. Applied at once on this
+            instance; other instances converge within ~30s.
           </p>
         </div>
         <Button onClick={handleSave} disabled={!dirty || saving}>

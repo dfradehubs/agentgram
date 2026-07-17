@@ -94,6 +94,32 @@ func New(repo Repository, logger *zap.Logger) *Service {
 	return s
 }
 
+// StartPeriodicReload refreshes the cache from the DB every interval, so a
+// change made on one pod propagates to the others within one interval (the
+// writing pod reloads immediately; peers converge here). Mirrors the MCP
+// registry's periodic refresh. Runs until ctx is cancelled.
+func (s *Service) StartPeriodicReload(ctx context.Context, interval time.Duration) {
+	if s.repo == nil || interval <= 0 {
+		return
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				rc, cancel := context.WithTimeout(ctx, 10*time.Second)
+				if err := s.Reload(rc); err != nil {
+					s.logger.Warn("periodic settings reload failed", zap.Error(err))
+				}
+				cancel()
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+}
+
 // Reload refreshes the cache from the repository.
 func (s *Service) Reload(ctx context.Context) error {
 	if s.repo == nil {

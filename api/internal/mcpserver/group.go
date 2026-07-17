@@ -220,12 +220,33 @@ func (h *Handler) buildGroupRoster(ctx context.Context, group *models.AgentGroup
 // callGroup returns the collected debate text, the session ID, an isError flag
 // (true when no agent produced a successful reply), and a transport error.
 func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roster []orchestrator.AgentBrief, agentsByID map[string]*models.Agent, question, sessionID, userEmail string, userGroups []string, lfTrace *lf.Trace) (string, string, bool, error) {
-	// Resolve or create the group session. Personal sessions: a resume must
-	// exist, belong to this group, and be owned by the caller — a transient
-	// error or another user's session must not silently fork a new session.
+	// The MCP user's JWT, forwarded only when the agent's auth method is "forward"
+	authHeader := middleware.GetAuthHeaderFromContext(ctx)
+
+	// Absolute deadline for the WHOLE tool call, started up-front so session
+	// resolution + store ops also count against the budget (and can't restart
+	// the timeout later). Detached from client cancellation (survives a client
+	// disconnect); carries the GitHub token and identity claims for downstream.
+	deadline := time.Now().Add(h.settings.Duration(appsettings.KeyMCPToolCallTimeout))
+	callCtx, cancel := context.WithDeadline(context.Background(), deadline)
+	defer cancel()
+	if tok := middleware.GetGitHubTokenFromContext(ctx); tok != "" {
+		callCtx = context.WithValue(callCtx, middleware.GitHubTokenContextKey, tok)
+	}
+	if claims := middleware.GetUserFromContext(ctx); claims != nil {
+		callCtx = context.WithValue(callCtx, middleware.UserContextKey, claims)
+	}
+	if lfTrace != nil {
+		callCtx = lf.ContextWithTrace(callCtx, lfTrace)
+	}
+
+	// Resolve or create the group session (against callCtx so it counts against
+	// the deadline). Personal sessions: a resume must exist, belong to this
+	// group, and be owned by the caller — a transient error or another user's
+	// session must not silently fork a new session.
 	var session *models.Session
 	if sessionID != "" {
-		s, err := h.sessionStore.GetSession(ctx, sessionID)
+		s, err := h.sessionStore.GetSession(callCtx, sessionID)
 		if err != nil {
 			return "", "", true, fmt.Errorf("session store error: %w", err)
 		}
@@ -238,7 +259,7 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 		session = s
 	}
 	if session == nil {
-		s, err := h.sessionStore.CreateSession(ctx, userEmail, roster[0].ID, truncateString(question, 50))
+		s, err := h.sessionStore.CreateSession(callCtx, userEmail, roster[0].ID, truncateString(question, 50))
 		if err != nil {
 			return "", "", true, fmt.Errorf("failed to create session: %w", err)
 		}
@@ -249,15 +270,23 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 			s.AgentIDs = append(s.AgentIDs, b.ID)
 		}
 		// The group flags are load-bearing (they make this a resumable personal
-		// group session); if they don't persist, fail rather than hand back a
-		// session_id the client can't reopen.
-		if err := h.sessionStore.SaveSession(ctx, s); err != nil {
+		// group session); if they don't persist, delete the half-created session
+		// and fail rather than leave an orphan or hand back an unusable id.
+		if err := h.sessionStore.SaveSession(callCtx, s); err != nil {
 			h.logger.Error("failed to save group session flags", zap.String("session_id", s.SessionID), zap.Error(err))
+			delCtx, delCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer delCancel()
+			_ = h.sessionStore.DeleteSession(delCtx, s.SessionID, userEmail, roster[0].ID)
 			return "", "", true, fmt.Errorf("failed to persist session: %w", err)
 		}
-		// Group↔session index is best-effort (drives the sidebar list, not access).
-		if err := h.groupRepo.AddSession(ctx, group.ID, s.SessionID); err != nil {
-			h.logger.Error("failed to add session to group", zap.Error(err))
+		// Index the session for the sidebar. This is load-bearing for listing —
+		// if it fails, the session would vanish from the user's view — so fail.
+		if err := h.groupRepo.AddSession(callCtx, group.ID, s.SessionID); err != nil {
+			h.logger.Error("failed to index group session", zap.String("session_id", s.SessionID), zap.Error(err))
+			delCtx, delCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer delCancel()
+			_ = h.sessionStore.DeleteSession(delCtx, s.SessionID, userEmail, roster[0].ID)
+			return "", "", true, fmt.Errorf("failed to index session: %w", err)
 		}
 		session = s
 	}
@@ -271,34 +300,10 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 	for _, b := range roster {
 		userMsg.BroadcastAgentIDs = append(userMsg.BroadcastAgentIDs, b.ID)
 	}
-	saveCtx, saveCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer saveCancel()
-	if err := h.sessionStore.AddMessage(saveCtx, session.SessionID, userMsg); err != nil {
+	if err := h.sessionStore.AddMessage(callCtx, session.SessionID, userMsg); err != nil {
 		h.logger.Error("failed to persist user message", zap.Error(err))
 	}
 	session.Messages = append(session.Messages, userMsg)
-
-	// The MCP user's JWT, forwarded only when the agent's auth method is "forward"
-	authHeader := middleware.GetAuthHeaderFromContext(ctx)
-
-	// Detached context (survives client disconnect) bounded by the tool-call
-	// timeout for the WHOLE debate — a single deadline shared across turns, so
-	// N turns can't each get a fresh full timeout. Preserve the GitHub token so
-	// require_github_token / forward-auth agents still receive X-GitHub-Token.
-	timeout := h.settings.Duration(appsettings.KeyMCPToolCallTimeout)
-	debateDeadline := time.Now().Add(timeout)
-	callCtx, cancel := context.WithDeadline(context.Background(), debateDeadline)
-	defer cancel()
-	if tok := middleware.GetGitHubTokenFromContext(ctx); tok != "" {
-		callCtx = context.WithValue(callCtx, middleware.GitHubTokenContextKey, tok)
-	}
-	// Carry the caller's identity claims so the proxy emits X-User-* downstream.
-	if claims := middleware.GetUserFromContext(ctx); claims != nil {
-		callCtx = context.WithValue(callCtx, middleware.UserContextKey, claims)
-	}
-	if lfTrace != nil {
-		callCtx = lf.ContextWithTrace(callCtx, lfTrace)
-	}
 
 	reqIDSuffix := session.SessionID
 	if len(reqIDSuffix) > 8 {
@@ -310,8 +315,9 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 		agent := agentsByID[agentID]
 
 		// Each turn is bounded by the time LEFT in the shared debate deadline,
-		// never a fresh full timeout.
-		remaining := time.Until(debateDeadline)
+		// never a fresh full timeout. (The proxy also clamps to callCtx's
+		// deadline, so this is belt-and-suspenders.)
+		remaining := time.Until(deadline)
 		if remaining <= 0 {
 			return "", context.DeadlineExceeded
 		}

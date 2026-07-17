@@ -119,7 +119,15 @@ func resolveAgentTimeout(d time.Duration) time.Duration {
 // downstream agents receive the acting user's identity/tenant. Bounded by the
 // resolved agent timeout.
 func newDetachedAgentContext(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
-	c, cancel := context.WithTimeout(context.Background(), resolveAgentTimeout(timeout))
+	deadline := time.Now().Add(resolveAgentTimeout(timeout))
+	// Respect an earlier deadline already on the incoming ctx (e.g. the MCP
+	// debate's absolute deadline): time spent before this call — resolving the
+	// session, store ops — counts against the budget, and the timeout can't be
+	// silently restarted from scratch.
+	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
+		deadline = d
+	}
+	c, cancel := context.WithDeadline(context.Background(), deadline)
 	c = trace.ContextWithSpan(c, trace.SpanFromContext(ctx))
 	if tok := middleware.GetGitHubTokenFromContext(ctx); tok != "" {
 		c = context.WithValue(c, middleware.GitHubTokenContextKey, tok)

@@ -140,6 +140,7 @@ func (p *ADKProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *mod
 			select {
 			case <-time.After(delay):
 			case <-adkCtx.Done():
+				sse.SendRunError(fmt.Sprintf("agent timed out: %v", adkCtx.Err()))
 				return nil, adkCtx.Err()
 			}
 		}

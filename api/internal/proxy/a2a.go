@@ -89,6 +89,7 @@ func (p *A2AProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *mod
 			select {
 			case <-time.After(delay):
 			case <-a2aCtx.Done():
+				sse.SendRunError(fmt.Sprintf("agent timed out: %v", a2aCtx.Err()))
 				return nil, a2aCtx.Err()
 			}
 		}
