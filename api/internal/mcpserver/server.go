@@ -184,10 +184,15 @@ func (s *Server) handleToolsList(req jsonRPCRequest, userEmail string, userGroup
 
 // AccessibleGroups returns the agent groups the user can participate in.
 func (s *Server) AccessibleGroups(userEmail string, userGroups []string) []*models.AgentGroup {
+	return s.AccessibleGroupsContext(context.Background(), userEmail, userGroups)
+}
+
+// AccessibleGroupsContext is the deadline-aware variant used by tool calls.
+func (s *Server) AccessibleGroupsContext(ctx context.Context, userEmail string, userGroups []string) []*models.AgentGroup {
 	if s.groupRepo == nil {
 		return nil
 	}
-	groups, err := s.groupRepo.ListAccessible(context.Background(), userEmail, userGroups)
+	groups, err := s.groupRepo.ListAccessible(ctx, userEmail, userGroups)
 	if err != nil {
 		s.logger.Warn("failed to list accessible groups for MCP tools", zap.Error(err))
 		return nil

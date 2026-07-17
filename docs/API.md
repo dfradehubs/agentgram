@@ -561,7 +561,7 @@ Sends a message to the group; the moderator decides who answers.
 | `session_id` | string | no | Resume an existing session **you own** in this group |
 | `agent_ids` | array | no | @mention roster override: only these members may answer (omit = moderator chooses) |
 
-**Response**: `text/event-stream` (AG-UI). Exactly one `RUN_STARTED` / `RUN_FINISHED` pair. `TEXT_MESSAGE_*` and `TOOL_CALL_*` events carry an `agentId`; a `CUSTOM` event with `subType: "moderator.select"` announces each turn, and `subType: "turn.error"` reports a failed agent turn without aborting the debate.
+**Response**: `text/event-stream` (AG-UI). Exactly one `RUN_STARTED` and one terminal `RUN_FINISHED` or `RUN_ERROR`. `TEXT_MESSAGE_*` and `TOOL_CALL_*` events carry an `agentId`; `CUSTOM moderator.select` announces each turn and `CUSTOM turn.error` reports a failed agent turn without aborting the debate. A partial outcome emits exactly one `CUSTOM debate.incomplete` before the terminal event, with `data.reason` equal to `timeout`, `moderator_error`, or `all_agents_failed`.
 
 **Errors**: `403` (no access to the group, or `session_id` not owned by the caller), `404` (unknown `session_id`), `500` (session store error), `503` (no moderator LLM configured).
 

@@ -143,9 +143,15 @@ Delivers output artifacts (text, files, structured data).
 | status-update (state: failed)          | RUN_ERROR                |
 | status-update (state: rejected)        | RUN_ERROR                |
 | status-update (state: auth-required)   | RUN_ERROR                |
-| status-update (state: canceled)        | RUN_FINISHED             |
+| status-update (state: canceled)        | RUN_ERROR                |
 | artifact-update (text part)            | TEXT_MESSAGE_CONTENT      |
 | artifact-update (data part)            | TEXT_MESSAGE_START (isThinking) + TEXT_MESSAGE_CONTENT |
+
+The stream must end with an explicit terminal `status-update`. EOF or a
+transport reset before `completed`, `failed`, `rejected`, `auth-required`, or
+`canceled` is treated as an interrupted response. Any accumulated content is
+returned as partial content together with an error; it is never followed by
+`RUN_FINISHED`.
 
 ### Pipeline Agents
 

@@ -177,7 +177,8 @@ func (f *fakeGroupRepo) GetAllInheritedPermissions(_ context.Context) (map[strin
 	return map[string]*models.InheritedPerms{}, nil
 }
 
-func (f *fakeGroupRepo) AddSession(_ context.Context, _, _ string) error { return nil }
+func (f *fakeGroupRepo) AddSession(_ context.Context, _, _ string) error    { return nil }
+func (f *fakeGroupRepo) RemoveSession(_ context.Context, _, _ string) error { return nil }
 
 // fakeUserRepo makes every user a non-admin (DB lookup misses).
 type fakeUserRepo struct{ repository.UserRepository }

@@ -52,9 +52,15 @@ func (h *Handler) handleGroupToolCall(w http.ResponseWriter, r *http.Request, re
 		return
 	}
 
+	// Start the tool-call budget before authorization/roster/session setup. The
+	// execution detaches from client cancellation later, but preserves this
+	// absolute deadline so preflight work cannot restart the timeout.
+	toolCtx, toolCancel := context.WithTimeout(r.Context(), h.settings.Duration(appsettings.KeyMCPToolCallTimeout))
+	defer toolCancel()
+
 	// Access check: the group must be in the user's accessible list
 	var accessible bool
-	for _, g := range h.server.AccessibleGroups(userEmail, userGroups) {
+	for _, g := range h.server.AccessibleGroupsContext(toolCtx, userEmail, userGroups) {
 		if g.ID == groupID {
 			accessible = true
 			break
@@ -66,14 +72,14 @@ func (h *Handler) handleGroupToolCall(w http.ResponseWriter, r *http.Request, re
 	}
 	// Re-fetch via Get: AccessibleGroups (ListAccessible) doesn't select all
 	// fields (e.g. max_turns), so use the full record for the debate.
-	group, err := h.groupRepo.Get(r.Context(), groupID)
+	group, err := h.groupRepo.Get(toolCtx, groupID)
 	if err != nil {
 		h.writeJSON(w, http.StatusOK, h.server.MarshalToolResult(req.ID, "Group not found", true))
 		return
 	}
 
 	// Roster: group agents the user can access
-	roster, agentsByID := h.buildGroupRoster(r.Context(), group, userEmail, userGroups)
+	roster, agentsByID := h.buildGroupRoster(toolCtx, group, userEmail, userGroups)
 	if len(roster) == 0 {
 		h.writeJSON(w, http.StatusOK, h.server.MarshalToolResult(req.ID, "No accessible agents in this group", true))
 		return
@@ -92,7 +98,7 @@ func (h *Handler) handleGroupToolCall(w http.ResponseWriter, r *http.Request, re
 	// Langfuse trace for the debate
 	var lfTrace *lf.Trace
 	if h.langfuseTracer != nil && h.langfuseTracer.Enabled() {
-		lfTrace = h.langfuseTracer.StartTrace(r.Context(), "mcp:group-chat", userEmail, sessionID, map[string]interface{}{
+		lfTrace = h.langfuseTracer.StartTrace(toolCtx, "mcp:group-chat", userEmail, sessionID, map[string]interface{}{
 			"group_id":   groupID,
 			"group_name": group.Name,
 			"source":     "mcp",
@@ -122,7 +128,7 @@ func (h *Handler) handleGroupToolCall(w http.ResponseWriter, r *http.Request, re
 	}
 	done := make(chan callResult, 1)
 	go func() {
-		text, resultSessionID, isError, err := h.callGroup(r.Context(), group, roster, agentsByID, args.Question, sessionID, userEmail, userGroups, lfTrace)
+		text, resultSessionID, isError, err := h.callGroup(toolCtx, group, roster, agentsByID, args.Question, sessionID, userEmail, userGroups, lfTrace)
 		done <- callResult{text: text, sessionID: resultSessionID, isError: isError, err: err}
 	}()
 
@@ -229,6 +235,9 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 	// the timeout later). Detached from client cancellation (survives a client
 	// disconnect); carries the GitHub token and identity claims for downstream.
 	deadline := time.Now().Add(h.settings.Duration(appsettings.KeyMCPToolCallTimeout))
+	if parentDeadline, ok := ctx.Deadline(); ok && parentDeadline.Before(deadline) {
+		deadline = parentDeadline
+	}
 	callCtx, cancel := context.WithDeadline(context.Background(), deadline)
 	defer cancel()
 	if tok := middleware.GetGitHubTokenFromContext(ctx); tok != "" {
@@ -246,6 +255,7 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 	// group, and be owned by the caller — a transient error or another user's
 	// session must not silently fork a new session.
 	var session *models.Session
+	createdSession := false
 	if sessionID != "" {
 		s, err := h.sessionStore.GetSession(callCtx, sessionID)
 		if err != nil {
@@ -273,16 +283,17 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 		// The group flags are load-bearing (they make this a resumable personal
 		// group session); if they don't persist, delete the half-created session
 		// and fail rather than leave an orphan or hand back an unusable id.
+		createdSession = true
 		if err := h.sessionStore.SaveSession(callCtx, s); err != nil {
 			h.logger.Error("failed to save group session flags", zap.String("session_id", s.SessionID), zap.Error(err))
-			h.deleteOrphanSession(s.SessionID, userEmail, roster[0].ID)
+			h.cleanupOrphanSession(callCtx, group.ID, s.SessionID, userEmail, roster[0].ID)
 			return "", "", true, fmt.Errorf("failed to persist session: %w", err)
 		}
 		// Index the session for the sidebar. This is load-bearing for listing —
 		// if it fails, the session would vanish from the user's view — so fail.
 		if err := h.groupRepo.AddSession(callCtx, group.ID, s.SessionID); err != nil {
 			h.logger.Error("failed to index group session", zap.String("session_id", s.SessionID), zap.Error(err))
-			h.deleteOrphanSession(s.SessionID, userEmail, roster[0].ID)
+			h.cleanupOrphanSession(callCtx, group.ID, s.SessionID, userEmail, roster[0].ID)
 			return "", "", true, fmt.Errorf("failed to index session: %w", err)
 		}
 		session = s
@@ -299,6 +310,10 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 	}
 	if err := h.sessionStore.AddMessage(callCtx, session.SessionID, userMsg); err != nil {
 		h.logger.Error("failed to persist user message", zap.Error(err))
+		if createdSession {
+			h.cleanupOrphanSession(callCtx, group.ID, session.SessionID, userEmail, roster[0].ID)
+		}
+		return "", session.SessionID, true, fmt.Errorf("failed to persist user message: %w", err)
 	}
 	session.Messages = append(session.Messages, userMsg)
 
@@ -354,14 +369,15 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 				agentSpan.End(nil)
 			}
 		}
+		var turnErr error
 		if err != nil {
-			return "", err
+			turnErr = err
 		}
 		if result == nil {
-			return "", nil
+			return "", turnErr
 		}
-		if result.Error != "" {
-			return "", fmt.Errorf("%s", result.Error)
+		if result.Error != "" && turnErr == nil {
+			turnErr = errors.New(result.Error)
 		}
 
 		// Persist the reply and grow the in-memory session for the next turn.
@@ -371,19 +387,30 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 			Role:    "assistant",
 			Content: result.AssistantText,
 			AgentID: agentID,
+			IsError: turnErr != nil,
 		}
 		if err := h.sessionStore.AddMessage(callCtx, session.SessionID, assistantMsg); err != nil {
 			h.logger.Error("failed to persist assistant message", zap.Error(err))
+			turnErr = errors.Join(turnErr, fmt.Errorf("reply persistence failed: %w", err))
 		}
 		session.Messages = append(session.Messages, assistantMsg)
 
-		if result.AgentSessionID != "" && result.AgentSessionID != agentSessionID {
-			_ = h.sessionStore.SetAgentSessionID(callCtx, session.SessionID, agentID, result.AgentSessionID)
-		} else if !hasAgentSession {
-			_ = h.sessionStore.SetAgentSessionID(callCtx, session.SessionID, agentID, session.SessionID)
+		if turnErr == nil {
+			mappingID := ""
+			if result.AgentSessionID != "" && result.AgentSessionID != agentSessionID {
+				mappingID = result.AgentSessionID
+			} else if !hasAgentSession {
+				mappingID = session.SessionID
+			}
+			if mappingID != "" {
+				if err := h.sessionStore.SetAgentSessionID(callCtx, session.SessionID, agentID, mappingID); err != nil {
+					h.logger.Error("failed to persist agent session mapping", zap.Error(err))
+					turnErr = fmt.Errorf("session mapping persistence failed: %w", err)
+				}
+			}
 		}
 
-		return result.AssistantText, nil
+		return result.AssistantText, turnErr
 	}
 
 	maxTurns := h.settings.Int(appsettings.KeyGroupMaxTurnsMCP)
@@ -409,7 +436,11 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 			name = agent.Name
 		}
 		if res.Err != nil {
-			parts = append(parts, fmt.Sprintf("**[%s]**\n\n_error: %v_", name, res.Err))
+			if res.Text != "" {
+				parts = append(parts, fmt.Sprintf("**[%s]**\n\n%s\n\n_error: %v_", name, res.Text, res.Err))
+			} else {
+				parts = append(parts, fmt.Sprintf("**[%s]**\n\n_error: %v_", name, res.Err))
+			}
 			continue
 		}
 		parts = append(parts, fmt.Sprintf("**[%s]**\n\n%s", name, res.Text))
@@ -426,6 +457,7 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 		parts = append(parts, fmt.Sprintf("_⚠️ Note: %s; the answer above may be incomplete._", note))
 	}
 
+	resultIncomplete := debateErr != nil
 	// Optional synthesis when several agents contributed
 	if distinctSpeakers(results) >= 2 {
 		synthesis, err := h.moderator.Synthesize(callCtx, orchestrator.RenderTranscript(session.Messages))
@@ -440,6 +472,8 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 				AgentID: "moderator",
 			}); err != nil {
 				h.logger.Error("failed to persist moderator synthesis", zap.Error(err))
+				parts = append(parts, fmt.Sprintf("_error: synthesis persistence failed: %v_", err))
+				resultIncomplete = true
 			}
 		}
 	}
@@ -447,16 +481,31 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 	// isError when no agent replied successfully OR the debate ended abnormally
 	// (moderator error / deadline) — either way the client shouldn't treat the
 	// result as a complete success.
-	isError := distinctSpeakers(results) == 0 || debateErr != nil
+	isError := distinctSpeakers(results) == 0 || resultIncomplete
 	return strings.Join(parts, "\n\n---\n\n"), session.SessionID, isError, nil
 }
 
-// deleteOrphanSession best-effort removes a session that failed to fully
-// initialize. A cleanup failure is logged (not silently dropped) so an orphan
-// left behind is at least visible for reconciliation.
-func (h *Handler) deleteOrphanSession(sessionID, userEmail, agentID string) {
+// cleanupOrphanSession reconciles both the PostgreSQL group index and Redis.
+// When the absolute call deadline is too close, cleanup continues asynchronously
+// so compensation cannot extend the user-visible tool-call budget.
+func (h *Handler) cleanupOrphanSession(callCtx context.Context, groupID, sessionID, userEmail, agentID string) {
+	cleanup := func() {
+		h.deleteOrphanSession(groupID, sessionID, userEmail, agentID)
+	}
+	if deadline, ok := callCtx.Deadline(); ok && time.Until(deadline) <= 5*time.Second {
+		go cleanup()
+		return
+	}
+	cleanup()
+}
+
+func (h *Handler) deleteOrphanSession(groupID, sessionID, userEmail, agentID string) {
 	delCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	if err := h.groupRepo.RemoveSession(delCtx, groupID, sessionID); err != nil {
+		h.logger.Warn("failed to remove orphan group-session index; manual reconciliation may be needed",
+			zap.String("group_id", groupID), zap.String("session_id", sessionID), zap.Error(err))
+	}
 	if err := h.sessionStore.DeleteSession(delCtx, sessionID, userEmail, agentID); err != nil {
 		h.logger.Warn("failed to clean up orphan group session; manual reconciliation may be needed",
 			zap.String("session_id", sessionID), zap.Error(err))

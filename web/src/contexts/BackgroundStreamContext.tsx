@@ -19,6 +19,7 @@ import {
   sendBrowserNotification,
 } from "@/lib/notifications";
 import { useT } from "@/lib/i18n";
+import { debateIncompleteReason, type DebateIncompleteReason } from "@/lib/group-events";
 
 type StreamType = "single" | "broadcast" | "conversation" | "mcp";
 
@@ -113,6 +114,7 @@ export function BackgroundStreamProvider({
       try {
         const decoder = new TextDecoder();
         let textBuffer = "";
+        let incompleteReason: DebateIncompleteReason | null = null;
 
         while (true) {
           // If reclaimed, useChat took ownership of the reader — exit silently
@@ -133,13 +135,22 @@ export function BackgroundStreamProvider({
           for (const line of lines) {
             const trimmed = line.trim();
             if (!trimmed || !trimmed.startsWith("data: ")) continue;
+            let event: unknown;
+            try {
+              event = JSON.parse(trimmed.slice("data: ".length));
+            } catch {
+              continue;
+            }
+            const reason = debateIncompleteReason(event);
+            if (reason) {
+              incompleteReason = reason;
+              continue;
+            }
             // Check for RUN_FINISHED or RUN_ERROR
-            if (
-              trimmed.includes('"RUN_FINISHED"') ||
-              trimmed.includes('"RUN_ERROR"')
-            ) {
+            const eventType = (event as { type?: unknown }).type;
+            if (eventType === "RUN_FINISHED" || eventType === "RUN_ERROR") {
               state.completed = true;
-              const isError = trimmed.includes('"RUN_ERROR"');
+              const isError = eventType === "RUN_ERROR" || incompleteReason !== null;
 
               // Notify
               const label = state.sessionName || state.agentName;

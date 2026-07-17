@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -70,7 +71,7 @@ type mcpFakeSessionStore struct {
 	mu            sync.Mutex
 	sessions      map[string]*models.Session
 	agentSessions map[string]string
-	failSave      bool     // when true, SaveSession returns an error
+	failSave      bool // when true, SaveSession returns an error
 	failUserAdd   bool
 	failReplyAdd  bool
 	failSetAgent  bool
@@ -174,7 +175,8 @@ func (f *mcpFakeGroupRepo) GetAllInheritedPermissions(_ context.Context) (map[st
 	return map[string]*models.InheritedPerms{}, nil
 }
 
-func (f *mcpFakeGroupRepo) AddSession(_ context.Context, _, _ string) error { return nil }
+func (f *mcpFakeGroupRepo) AddSession(_ context.Context, _, _ string) error    { return nil }
+func (f *mcpFakeGroupRepo) RemoveSession(_ context.Context, _, _ string) error { return nil }
 
 type mcpFakeUserRepo struct{ repository.UserRepository }
 
@@ -388,8 +390,8 @@ func TestCallGroupDeadlineBoundsWholeCall(t *testing.T) {
 func TestCallGroupRespectsExistingDeadline(t *testing.T) {
 	h, group := newGroupTestHandler(t, http.StatusOK, "agent-a", "FINISH")
 	roster, agentsByID := h.buildGroupRoster(context.Background(), group, "user@example.com", nil)
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
 
 	text, _, isError, _ := h.callGroup(ctx, group, roster, agentsByID, "hi", "", "user@example.com", nil, nil)
 	if !isError || strings.Contains(text, "reply from agent-a") {

@@ -30,8 +30,8 @@ import (
 // @Summary Chat with an agent group (moderated debate)
 // @Description Sends a message to a group. An LLM moderator picks which agents respond,
 // @Description in sequence, each seeing the previous agents' replies. The response is a single
-// @Description SSE stream (one RUN_STARTED/RUN_FINISHED pair) with TEXT_MESSAGE_* events tagged
-// @Description per agent via the agentId field.
+// @Description SSE stream with one RUN_STARTED and one terminal RUN_FINISHED or RUN_ERROR.
+// @Description TEXT_MESSAGE_* events are tagged per agent via agentId; debate.incomplete reports partial outcomes.
 // @Tags chat
 // @Accept json
 // @Produce text/event-stream
@@ -142,6 +142,15 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 	userMsg.BroadcastAgentIDs = rosterIDs
 	if err := h.store.AddMessage(ctx, session.SessionID, userMsg); err != nil {
 		h.logger.Error("failed to save user message", zap.Error(err))
+		if chatReq.SessionID == "" {
+			firstAgentID := ""
+			if len(rosterIDs) > 0 {
+				firstAgentID = rosterIDs[0]
+			}
+			h.deleteOrphanSession(groupID, session.SessionID, userEmail, firstAgentID)
+		}
+		http.Error(w, `{"error":"failed to persist user message"}`, http.StatusInternalServerError)
+		return
 	}
 	session.Messages = append(session.Messages, userMsg)
 
@@ -178,7 +187,7 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Outer SSE lifecycle: exactly one RUN_STARTED/RUN_FINISHED for the whole debate.
+	// Outer SSE lifecycle: one RUN_STARTED and one terminal RUN_FINISHED or RUN_ERROR.
 	sse, err := proxy.NewSSEWriter(w)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -315,24 +324,23 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	if debateErr != nil {
-		// Some agent replied but the debate ended abnormally (moderator error or
-		// deadline). Tell the user the answer may be incomplete instead of
-		// finishing silently.
-		h.logger.Warn("group debate ended early", zap.String("group_id", groupID), zap.Error(debateErr))
-		reason := "moderator_error"
-		note := "⚠️ The debate ended early (moderator error or timeout); the replies above may be incomplete."
-		if errors.Is(debateErr, context.DeadlineExceeded) {
-			reason = "timeout"
-			note = "⚠️ The debate hit the time limit before finishing; the replies above may be incomplete."
+	speakers := distinctSuccessfulSpeakers(results)
+	incompleteReason := debateIncompleteReason(debateErr, speakers, len(results))
+	if incompleteReason != "" {
+		if debateErr != nil {
+			h.logger.Warn("group debate ended early", zap.String("group_id", groupID), zap.Error(debateErr))
 		}
-		// Programmatic signal for clients/automations, plus a human-readable note.
-		_ = sse.SendCustomEvent("debate.incomplete", map[string]interface{}{"reason": reason})
-		h.streamModeratorMessage(sse, "moderator", note)
-		h.persistModeratorMessage(session.SessionID, "moderator", note)
+		_ = sse.SendCustomEvent("debate.incomplete", map[string]interface{}{"reason": incompleteReason})
+		if incompleteReason != "all_agents_failed" {
+			note := "⚠️ The debate ended early (moderator error); the replies above may be incomplete."
+			if incompleteReason == "timeout" {
+				note = "⚠️ The debate hit the time limit before finishing; the replies above may be incomplete."
+			}
+			h.streamModeratorMessage(sse, "moderator", note)
+			h.persistModeratorMessage(session.SessionID, "moderator", note)
+		}
 	}
 
-	speakers := distinctSuccessfulSpeakers(results)
 	switch {
 	case len(results) == 0:
 		// Moderator decided nobody applies: tell the user instead of silence.
@@ -347,7 +355,6 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 		// scoped turn.error). Emit a programmatic signal (the moderator may have
 		// said FINISH, so debateErr can be nil) plus a visible summary so the run
 		// isn't empty.
-		_ = sse.SendCustomEvent("debate.incomplete", map[string]interface{}{"reason": "all_agents_failed"})
 		failMsg := "All selected agents failed to respond. Please try again."
 		if locale == "es" {
 			failMsg = "Todos los agentes seleccionados fallaron al responder. Inténtalo de nuevo."
@@ -373,6 +380,22 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = sse.SendRunFinished()
+}
+
+// debateIncompleteReason computes one terminal reason with explicit precedence.
+// A moderator/deadline error explains why the debate stopped; otherwise a run
+// with attempted turns but no successful speaker is a total agent failure.
+func debateIncompleteReason(debateErr error, speakers, resultCount int) string {
+	if errors.Is(debateErr, context.DeadlineExceeded) {
+		return "timeout"
+	}
+	if debateErr != nil {
+		return "moderator_error"
+	}
+	if resultCount > 0 && speakers == 0 {
+		return "all_agents_failed"
+	}
+	return ""
 }
 
 // buildRoster returns the accessible agents of the group as moderator briefs
@@ -469,7 +492,7 @@ func (h *ProxyHandler) getOrCreateGroupSession(ctx context.Context, claims *auth
 	// than leave an orphan (an empty 1:1 chat) or return a mislabeled session.
 	if err := h.store.SaveSession(ctx, session); err != nil {
 		h.logger.Error("failed to save group session flags", zap.String("session_id", session.SessionID), zap.Error(err))
-		h.deleteOrphanSession(session.SessionID, userEmail, firstAgentID)
+		h.deleteOrphanSession(groupID, session.SessionID, userEmail, firstAgentID)
 		return nil, errSessionStore
 	}
 	// Index the session for the sidebar. This is load-bearing for listing — if
@@ -478,7 +501,7 @@ func (h *ProxyHandler) getOrCreateGroupSession(ctx context.Context, claims *auth
 	if err := h.groupRepo.AddSession(ctx, groupID, session.SessionID); err != nil {
 		h.logger.Error("failed to index group session", zap.Error(err),
 			zap.String("group_id", groupID), zap.String("session_id", session.SessionID))
-		h.deleteOrphanSession(session.SessionID, userEmail, firstAgentID)
+		h.deleteOrphanSession(groupID, session.SessionID, userEmail, firstAgentID)
 		return nil, errSessionStore
 	}
 	return session, nil
@@ -486,9 +509,13 @@ func (h *ProxyHandler) getOrCreateGroupSession(ctx context.Context, claims *auth
 
 // deleteOrphanSession best-effort removes a session that failed to fully
 // initialize, so a failed create doesn't leave a stray empty chat behind.
-func (h *ProxyHandler) deleteOrphanSession(sessionID, userEmail, agentID string) {
+func (h *ProxyHandler) deleteOrphanSession(groupID, sessionID, userEmail, agentID string) {
 	delCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	if err := h.groupRepo.RemoveSession(delCtx, groupID, sessionID); err != nil {
+		h.logger.Warn("failed to clean up orphan group-session index",
+			zap.String("group_id", groupID), zap.String("session_id", sessionID), zap.Error(err))
+	}
 	if err := h.store.DeleteSession(delCtx, sessionID, userEmail, agentID); err != nil {
 		h.logger.Warn("failed to clean up orphan session", zap.String("session_id", sessionID), zap.Error(err))
 	}

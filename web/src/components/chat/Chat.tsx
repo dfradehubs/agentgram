@@ -19,7 +19,7 @@ import { ChatInput } from "./ChatInput";
 import { MCPToolsPanel } from "../mcp/MCPToolsPanel";
 import { Button } from "@/components/ui/button";
 import type { Attachment } from "@/lib/types";
-import { extractMentions } from "@/lib/mentions";
+import { resolveMentions } from "@/lib/mentions";
 import { reconnectMCPServer, getSession as fetchSession, shareSession, getMCPOAuth2LoginURL, ApiError } from "@/lib/api";
 import { toast } from "sonner";
 import {
@@ -487,9 +487,15 @@ export function Chat() {
       // Moderated group debate. Any @<agent-id> mentions matching the roster
       // steer the moderator (roster override); otherwise it picks freely.
       // Tolerant match: case-insensitive, ignores trailing punctuation.
-      const mentioned = extractMentions(input, multiAgentIds);
+      const mentionResolution = resolveMentions(input, multiAgentIds);
+      if (mentionResolution.error) {
+        toast.error(mentionResolution.error === "ambiguous"
+          ? "That @mention matches more than one agent. Use a unique agent ID."
+          : "One or more @mentions do not match an agent in this group.");
+        return;
+      }
       sendMessage(undefined, undefined, atts, undefined, undefined, {
-        agentIds: mentioned.length > 0 ? mentioned : undefined,
+        agentIds: mentionResolution.agentIds.length > 0 ? mentionResolution.agentIds : undefined,
       });
     } else {
       sendMessage(undefined, undefined, atts);

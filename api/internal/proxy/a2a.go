@@ -155,7 +155,9 @@ func (p *A2AProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *mod
 
 		line, err := reader.ReadString('\n')
 		if err != nil {
-			// Stream ended
+			// The A2A protocol has explicit terminal states. Reaching EOF (or a
+			// transport reset) before one of those states is always incomplete,
+			// even when the server already emitted partial text/tool calls.
 			if messageStarted {
 				sendToClient(func() error { return sse.SendTextMessageEnd() })
 			}
@@ -176,23 +178,22 @@ func (p *A2AProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *mod
 					Error:          errMsg,
 				}, fmt.Errorf("%s", errMsg)
 			}
-			// If we accumulated text or tool calls, it was a successful run
-			if accumulated.Len() > 0 || len(toolCalls) > 0 {
-				sendToClient(func() error { return sse.SendRunFinished() })
-				flushText()
-				return &ProxyResult{
-					AssistantText:  accumulated.String(),
-					AgentSessionID: agentContextID,
-					ToolCalls:      toolCalls,
-					ContentParts:   contentParts,
-				}, nil
-			}
-			// Stream ended without content
-			p.logger.Error("stream ended unexpectedly",
+			errMsg := fmt.Sprintf("agent stream ended before completion: %v", err)
+			p.logger.Error("A2A stream ended before terminal status",
 				zap.String("agent_id", agent.ID),
 				zap.Error(err))
-			sendToClient(func() error { sse.SendRunError("stream ended unexpectedly"); return nil })
-			return nil, fmt.Errorf("stream ended: %w", err)
+			sendToClient(func() error { sse.SendRunError(errMsg); return nil })
+			if accumulated.Len() == 0 && len(toolCalls) == 0 {
+				return nil, fmt.Errorf("stream ended: %w", err)
+			}
+			flushText()
+			return &ProxyResult{
+				AssistantText:  accumulated.String(),
+				AgentSessionID: agentContextID,
+				ToolCalls:      toolCalls,
+				ContentParts:   contentParts,
+				Error:          errMsg,
+			}, fmt.Errorf("%s", errMsg)
 		}
 
 		line = strings.TrimSpace(line)

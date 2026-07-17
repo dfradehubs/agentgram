@@ -1022,7 +1022,7 @@ const docTemplate = `{
                         "CookieAuth": []
                     }
                 ],
-                "description": "Sends a message to a group. An LLM moderator picks which agents respond,\nin sequence, each seeing the previous agents' replies. The response is a single\nSSE stream (one RUN_STARTED/RUN_FINISHED pair) with TEXT_MESSAGE_* events tagged\nper agent via the agentId field.",
+                "description": "Sends a message to a group. An LLM moderator picks which agents respond,\nin sequence, each seeing the previous agents' replies. The response is a single\nSSE stream with one RUN_STARTED and one terminal RUN_FINISHED or RUN_ERROR.\nTEXT_MESSAGE_* events are tagged per agent via agentId; debate.incomplete reports partial outcomes.",
                 "consumes": [
                     "application/json"
                 ],

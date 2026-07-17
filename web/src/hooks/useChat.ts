@@ -15,7 +15,8 @@ function isValidChartData(data: unknown): data is ChartData {
   );
 }
 import { getChatEndpoint, getGroupChatEndpoint, getMCPChatEndpoint, getMultiMCPChatEndpoint, getRunStreamUrl } from "@/lib/api";
-import { extractMentions } from "@/lib/mentions";
+import { resolveMentions } from "@/lib/mentions";
+import { debateIncompleteMessage, debateIncompleteReason, type DebateIncompleteReason } from "@/lib/group-events";
 import { useBackgroundStreamContext } from "@/contexts/BackgroundStreamContext";
 import { reportMetric } from "@/lib/telemetry";
 
@@ -205,6 +206,7 @@ export function useChat({
 
     const processLoop = async () => {
       let runFinished = false;
+      let incompleteReason: DebateIncompleteReason | null = null;
 
       while (true) {
         if (isStale()) break;
@@ -340,6 +342,8 @@ export function useChat({
             }
 
             case "CUSTOM": {
+              const reason = debateIncompleteReason(event);
+              if (reason) incompleteReason = reason;
               if (event.subType === "CHART" && isValidChartData(event.data)) {
                 streamItems = [...streamItems, {
                   type: "chart" as const,
@@ -378,6 +382,9 @@ export function useChat({
               retryCountRef.current = 0;
               finalizeCurrentAgent();
               flushUpdate();
+              if (incompleteReason) {
+                throw new AgentError(debateIncompleteMessage(incompleteReason));
+              }
               break;
             }
 
@@ -1116,9 +1123,15 @@ export function useChat({
     if (groupId) {
       // Re-derive the @mention roster override with the same parser as a fresh
       // send (case-insensitive, canonicalized against the group roster).
-      const mentions = extractMentions(targetMsg.content, groupAgentIds || []);
+      const mentionResolution = resolveMentions(targetMsg.content, groupAgentIds || []);
+      if (mentionResolution.error) {
+        setError(mentionResolution.error === "ambiguous"
+          ? "That @mention matches more than one agent. Use a unique agent ID."
+          : "One or more @mentions do not match an agent in this group.");
+        return;
+      }
       sendMessage(undefined, undefined, targetMsg.attachments, targetMsg.content, messagesBeforeRetry, {
-        agentIds: mentions.length > 0 ? mentions : undefined,
+        agentIds: mentionResolution.agentIds.length > 0 ? mentionResolution.agentIds : undefined,
       });
       return;
     }

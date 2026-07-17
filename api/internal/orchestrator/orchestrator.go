@@ -165,8 +165,12 @@ func (m *Moderator) Debate(ctx context.Context, roster []AgentBrief, transcript 
 			m.logger.Warn("debate turn failed",
 				zap.String("agent_id", agentID),
 				zap.Error(err))
-			transcript += fmt.Sprintf("\nAgent[%s]: [error: %v]", agentID, err)
-			results = append(results, TurnResult{AgentID: agentID, Err: err})
+			if text != "" {
+				transcript += fmt.Sprintf("\nAgent[%s]: %s [error: %v]", agentID, text, err)
+			} else {
+				transcript += fmt.Sprintf("\nAgent[%s]: [error: %v]", agentID, err)
+			}
+			results = append(results, TurnResult{AgentID: agentID, Text: text, Err: err})
 			continue
 		}
 
