@@ -24,6 +24,7 @@ import (
 	"github.com/dfradehubs/agentgram-api/internal/proxy"
 	"github.com/dfradehubs/agentgram-api/internal/repository"
 	"github.com/dfradehubs/agentgram-api/internal/service"
+	appsettings "github.com/dfradehubs/agentgram-api/internal/settings"
 	"github.com/dfradehubs/agentgram-api/internal/store"
 	"go.uber.org/zap"
 )
@@ -43,6 +44,7 @@ type Handler struct {
 	oauth2Mgr      *mcp.OAuth2Manager
 	mcpRepo        repository.MCPServerRepository
 	moderator      *orchestrator.Moderator
+	settings       *appsettings.Service
 	logger         *zap.Logger
 }
 
@@ -60,6 +62,7 @@ func NewHandler(
 	oauth2Mgr *mcp.OAuth2Manager,
 	mcpRepo repository.MCPServerRepository,
 	llmRepo repository.LLMModelRepository,
+	settingsService *appsettings.Service,
 ) *Handler {
 	// Moderator LLM for group debate tools (role "moderator"); nil when unconfigured
 	var moderator *orchestrator.Moderator
@@ -92,6 +95,7 @@ func NewHandler(
 		oauth2Mgr:      oauth2Mgr,
 		mcpRepo:        mcpRepo,
 		moderator:      moderator,
+		settings:       settingsService,
 		logger:         logger,
 	}
 }
@@ -841,7 +845,7 @@ func (h *Handler) callAgent(ctx context.Context, agent *models.Agent, question s
 	// Call the proxy with its own context, independent of the HTTP request.
 	// This prevents the proxy call from being canceled if the HTTP client
 	// disconnects or the gateway times out — we need the full response.
-	callCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	callCtx, cancel := context.WithTimeout(context.Background(), h.settings.Duration(appsettings.KeyMCPToolCallTimeout))
 	defer cancel()
 
 	proxyResult, err := h.proxy.Handle(callCtx, buf, agent, chatReq, authHeader, opts)

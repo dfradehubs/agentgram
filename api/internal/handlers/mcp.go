@@ -39,8 +39,9 @@ type MCPHandler struct {
 	logger         *zap.Logger
 }
 
-// NewMCPHandler creates a new MCP handler
-func NewMCPHandler(llmRepo repository.LLMModelRepository, registry *mcp.Registry, sessionStore store.SessionStore, maxToolCallRounds int, auditLogger *audit.Logger, logger *zap.Logger, lfTracer *lf.Tracer, oauth2Mgr *mcp.OAuth2Manager, mcpRepo repository.MCPServerRepository, chatEventRepo ...repository.ChatEventRepository) *MCPHandler {
+// NewMCPHandler creates a new MCP handler. maxRoundsFn resolves the max
+// LLM ↔ tool rounds per request (a runtime setting).
+func NewMCPHandler(llmRepo repository.LLMModelRepository, registry *mcp.Registry, sessionStore store.SessionStore, maxRoundsFn func() int, auditLogger *audit.Logger, logger *zap.Logger, lfTracer *lf.Tracer, oauth2Mgr *mcp.OAuth2Manager, mcpRepo repository.MCPServerRepository, chatEventRepo ...repository.ChatEventRepository) *MCPHandler {
 	var namer *sessionnamer.Namer
 	ctx := context.Background()
 	if namerModels, err := llmRepo.ListByRole(ctx, "session_namer"); err == nil && len(namerModels) > 0 {
@@ -58,7 +59,7 @@ func NewMCPHandler(llmRepo repository.LLMModelRepository, registry *mcp.Registry
 
 	h := &MCPHandler{
 		registry:       registry,
-		orchestrator:   mcp.NewChatOrchestrator(llmRepo, maxToolCallRounds, logger),
+		orchestrator:   mcp.NewChatOrchestrator(llmRepo, maxRoundsFn, logger),
 		store:          sessionStore,
 		sessionNamer:   namer,
 		audit:          auditLogger,

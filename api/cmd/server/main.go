@@ -23,6 +23,7 @@ import (
 	"github.com/dfradehubs/agentgram-api/internal/repository/postgres"
 	"github.com/dfradehubs/agentgram-api/internal/server"
 	"github.com/dfradehubs/agentgram-api/internal/service"
+	"github.com/dfradehubs/agentgram-api/internal/settings"
 	"github.com/dfradehubs/agentgram-api/internal/store"
 	"github.com/dfradehubs/agentgram-api/internal/summarizer"
 	"github.com/dfradehubs/agentgram-api/internal/tracing"
@@ -175,6 +176,8 @@ func main() {
 	chatEventRepo := postgres.NewChatEventRepository(pool)
 	basicAuthRepo := postgres.NewBasicAuthRepository(pool)
 	groupRepo := postgres.NewGroupRepository(pool)
+	settingsRepo := postgres.NewSettingsRepository(pool)
+	settingsService := settings.New(settingsRepo, logger)
 	shareRepo := postgres.NewSharedSessionRepository(pool)
 	slackRepo := postgres.NewSlackIntegrationRepository(pool, dataCipher)
 	slackLinkRepo := postgres.NewSlackUserLinkRepository(pool, dataCipher)
@@ -215,12 +218,9 @@ func main() {
 	registry.StartAutoRefresh()
 	defer registry.StopAutoRefresh()
 
-	// Create DB-backed MCP registry and load
-	mcpToolCallTimeout := 2 * time.Minute // default
-	if d, err := time.ParseDuration(cfg.MCPServer.ToolCallTimeout); err == nil {
-		mcpToolCallTimeout = d
-	}
-	mcpRegistry := mcp.NewDBRegistry(mcpRepo, mcpToolCallTimeout, logger)
+	// Create DB-backed MCP registry and load. The upstream MCP tool-call timeout
+	// reuses the runtime setting (fixed at startup for the registry).
+	mcpRegistry := mcp.NewDBRegistry(mcpRepo, settingsService.Duration(settings.KeyMCPToolCallTimeout), logger)
 	if err := mcpRegistry.LoadFromDB(loadCtx); err != nil {
 		logger.Fatal("failed to load MCP servers from DB", zap.Error(err))
 	}
@@ -316,7 +316,9 @@ func main() {
 		UserRepo:       userRepo,
 		AuditRepo:      auditRepo,
 		LLMRepo:        llmRepo,
-		GroupRepo:      groupRepo,
+		GroupRepo:       groupRepo,
+		SettingsRepo:    settingsRepo,
+		SettingsService: settingsService,
 		MCPRegistry:    mcpRegistry,
 		ChatEventRepo:  chatEventRepo,
 		BasicAuthRepo:  basicAuthRepo,

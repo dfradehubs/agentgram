@@ -19,6 +19,7 @@ import (
 	"github.com/dfradehubs/agentgram-api/internal/proxy"
 	"github.com/dfradehubs/agentgram-api/internal/repository"
 	"github.com/dfradehubs/agentgram-api/internal/service"
+	appsettings "github.com/dfradehubs/agentgram-api/internal/settings"
 	"github.com/dfradehubs/agentgram-api/internal/store"
 )
 
@@ -198,6 +199,7 @@ func newGroupTestHandler(t *testing.T, agentAStatus int, moderatorSays ...string
 		userService:  userService,
 		groupRepo:    groupRepo,
 		moderator:    orchestrator.NewWithProvider(&mcpScriptedProvider{responses: moderatorSays}, zap.NewNop()),
+		settings:     appsettings.New(nil, zap.NewNop()),
 		logger:       zap.NewNop(),
 	}
 	return h, group

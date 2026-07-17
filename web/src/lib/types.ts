@@ -134,6 +134,18 @@ export interface MultiAgentGroup {
 }
 
 // Admin group (full data for admin panel)
+export interface AppSetting {
+  key: string;
+  section: string;
+  label: string;
+  type: "int" | "duration";
+  default: string;
+  description: string;
+  min?: number;
+  max?: number;
+  value: string;
+}
+
 export interface AdminGroup {
   id: string;
   name: string;

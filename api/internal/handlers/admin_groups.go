@@ -111,8 +111,8 @@ func (h *AdminGroupsHandler) CreateGroup(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if req.MaxTurns < 0 {
-		http.Error(w, `{"error":"max_turns must be >= 0 (0 = default)"}`, http.StatusBadRequest)
+	if req.MaxTurns < 0 || req.MaxTurns > 50 {
+		http.Error(w, `{"error":"max_turns must be between 0 (default) and 50"}`, http.StatusBadRequest)
 		return
 	}
 
@@ -170,8 +170,8 @@ func (h *AdminGroupsHandler) UpdateGroup(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if req.MaxTurns < 0 {
-		http.Error(w, `{"error":"max_turns must be >= 0 (0 = default)"}`, http.StatusBadRequest)
+	if req.MaxTurns < 0 || req.MaxTurns > 50 {
+		http.Error(w, `{"error":"max_turns must be between 0 (default) and 50"}`, http.StatusBadRequest)
 		return
 	}
 

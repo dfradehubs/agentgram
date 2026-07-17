@@ -70,8 +70,7 @@ mcp_server:
   # upstream agent (e.g. ADK) accepts. Omit if you don't enforce audience upstream.
   # extra_scopes:
   #   - "mcp:custom-audience"
-  tool_call_timeout: "2m"
-  max_tool_call_rounds: 10
+  # tool-call timeout & max rounds are runtime settings (admin → General Configuration)
 
 metrics:
   enabled: true

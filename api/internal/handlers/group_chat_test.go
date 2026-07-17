@@ -24,6 +24,7 @@ import (
 	"github.com/dfradehubs/agentgram-api/internal/proxy"
 	"github.com/dfradehubs/agentgram-api/internal/repository"
 	"github.com/dfradehubs/agentgram-api/internal/service"
+	appsettings "github.com/dfradehubs/agentgram-api/internal/settings"
 	"github.com/dfradehubs/agentgram-api/internal/store"
 )
 
@@ -143,8 +144,8 @@ func (f *fakeSessionStore) SetAgentSessionID(_ context.Context, sessionID, agent
 }
 
 func (f *fakeSessionStore) AppendRunEvent(_ context.Context, _ string, _ []byte) error { return nil }
-func (f *fakeSessionStore) SetActiveRun(_ context.Context, _, _ string) error         { return nil }
-func (f *fakeSessionStore) ClearActiveRun(_ context.Context, _, _ string) error       { return nil }
+func (f *fakeSessionStore) SetActiveRun(_ context.Context, _, _ string) error          { return nil }
+func (f *fakeSessionStore) ClearActiveRun(_ context.Context, _, _ string) error        { return nil }
 
 func (f *fakeSessionStore) messages(sessionID string) []models.ChatMessage {
 	f.mu.Lock()
@@ -227,7 +228,7 @@ func newGroupChatFixture(t *testing.T, agentAStatus, agentBStatus int, moderator
 
 	fs := newFakeSessionStore()
 	fg := &fakeGroupRepo{groups: map[string]*models.AgentGroup{
-		"g1": {ID: "g1", Name: "Test Group", AgentIDs: []string{"agent-a", "agent-b"}, CreatedBy: testUserEmail},
+		"g1":       {ID: "g1", Name: "Test Group", AgentIDs: []string{"agent-a", "agent-b"}, CreatedBy: testUserEmail},
 		"g-denied": {ID: "g-denied", Name: "Private", AgentIDs: []string{"agent-a", "agent-b"}, CreatedBy: "someone-else@example.com"},
 	}}
 	provider := &scriptedProvider{responses: moderatorSays}
@@ -239,6 +240,7 @@ func newGroupChatFixture(t *testing.T, agentAStatus, agentBStatus int, moderator
 		proxy:       proxy.NewProxy(zap.NewNop()),
 		store:       fs,
 		moderator:   orchestrator.NewWithProvider(provider, zap.NewNop()),
+		settings:    appsettings.New(nil, zap.NewNop()),
 		audit:       audit.New(zap.NewNop()),
 		logger:      zap.NewNop(),
 	}

@@ -6,6 +6,7 @@ import type {
   AdminLLMModel,
   AdminMCPServer,
   AdminUser,
+  AppSetting,
   BasicAuthUser,
   ChartData,
   ErrorEvent,
@@ -555,6 +556,20 @@ export async function updateAdminGroupPermissions(id: string, allowedUsers: stri
     method: "PUT",
     body: JSON.stringify({ allowed_users: allowedUsers, allowed_groups: allowedGroups }),
   });
+}
+
+// Admin General Configuration (runtime settings)
+export async function getAdminSettings(): Promise<AppSetting[]> {
+  const data = await fetchApi<{ settings: AppSetting[] }>("/api/admin/settings");
+  return data.settings || [];
+}
+
+export async function updateAdminSettings(values: Record<string, string>): Promise<AppSetting[]> {
+  const data = await fetchApi<{ settings: AppSetting[] }>("/api/admin/settings", {
+    method: "PUT",
+    body: JSON.stringify(values),
+  });
+  return data.settings || [];
 }
 
 // Admin LLM API

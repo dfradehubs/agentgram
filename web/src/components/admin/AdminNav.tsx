@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bot, Server, Users, UsersRound, ArrowLeft, Brain, BarChart3 } from "lucide-react";
+import { Bot, Server, Users, UsersRound, ArrowLeft, Brain, BarChart3, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -12,6 +12,7 @@ const navItems = [
   { href: "/admin/llm", label: "LLM Models", icon: Brain },
   { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/observability", label: "Observability", icon: BarChart3 },
+  { href: "/admin/settings", label: "General Configuration", icon: Settings },
 ];
 
 export function AdminNav() {

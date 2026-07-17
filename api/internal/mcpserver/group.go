@@ -14,13 +14,9 @@ import (
 	"github.com/dfradehubs/agentgram-api/internal/models"
 	"github.com/dfradehubs/agentgram-api/internal/orchestrator"
 	"github.com/dfradehubs/agentgram-api/internal/proxy"
+	appsettings "github.com/dfradehubs/agentgram-api/internal/settings"
 	"go.uber.org/zap"
 )
-
-// mcpGroupMaxTurns caps the moderated debate for the synchronous MCP surface.
-// ponytail: lower than the SSE endpoint (6) — the tool call blocks until the
-// debate ends; next step if too slow is partial response + session_id continue.
-const mcpGroupMaxTurns = 3
 
 // groupExists reports whether an agent group with the given ID exists,
 // regardless of the caller's access (authorization happens in the handler).
@@ -56,15 +52,22 @@ func (h *Handler) handleGroupToolCall(w http.ResponseWriter, r *http.Request, re
 	}
 
 	// Access check: the group must be in the user's accessible list
-	var group *models.AgentGroup
+	var accessible bool
 	for _, g := range h.server.AccessibleGroups(userEmail, userGroups) {
 		if g.ID == groupID {
-			group = g
+			accessible = true
 			break
 		}
 	}
-	if group == nil {
+	if !accessible {
 		h.writeJSON(w, http.StatusOK, h.server.MarshalToolResult(req.ID, "Access denied to this group", true))
+		return
+	}
+	// Re-fetch via Get: AccessibleGroups (ListAccessible) doesn't select all
+	// fields (e.g. max_turns), so use the full record for the debate.
+	group, err := h.groupRepo.Get(r.Context(), groupID)
+	if err != nil {
+		h.writeJSON(w, http.StatusOK, h.server.MarshalToolResult(req.ID, "Group not found", true))
 		return
 	}
 
@@ -254,7 +257,7 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 	authHeader := middleware.GetAuthHeaderFromContext(ctx)
 
 	// Detached context so the debate survives client disconnects/gateway timeouts
-	callCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	callCtx, cancel := context.WithTimeout(context.Background(), h.settings.Duration(appsettings.KeyMCPToolCallTimeout))
 	defer cancel()
 	if lfTrace != nil {
 		callCtx = lf.ContextWithTrace(callCtx, lfTrace)
@@ -335,7 +338,7 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 		return result.AssistantText, nil
 	}
 
-	maxTurns := mcpGroupMaxTurns
+	maxTurns := h.settings.Int(appsettings.KeyGroupMaxTurnsMCP)
 	if group.MaxTurns > 0 {
 		maxTurns = group.MaxTurns
 	}

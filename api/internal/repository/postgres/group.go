@@ -177,7 +177,7 @@ func (r *GroupRepository) UpdatePermissions(ctx context.Context, groupID string,
 func (r *GroupRepository) ListAccessible(ctx context.Context, email string, userGroups []string) ([]*models.AgentGroup, error) {
 	// Build query: user has access if created_by matches, or email in allowed_users, or wildcard *, or user group matches
 	query := `
-		SELECT DISTINCT g.id, g.name, g.agent_ids, g.created_by, g.created_at, g.updated_at
+		SELECT DISTINCT g.id, g.name, g.agent_ids, g.created_by, g.max_turns, g.created_at, g.updated_at
 		FROM agent_groups g
 		LEFT JOIN agent_group_allowed_users u ON g.id = u.group_id
 		LEFT JOIN agent_group_allowed_groups gg ON g.id = gg.group_id
@@ -208,7 +208,7 @@ func (r *GroupRepository) ListAccessible(ctx context.Context, email string, user
 	for rows.Next() {
 		g := &models.AgentGroup{}
 		var agentIDsJSON []byte
-		if err := rows.Scan(&g.ID, &g.Name, &agentIDsJSON, &g.CreatedBy, &g.CreatedAt, &g.UpdatedAt); err != nil {
+		if err := rows.Scan(&g.ID, &g.Name, &agentIDsJSON, &g.CreatedBy, &g.MaxTurns, &g.CreatedAt, &g.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan accessible group: %w", err)
 		}
 		if len(agentIDsJSON) > 0 {

@@ -25,6 +25,7 @@ import (
 	"github.com/dfradehubs/agentgram-api/internal/repository"
 	"github.com/dfradehubs/agentgram-api/internal/service"
 	"github.com/dfradehubs/agentgram-api/internal/sessionnamer"
+	appsettings "github.com/dfradehubs/agentgram-api/internal/settings"
 	"github.com/dfradehubs/agentgram-api/internal/store"
 	"github.com/dfradehubs/agentgram-api/internal/summarizer"
 	"github.com/dfradehubs/agentgram-api/internal/tracing"
@@ -46,6 +47,7 @@ type ProxyHandler struct {
 	sessionNamer   *sessionnamer.Namer
 	fileProcessor  *fileprocessor.Processor
 	moderator      *orchestrator.Moderator
+	settings       *appsettings.Service
 	audit          *audit.Logger
 	chatEventRepo  repository.ChatEventRepository
 	langfuseTracer *lf.Tracer
@@ -53,7 +55,7 @@ type ProxyHandler struct {
 }
 
 // NewProxyHandler creates a new proxy handler
-func NewProxyHandler(llmRepo repository.LLMModelRepository, registry *agents.Registry, userService *service.UserService, groupRepo repository.GroupRepository, sessionStore store.SessionStore, hub *pubsub.Hub, auditLogger *audit.Logger, logger *zap.Logger, lfTracer *lf.Tracer, chatEventRepo ...repository.ChatEventRepository) *ProxyHandler {
+func NewProxyHandler(llmRepo repository.LLMModelRepository, registry *agents.Registry, userService *service.UserService, groupRepo repository.GroupRepository, sessionStore store.SessionStore, hub *pubsub.Hub, auditLogger *audit.Logger, logger *zap.Logger, settingsService *appsettings.Service, lfTracer *lf.Tracer, chatEventRepo ...repository.ChatEventRepository) *ProxyHandler {
 	var sum *summarizer.Summarizer
 	var fp *fileprocessor.Processor
 	var namer *sessionnamer.Namer
@@ -120,6 +122,7 @@ func NewProxyHandler(llmRepo repository.LLMModelRepository, registry *agents.Reg
 		sessionNamer:   namer,
 		fileProcessor:  fp,
 		moderator:      moderator,
+		settings:       settingsService,
 		audit:          auditLogger,
 		langfuseTracer: lfTracer,
 		logger:         logger,

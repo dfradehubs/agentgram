@@ -21,12 +21,9 @@ import (
 	"github.com/dfradehubs/agentgram-api/internal/models"
 	"github.com/dfradehubs/agentgram-api/internal/orchestrator"
 	"github.com/dfradehubs/agentgram-api/internal/proxy"
+	appsettings "github.com/dfradehubs/agentgram-api/internal/settings"
 	"go.uber.org/zap"
 )
-
-// groupChatMaxTurns caps the moderated debate length for the SSE endpoint.
-// ponytail: hard cap to bound cost/latency; make it per-group config if needed.
-const groupChatMaxTurns = 6
 
 // GroupChat handles POST /api/groups/{groupId}/chat
 // @Summary Chat with an agent group (moderated debate)
@@ -291,7 +288,7 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 		return result.AssistantText, nil
 	}
 
-	maxTurns := groupChatMaxTurns
+	maxTurns := h.settings.Int(appsettings.KeyGroupMaxTurnsAPI)
 	if group.MaxTurns > 0 {
 		maxTurns = group.MaxTurns
 	}

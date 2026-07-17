@@ -79,9 +79,9 @@ type MCPServerConfig struct {
 	ClientID          string        `yaml:"client_id"`            // Keycloak client ID for MCP clients (e.g. "agentgram-mcp")
 	DCRMode           string        `yaml:"dcr_mode"`             // Dynamic Client Registration mode: "static" (canned response), "upstream" (Keycloak DCR), or "disabled"
 	ExtraScopes       []string      `yaml:"extra_scopes"`         // Extra OAuth scopes advertised to MCP clients on top of the required base set. Typically a Keycloak client scope with an audience mapper (e.g. "mcp:custom-audience") so strict clients like Claude get a token whose aud the upstream agent accepts.
-	ToolCallTimeout   string        `yaml:"tool_call_timeout"`    // Max duration for a single MCP tool call (e.g. "2m", "5m"). Default: "2m"
-	MaxToolCallRounds int           `yaml:"max_tool_call_rounds"` // Max LLM ↔ tool iterations per chat request. Default: 10
 	StaticTokens      []StaticToken `yaml:"static_tokens"`        // Service-account tokens that bypass Keycloak (e.g. internal automation)
+	// NOTE: tool-call timeout and max tool-call rounds are runtime settings now
+	// (admin → General Configuration), not YAML — see internal/settings.
 }
 
 // StaticToken declares a long-lived bearer token mapped to synthetic claims.
@@ -220,12 +220,6 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	// MCP defaults
-	if cfg.MCPServer.ToolCallTimeout == "" {
-		cfg.MCPServer.ToolCallTimeout = "2m"
-	}
-	if cfg.MCPServer.MaxToolCallRounds == 0 {
-		cfg.MCPServer.MaxToolCallRounds = 10
-	}
 	if cfg.MCPServer.DCRMode == "" {
 		cfg.MCPServer.DCRMode = "static"
 	}
