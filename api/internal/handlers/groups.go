@@ -6,11 +6,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/dfradehubs/agentgram-api/internal/agents"
 	"github.com/dfradehubs/agentgram-api/internal/middleware"
 	"github.com/dfradehubs/agentgram-api/internal/models"
 	"github.com/dfradehubs/agentgram-api/internal/repository"
-	"github.com/dfradehubs/agentgram-api/internal/service"
 	"github.com/dfradehubs/agentgram-api/internal/store"
 	"go.uber.org/zap"
 )
@@ -21,18 +19,14 @@ import (
 type GroupsHandler struct {
 	groupRepo    repository.GroupRepository
 	sessionStore store.SessionStore
-	userService  *service.UserService
-	registry     *agents.Registry
 	logger       *zap.Logger
 }
 
 // NewGroupsHandler creates a new groups handler
-func NewGroupsHandler(groupRepo repository.GroupRepository, sessionStore store.SessionStore, userService *service.UserService, registry *agents.Registry, logger *zap.Logger) *GroupsHandler {
+func NewGroupsHandler(groupRepo repository.GroupRepository, sessionStore store.SessionStore, logger *zap.Logger) *GroupsHandler {
 	return &GroupsHandler{
 		groupRepo:    groupRepo,
 		sessionStore: sessionStore,
-		userService:  userService,
-		registry:     registry,
 		logger:       logger,
 	}
 }

@@ -362,7 +362,7 @@ func SetupRoutes(cfg *config.Config, registry *agents.Registry, sessionStore sto
 		r.Get("/agents/{agentId}/sessions/{sessionId}/stream", runStreamHandler.Stream)
 
 		// Agent groups (user-facing, read + use only — creation/editing is admin-only)
-		groupsHandler := handlers.NewGroupsHandler(adminDeps.GroupRepo, sessionStore, adminDeps.UserService, registry, logger)
+		groupsHandler := handlers.NewGroupsHandler(adminDeps.GroupRepo, sessionStore, logger)
 		r.Get("/groups", groupsHandler.ListGroups)
 		// Moderated group debate (SSE): the moderator LLM picks which agents respond
 		r.With(chatRateLimiter.ChatHandler).Post("/groups/{groupId}/chat", proxyHandler.GroupChat)

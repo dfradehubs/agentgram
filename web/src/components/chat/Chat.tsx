@@ -48,6 +48,18 @@ const LOAD_OLDER_THRESHOLD_PX = 100;
 const RUN_RECOVERY_POLL_MS = 1500;
 const RUN_RECOVERY_MAX_POLLS = 40; // ~60s before falling back to a re-send
 
+// extractMentions returns the roster agent IDs @mentioned in the text.
+// Case-insensitive and tolerant of trailing punctuation (e.g. "@Logs-Agent,").
+function extractMentions(text: string, roster: string[]): string[] {
+  const rosterLower = new Map(roster.map((id) => [id.toLowerCase(), id]));
+  const found = new Set<string>();
+  for (const m of text.matchAll(/@([a-z0-9._-]+)/gi)) {
+    const id = rosterLower.get(m[1].toLowerCase());
+    if (id) found.add(id);
+  }
+  return [...found];
+}
+
 export function Chat() {
   const { agents, currentAgent } = useAgents();
   const { user, displayName } = useUser();
@@ -158,7 +170,6 @@ export function Chat() {
     input,
     setInput,
     sendMessage,
-    sendMultiple,
     activeStreamAgentIds,
     isLoading,
     error,
@@ -485,8 +496,8 @@ export function Chat() {
     if (isGroup) {
       // Moderated group debate. Any @<agent-id> mentions matching the roster
       // steer the moderator (roster override); otherwise it picks freely.
-      const tokens = input.split(/\s+/);
-      const mentioned = multiAgentIds.filter((id) => tokens.includes(`@${id}`));
+      // Tolerant match: case-insensitive, ignores trailing punctuation.
+      const mentioned = extractMentions(input, multiAgentIds);
       sendMessage(undefined, undefined, atts, undefined, undefined, {
         agentIds: mentioned.length > 0 ? mentioned : undefined,
       });
