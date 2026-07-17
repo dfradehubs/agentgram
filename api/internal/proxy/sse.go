@@ -20,6 +20,7 @@ type SSEWriter struct {
 	sessionName       string
 	agentID           string // When set, TEXT_MESSAGE_*/TOOL_CALL_START events are tagged with it (group debates)
 	suppressLifecycle bool   // When true, RUN_STARTED/RUN_FINISHED are no-ops (outer run owns the lifecycle)
+	deferLifecycle    bool   // When true, all RUN_* events are owned by the caller
 	mu                sync.Mutex
 	onEvent           func(event interface{}) // Optional callback for each event
 	clientGone        bool                    // true once writing to the client failed / it disconnected
@@ -32,6 +33,8 @@ type SSEConfig struct {
 	SessionName       string
 	AgentID           string
 	SuppressLifecycle bool
+	DeferLifecycle    bool
+	Writer            *SSEWriter
 	OnEvent           func(event interface{})
 }
 
@@ -47,9 +50,23 @@ func (s *SSEWriter) Apply(cfg SSEConfig) {
 	}
 	s.agentID = cfg.AgentID
 	s.suppressLifecycle = cfg.SuppressLifecycle
+	s.deferLifecycle = cfg.DeferLifecycle
 	if cfg.OnEvent != nil {
 		s.onEvent = cfg.OnEvent
 	}
+}
+
+func resolveSSEWriter(w http.ResponseWriter, cfg SSEConfig) (*SSEWriter, error) {
+	if cfg.Writer != nil {
+		cfg.Writer.Apply(cfg)
+		return cfg.Writer, nil
+	}
+	sse, err := NewSSEWriter(w)
+	if err != nil {
+		return nil, err
+	}
+	sse.Apply(cfg)
+	return sse, nil
 }
 
 // NewSSEWriter creates a new SSEWriter with AG-UI protocol support
@@ -147,8 +164,9 @@ func (s *SSEWriter) SendRunStarted() error {
 	runID := s.runID
 	sessionName := s.sessionName
 	suppress := s.suppressLifecycle
+	deferred := s.deferLifecycle
 	s.mu.Unlock()
-	if suppress {
+	if suppress || deferred {
 		return nil
 	}
 	event := models.NewAGUIRunStartedEvent(threadID, runID)
@@ -163,8 +181,9 @@ func (s *SSEWriter) SendRunFinished() error {
 	threadID := s.threadID
 	runID := s.runID
 	suppress := s.suppressLifecycle
+	deferred := s.deferLifecycle
 	s.mu.Unlock()
-	if suppress {
+	if suppress || deferred {
 		return nil
 	}
 	return s.SendAGUIEvent(models.NewAGUIRunFinishedEvent(threadID, runID))
@@ -173,13 +192,18 @@ func (s *SSEWriter) SendRunFinished() error {
 // SendRunError sends the AG-UI RUN_ERROR event.
 // When lifecycle is suppressed (a debate turn inside an outer run), a bare
 // RUN_ERROR would abort the whole run on the client even though the debate
-// continues — emit an agent-scoped CUSTOM event instead; the turn's error
-// text is persisted with the turn result.
+// continues — emit an agent-scoped CUSTOM event instead. Persistence is owned
+// by the surface handler and may independently fail.
 func (s *SSEWriter) SendRunError(message string) error {
 	s.mu.Lock()
 	suppress := s.suppressLifecycle
+	deferred := s.deferLifecycle
 	agentID := s.agentID
 	s.mu.Unlock()
+	if deferred {
+		return nil
+	}
+	message = PublicErrorMessage(fmt.Errorf("%s", message))
 	if suppress {
 		return s.SendCustomEvent("turn.error", map[string]interface{}{
 			"agentId": agentID,

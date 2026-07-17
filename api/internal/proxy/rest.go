@@ -35,11 +35,10 @@ func NewRESTProxy(logger *zap.Logger) *RESTProxy {
 // Handle handles a request to a REST agent using AG-UI protocol
 func (p *RESTProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *models.Agent, body io.Reader, auth agents.OutboundAuth, requestID string, cfg SSEConfig, agentTimeout time.Duration) (*ProxyResult, error) {
 	// Create SSE writer
-	sse, err := NewSSEWriter(w)
+	sse, err := resolveSSEWriter(w, cfg)
 	if err != nil {
 		return nil, err
 	}
-	sse.Apply(cfg)
 
 	// Send run started event
 	if err := sse.SendRunStarted(); err != nil {

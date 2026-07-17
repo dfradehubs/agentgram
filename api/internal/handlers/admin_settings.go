@@ -14,7 +14,7 @@ import (
 )
 
 // AdminSettingsHandler serves the admin "General Configuration" panel:
-// runtime-editable operational settings backed by app_settings.
+// runtime-editable operational settings backed by runtime_config.
 type AdminSettingsHandler struct {
 	service   *settings.Service
 	repo      settings.Repository
@@ -99,7 +99,7 @@ func (h *AdminSettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Req
 			UserEmail:    claims.GetEmail(),
 			Action:       "update",
 			ResourceType: "settings",
-			ResourceID:   "app_settings",
+			ResourceID:   "runtime_config",
 		})
 	}
 

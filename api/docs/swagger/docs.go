@@ -1082,6 +1082,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
                         }
                     },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
                     "503": {
                         "description": "Service Unavailable",
                         "schema": {

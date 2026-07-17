@@ -20,6 +20,7 @@ import { MCPToolsPanel } from "../mcp/MCPToolsPanel";
 import { Button } from "@/components/ui/button";
 import type { Attachment } from "@/lib/types";
 import { resolveMentions } from "@/lib/mentions";
+import { groupRequiresGitHubConnection } from "@/lib/groups";
 import { reconnectMCPServer, getSession as fetchSession, shareSession, getMCPOAuth2LoginURL, ApiError } from "@/lib/api";
 import { toast } from "sonner";
 import {
@@ -617,7 +618,9 @@ export function Chat() {
     }
   }
 
-  const githubRequired = !isMCP && !user?.githubConnected && !!currentAgent?.require_github_token;
+  const githubRequired = !isMCP && !user?.githubConnected && (activeGroupId
+    ? groupRequiresGitHubConnection(activeGroup?.agentIds ?? [], agents, false)
+    : !!currentAgent?.require_github_token);
   const widthCls = chatWidthClass[preferences.chatWidth] || chatWidthClass.wide;
 
   const isInputDisabled = isMCP

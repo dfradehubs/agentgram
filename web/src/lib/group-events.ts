@@ -1,12 +1,16 @@
 export type DebateIncompleteReason =
   | "all_agents_failed"
   | "moderator_error"
-  | "timeout";
+  | "timeout"
+  | "persistence_error"
+  | "max_turns";
 
 const REASONS = new Set<DebateIncompleteReason>([
   "all_agents_failed",
   "moderator_error",
   "timeout",
+  "persistence_error",
+  "max_turns",
 ]);
 
 export function debateIncompleteReason(event: unknown): DebateIncompleteReason | null {
@@ -31,5 +35,9 @@ export function debateIncompleteMessage(reason: DebateIncompleteReason): string 
       return "The group debate timed out before finishing";
     case "moderator_error":
       return "The group debate ended because the moderator failed";
+    case "persistence_error":
+      return "One or more group replies could not be saved";
+    case "max_turns":
+      return "The group debate reached its turn limit before finishing";
   }
 }

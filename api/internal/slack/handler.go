@@ -3,6 +3,7 @@ package slack
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -462,52 +463,15 @@ func (h *MessageHandler) HandleMessage(ctx context.Context, client *slackapi.Cli
 // non-nil proxyErr does not discard result content; it marks the stored message
 // as an error and appends the diagnostic for continuity after a reload.
 func (h *MessageHandler) persistAssistantResult(ctx context.Context, sessionID, agentID string, result *proxy.ProxyResult, proxyErr error) error {
-	if result == nil || (result.AssistantText == "" && len(result.ToolCalls) == 0 && result.Error == "") {
+	if !result.HasPersistableContent() {
 		return nil
 	}
 
-	errorText := result.Error
-	if errorText == "" && proxyErr != nil {
-		errorText = proxyErr.Error()
+	rawResultErr := proxyErr
+	if result.Error != "" {
+		rawResultErr = errors.Join(rawResultErr, errors.New(result.Error))
 	}
-	content := result.AssistantText
-	if errorText != "" {
-		if content != "" {
-			content += "\n\n"
-		}
-		content += fmt.Sprintf("---\n**Error**: %s", errorText)
-	}
-	assistantMsg := models.ChatMessage{
-		Role:    "assistant",
-		Content: content,
-		AgentID: agentID,
-		IsError: errorText != "",
-	}
-
-	for _, cp := range result.ContentParts {
-		assistantMsg.ContentParts = append(assistantMsg.ContentParts, models.ContentPart{
-			Type:      cp.Type,
-			Text:      cp.Text,
-			ToolIndex: models.IntPtr(cp.ToolIndex),
-			Chart:     cp.Chart,
-		})
-	}
-	for _, tc := range result.ToolCalls {
-		var args map[string]interface{}
-		if tc.Args != "" {
-			if err := json.Unmarshal([]byte(tc.Args), &args); err != nil {
-				h.logger.Warn("invalid Slack tool args JSON", zap.String("tool", tc.Name), zap.Error(err))
-			}
-		}
-		assistantMsg.ToolCalls = append(assistantMsg.ToolCalls, models.StoredToolCall{ID: tc.ID, Name: tc.Name, Args: args})
-		var response map[string]interface{}
-		if tc.Result != "" {
-			if json.Unmarshal([]byte(tc.Result), &response) != nil {
-				response = map[string]interface{}{"text": tc.Result}
-			}
-		}
-		assistantMsg.ToolResults = append(assistantMsg.ToolResults, models.StoredToolResult{ID: tc.ID, Name: tc.Name, Response: response})
-	}
+	assistantMsg := result.ToChatMessage(agentID, proxy.PublicErrorMessage(rawResultErr))
 
 	return h.sessionStore.AddMessage(ctx, sessionID, assistantMsg)
 }

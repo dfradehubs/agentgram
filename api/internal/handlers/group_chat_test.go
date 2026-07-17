@@ -62,14 +62,14 @@ func (f *scriptedProvider) GenerateContent(_ context.Context, req *llm.Request) 
 // flow touches. Unimplemented methods panic via the embedded nil interface.
 type fakeSessionStore struct {
 	store.SessionStore
-	mu            sync.Mutex
-	sessions      map[string]*models.Session
-	agentSessions map[string]string
-	order         []string
-	counter       int
-	failReplyAdd  bool
-	failReplyAdds int
-	failSetAgent  bool
+	mu             sync.Mutex
+	sessions       map[string]*models.Session
+	agentSessions  map[string]string
+	order          []string
+	counter        int
+	failReplyAdd   bool
+	failReplyAdds  int
+	failSetAgent   bool
 	rejectCanceled bool
 	runEvents      int
 }
@@ -176,8 +176,8 @@ func (f *fakeSessionStore) AppendRunEvent(ctx context.Context, _ string, _ []byt
 	f.runEvents++
 	return nil
 }
-func (f *fakeSessionStore) SetActiveRun(_ context.Context, _, _ string) error          { return nil }
-func (f *fakeSessionStore) ClearActiveRun(_ context.Context, _, _ string) error        { return nil }
+func (f *fakeSessionStore) SetActiveRun(_ context.Context, _, _ string) error   { return nil }
+func (f *fakeSessionStore) ClearActiveRun(_ context.Context, _, _ string) error { return nil }
 
 func (f *fakeSessionStore) messages(sessionID string) []models.ChatMessage {
 	f.mu.Lock()
@@ -280,6 +280,7 @@ func newGroupChatFixture(t *testing.T, agentAStatus, agentBStatus int, moderator
 
 	router := chi.NewRouter()
 	router.Post("/api/groups/{groupId}/chat", h.GroupChat)
+	router.Post("/api/agents/{agentId}/chat", h.Chat)
 
 	return &groupChatFixture{handler: h, store: fs, provider: provider, router: router}
 }
@@ -515,16 +516,18 @@ func TestGroupChatAllAgentsFailed(t *testing.T) {
 
 func TestDebateIncompleteReasonHasSinglePrecedence(t *testing.T) {
 	wrappedTimeout := fmt.Errorf("moderator failed: %w", context.DeadlineExceeded)
-	if got := debateIncompleteReason(wrappedTimeout, 0, 2); got != "timeout" {
+	if got := debateIncompleteReason(wrappedTimeout, nil); got != "timeout" {
 		t.Fatalf("wrapped timeout reason = %q, want timeout", got)
 	}
-	if got := debateIncompleteReason(errors.New("provider down"), 0, 2); got != "moderator_error" {
+	if got := debateIncompleteReason(errors.New("provider down"), nil); got != "moderator_error" {
 		t.Fatalf("moderator failure reason = %q, want moderator_error", got)
 	}
-	if got := debateIncompleteReason(nil, 0, 2); got != "all_agents_failed" {
+	failed := []orchestrator.TurnResult{{AgentID: "agent-a", Err: errors.New("down"), FailureKind: orchestrator.TurnFailureAgent}}
+	if got := debateIncompleteReason(nil, failed); got != "all_agents_failed" {
 		t.Fatalf("all-failed reason = %q, want all_agents_failed", got)
 	}
-	if got := debateIncompleteReason(nil, 1, 2); got != "" {
+	success := []orchestrator.TurnResult{{AgentID: "agent-a", Text: "ok"}}
+	if got := debateIncompleteReason(nil, success); got != "" {
 		t.Fatalf("successful debate reason = %q, want empty", got)
 	}
 }
@@ -609,6 +612,19 @@ func TestGroupChatPersistenceFailureStaysIncompleteAfterLaterSuccess(t *testing.
 	}
 }
 
+func TestGroupChatMaxTurnsIsIncomplete(t *testing.T) {
+	fx := newGroupChatFixture(t, http.StatusOK, http.StatusOK, "agent-a", "agent-b")
+	fx.handler.groupRepo.(*fakeGroupRepo).groups["g1"].MaxTurns = 1
+	rec := fx.post(t, "g1", `{"messages":[{"role":"user","content":"status"}]}`)
+	events := parseSSEEvents(t, rec.Body.String())
+	if got := incompleteReasonFromEvents(events); got != "max_turns" {
+		t.Fatalf("incomplete reason = %q, want max_turns", got)
+	}
+	if contentByAgent(events)["agent-b"] != "" {
+		t.Fatal("agent-b ran after the configured turn cap")
+	}
+}
+
 func TestGroupChatClientCancellationDoesNotCancelFinalization(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
@@ -653,6 +669,30 @@ func TestGroupChatClientCancellationDoesNotCancelFinalization(t *testing.T) {
 	}
 	if fx.store.runEvents == 0 {
 		t.Fatal("run events were not buffered after disconnect")
+	}
+}
+
+func TestChatPersistenceFailureOwnsTerminalLifecycle(t *testing.T) {
+	fx := newGroupChatFixture(t, http.StatusOK, http.StatusOK)
+	fx.store.failReplyAdd = true
+	req := httptest.NewRequest("POST", "/api/agents/agent-a/chat", strings.NewReader(`{"messages":[{"role":"user","content":"status"}]}`))
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(context.WithValue(req.Context(), middleware.UserContextKey, &auth.Claims{Email: testUserEmail}))
+	rec := httptest.NewRecorder()
+	fx.router.ServeHTTP(rec, req)
+
+	events := parseSSEEvents(t, rec.Body.String())
+	if got := countEvents(events, "RUN_STARTED"); got != 1 {
+		t.Fatalf("RUN_STARTED count = %d, want 1", got)
+	}
+	if got := countEvents(events, "RUN_ERROR"); got != 1 {
+		t.Fatalf("RUN_ERROR count = %d, want 1", got)
+	}
+	if got := countEvents(events, "RUN_FINISHED"); got != 0 {
+		t.Fatalf("RUN_FINISHED count = %d after persistence failure", got)
+	}
+	if strings.Contains(rec.Body.String(), "simulated reply persistence failure") {
+		t.Fatal("internal persistence error leaked into SSE")
 	}
 }
 

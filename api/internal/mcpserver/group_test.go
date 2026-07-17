@@ -500,7 +500,7 @@ func TestCallGroupReplyPersistenceFailureIsIncomplete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected transport error: %v", err)
 	}
-	if !isError || !strings.Contains(text, "reply from agent-a") || !strings.Contains(text, "persistence") {
+	if !isError || !strings.Contains(text, "reply from agent-a") || !strings.Contains(text, "could not be saved") {
 		t.Fatalf("reply persistence failure was not surfaced with partial text: isError=%v text=%q", isError, text)
 	}
 }
@@ -541,7 +541,7 @@ func TestCallGroupMappingFailureIsIncomplete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected transport error: %v", err)
 	}
-	if !isError || !strings.Contains(text, "reply from agent-a") || !strings.Contains(text, "session mapping") {
+	if !isError || !strings.Contains(text, "reply from agent-a") || !strings.Contains(text, "could not be saved") {
 		t.Fatalf("mapping failure was not surfaced with partial text: isError=%v text=%q", isError, text)
 	}
 }

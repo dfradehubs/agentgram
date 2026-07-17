@@ -37,7 +37,7 @@ func TestPersistAssistantResultPreservesPartialProxyError(t *testing.T) {
 		t.Fatalf("persisted messages = %d, want 1", len(sessionStore.messages))
 	}
 	msg := sessionStore.messages[0]
-	if !msg.IsError || !strings.Contains(msg.Content, "partial answer from Slack agent") || !strings.Contains(msg.Content, "stream ended") {
+	if !msg.IsError || !strings.Contains(msg.Content, "partial answer from Slack agent") || !strings.Contains(msg.Content, "could not be completed") {
 		t.Fatalf("partial error message not preserved: %#v", msg)
 	}
 }

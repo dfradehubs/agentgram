@@ -44,6 +44,7 @@ import (
 // @Failure 401 {object} models.ErrorResponse
 // @Failure 403 {object} models.ErrorResponse
 // @Failure 404 {object} models.ErrorResponse
+// @Failure 500 {object} models.ErrorResponse
 // @Failure 503 {object} models.ErrorResponse
 // @Router /api/groups/{groupId}/chat [post]
 func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
@@ -67,9 +68,9 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// One absolute budget covers preflight, every moderator/agent turn and
-	// persistence. Individual turns may use less, but never restart this clock.
-	ctx, debateCancel := context.WithTimeout(r.Context(), h.settings.Duration(appsettings.KeyGroupDebateTimeout))
+	// One absolute execution budget covers preflight and every moderator/agent
+	// turn. Final event/message persistence gets a separate short grace period.
+	ctx, debateCancel := context.WithTimeout(context.WithoutCancel(r.Context()), h.settings.Duration(appsettings.KeyGroupDebateTimeout))
 	defer debateCancel()
 	debateDeadline, _ := ctx.Deadline()
 	if !CanAccessGroup(ctx, claims, groupID, h.groupRepo, h.userService) {
@@ -119,10 +120,9 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get or create the group session (multi-agent, group-linked).
-	// ponytail: the debate works on an in-memory snapshot of session.Messages;
-	// two members debating concurrently on the same session won't see each
-	// other's turns until persisted. Upgrade path: per-session Redis lock or
-	// re-read before each turn if this bites in practice.
+	// The debate works on the owner's personal session snapshot. Concurrent
+	// requests for that same session can interleave; a per-session lock is the
+	// upgrade path if clients begin issuing overlapping requests.
 	session, err := h.getOrCreateGroupSession(ctx, claims, groupID, rosterIDs, &chatReq)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -174,14 +174,15 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 		ctx = lf.ContextWithTrace(ctx, lfTrace)
 	}
 
-	// onEvent: buffer for reconnect + pub/sub for live multi-user (same as Chat)
+	// Buffer for reconnect. Pub/sub keeps this owner's other open clients in sync;
+	// it does not grant other group members access to the personal session.
 	sessionID := session.SessionID
 	onEvent := func(event interface{}) {
 		data, err := json.Marshal(event)
 		if err != nil {
 			return
 		}
-		eventCtx, eventCancel := context.WithTimeout(ctx, 5*time.Second)
+		eventCtx, eventCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer eventCancel()
 		if err := h.store.AppendRunEvent(eventCtx, sessionID, data); err != nil {
 			h.logger.Debug("failed to buffer run event", zap.String("session_id", sessionID), zap.Error(err))
@@ -303,19 +304,23 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 
 		// Persist and grow the in-memory session so the next turn's context
 		// delta (and the moderator transcript) includes this reply.
-		msg, persistErr := h.persistTurnResult(turnCtx, session, agent, result, agentSessionID, hasAgentSession, locale)
+		persistCtx := context.WithoutCancel(turnCtx)
+		msg, persistErr := h.persistTurnResult(persistCtx, session, agent, result, agentSessionID, hasAgentSession, locale, err)
 		if msg != nil {
 			session.Messages = append(session.Messages, *msg)
 		}
 
-		turnErr := errors.Join(err, persistErr)
+		turnErr := orchestrator.NewTurnError(orchestrator.TurnFailureAgent, err)
+		if persistErr != nil {
+			turnErr = errors.Join(turnErr, orchestrator.NewTurnError(orchestrator.TurnFailurePersistence, persistErr))
+		}
 		if result == nil {
 			return "", turnErr
 		}
 		if result.Error != "" && turnErr == nil {
-			turnErr = errors.New(result.Error)
+			turnErr = orchestrator.NewTurnError(orchestrator.TurnFailureAgent, errors.New(result.Error))
 		}
-		return result.AssistantText, turnErr
+		return proxy.TranscriptText(result), turnErr
 	}
 
 	maxTurns := h.settings.Int(appsettings.KeyGroupMaxTurnsAPI)
@@ -334,8 +339,8 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	speakers := distinctSuccessfulSpeakers(results)
-	incompleteReason := debateIncompleteReason(debateErr, speakers, len(results))
+	speakers := distinctRespondingSpeakers(results)
+	incompleteReason := debateIncompleteReason(debateErr, results)
 	if incompleteReason != "" {
 		if debateErr != nil {
 			h.logger.Warn("group debate ended early", zap.String("group_id", groupID), zap.Error(debateErr))
@@ -343,11 +348,16 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 		_ = sse.SendCustomEvent("debate.incomplete", map[string]interface{}{"reason": incompleteReason})
 		if incompleteReason != "all_agents_failed" {
 			note := "⚠️ The debate ended early (moderator error); the replies above may be incomplete."
-			if incompleteReason == "timeout" {
+			switch incompleteReason {
+			case "timeout":
 				note = "⚠️ The debate hit the time limit before finishing; the replies above may be incomplete."
+			case "max_turns":
+				note = "⚠️ The debate reached its turn limit; the replies above may be incomplete."
+			case "persistence_error":
+				note = "⚠️ One or more replies could not be saved; the conversation history may be incomplete."
 			}
 			h.streamModeratorMessage(sse, "moderator", note)
-			h.persistModeratorMessage(ctx, session.SessionID, "moderator", note)
+			h.persistModeratorMessage(context.WithoutCancel(ctx), session.SessionID, "moderator", note)
 		}
 	}
 
@@ -359,7 +369,7 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 			noAgentMsg = "Ningún agente de este grupo puede ayudar con esa petición."
 		}
 		h.streamModeratorMessage(sse, "moderator", noAgentMsg)
-		h.persistModeratorMessage(ctx, session.SessionID, "moderator", noAgentMsg)
+		h.persistModeratorMessage(context.WithoutCancel(ctx), session.SessionID, "moderator", noAgentMsg)
 	case speakers == 0:
 		// Agents were selected but every turn failed (each already emitted a
 		// scoped turn.error). Emit a programmatic signal (the moderator may have
@@ -370,15 +380,15 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 			failMsg = "Todos los agentes seleccionados fallaron al responder. Inténtalo de nuevo."
 		}
 		h.streamModeratorMessage(sse, "moderator", failMsg)
-		h.persistModeratorMessage(ctx, session.SessionID, "moderator", failMsg)
-	case speakers >= 2 && ctx.Err() == nil:
+		h.persistModeratorMessage(context.WithoutCancel(ctx), session.SessionID, "moderator", failMsg)
+	case incompleteReason == "" && speakers >= 2 && ctx.Err() == nil:
 		// Optional synthesis when several agents contributed
 		synthesis, err := h.moderator.Synthesize(ctx, orchestrator.RenderTranscript(session.Messages))
 		if err != nil {
 			h.logger.Warn("group synthesis failed", zap.String("group_id", groupID), zap.Error(err))
 		} else if synthesis != "" {
 			h.streamModeratorMessage(sse, "moderator", synthesis)
-			h.persistModeratorMessage(ctx, session.SessionID, "moderator", synthesis)
+			h.persistModeratorMessage(context.WithoutCancel(ctx), session.SessionID, "moderator", synthesis)
 		}
 	}
 
@@ -395,14 +405,22 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 // debateIncompleteReason computes one terminal reason with explicit precedence.
 // A moderator/deadline error explains why the debate stopped; otherwise a run
 // with attempted turns but no successful speaker is a total agent failure.
-func debateIncompleteReason(debateErr error, speakers, resultCount int) string {
+func debateIncompleteReason(debateErr error, results []orchestrator.TurnResult) string {
 	if errors.Is(debateErr, context.DeadlineExceeded) {
 		return "timeout"
+	}
+	if errors.Is(debateErr, orchestrator.ErrMaxTurnsReached) {
+		return "max_turns"
 	}
 	if debateErr != nil {
 		return "moderator_error"
 	}
-	if resultCount > 0 && speakers == 0 {
+	for _, result := range results {
+		if result.FailureKind == orchestrator.TurnFailurePersistence {
+			return "persistence_error"
+		}
+	}
+	if len(results) > 0 && distinctRespondingSpeakers(results) == 0 {
 		return "all_agents_failed"
 	}
 	return ""
@@ -585,11 +603,12 @@ func (h *ProxyHandler) recordGroupTurnEvent(agent *models.Agent, sessionID, user
 	}, h.logger)
 }
 
-// distinctSuccessfulSpeakers counts how many different agents replied successfully.
-func distinctSuccessfulSpeakers(results []orchestrator.TurnResult) int {
+// distinctRespondingSpeakers counts agents that produced a response, even when
+// saving that response failed. Agent execution failures do not count.
+func distinctRespondingSpeakers(results []orchestrator.TurnResult) int {
 	seen := make(map[string]bool)
 	for _, r := range results {
-		if r.Err == nil && r.Text != "" {
+		if r.Text != "" && r.FailureKind != orchestrator.TurnFailureAgent {
 			seen[r.AgentID] = true
 		}
 	}

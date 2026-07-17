@@ -15,6 +15,8 @@ import {
 } from "@/components/ui/collapsible";
 import { Bot, ChevronRight, Users } from "lucide-react";
 import { useReadState } from "@/hooks/useReadState";
+import { useUser } from "@/hooks/useUser";
+import { selectGroupAnchorAgent } from "@/lib/groups";
 import {
   Tooltip,
   TooltipContent,
@@ -30,6 +32,7 @@ export function GroupItem({ group }: GroupItemProps) {
   const { sessions, activeGroupId, selectGroup, newGroupConversation } = useSessions();
   const { selectAgent } = useAgentContext();
   const { getTotalUnread } = useReadState();
+  const { user } = useUser();
   const [isExpanded, setIsExpanded] = useState(false);
 
   const isSelected = activeGroupId === group.id;
@@ -57,7 +60,8 @@ export function GroupItem({ group }: GroupItemProps) {
     if (isSelected) {
       setIsExpanded(!isExpanded);
     } else {
-      selectAgent(group.agentIds[0]);
+      const anchorAgent = selectGroupAnchorAgent(group.agentIds, agents, !!user?.githubConnected);
+      if (anchorAgent) selectAgent(anchorAgent);
       selectGroup(group.id);
       setIsExpanded(true);
     }

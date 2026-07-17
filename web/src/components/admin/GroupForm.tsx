@@ -60,6 +60,9 @@ export function GroupForm({ group, onSave, onCancel }: GroupFormProps) {
             value={form.id}
             onChange={(e) => setForm((prev) => ({ ...prev, id: e.target.value }))}
             disabled={!!group}
+            pattern="[A-Za-z0-9][A-Za-z0-9_-]{0,55}"
+            maxLength={56}
+            title="Start with a letter or digit; use only ASCII letters, digits, underscores, or hyphens (max 56)."
             required
           />
         </div>
@@ -128,12 +131,13 @@ export function GroupForm({ group, onSave, onCancel }: GroupFormProps) {
         <input
           type="number"
           min={0}
+          max={50}
           className="w-32 rounded-md border bg-background px-3 py-2 text-sm"
           value={form.max_turns}
           onChange={(e) => setForm((prev) => ({ ...prev, max_turns: Math.max(0, parseInt(e.target.value, 10) || 0) }))}
         />
         <p className="mt-1 text-xs text-muted-foreground">
-          Max agents the moderator can call per message. 0 = default (6 via API/web, 3 via MCP).
+          Maximum number of turns. The same agent may be selected more than once. 0 = default (6 via API/web, 3 via MCP).
         </p>
       </div>
 

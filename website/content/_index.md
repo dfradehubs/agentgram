@@ -203,17 +203,17 @@ data: {"type":"RUN_FINISHED","threadId":"…","runId":"…"}
   <div class="ag-card">
     <div class="ag-card-icon">🚨</div>
     <div class="ag-card-title">Incident response</div>
-    <p class="ag-card-text">Bundle logs, metrics and Kubernetes agents into a shared group and triage an outage together — everyone sees the same thread.</p>
+    <p class="ag-card-text">Bundle logs, metrics and Kubernetes agents into a team-visible group while each member keeps private, personal conversation threads.</p>
   </div>
   <div class="ag-card">
     <div class="ag-card-icon">🎙️</div>
     <div class="ag-card-title">Moderated debates</div>
-    <p class="ag-card-text">Ask the group, not an agent: an LLM moderator picks who answers, each agent builds on the previous replies, and a synthesis closes the thread.</p>
+    <p class="ag-card-text">Ask the group, not an agent: an LLM moderator picks who answers, each agent builds on previous replies, and can add a final synthesis.</p>
   </div>
   <div class="ag-card">
     <div class="ag-card-icon">🧰</div>
     <div class="ag-card-title">Agents in your IDE</div>
-    <p class="ag-card-text">Add one MCP endpoint to Claude Code or Cursor and call every agent you're allowed to as a tool — <code>ask_logs-agent</code> and more.</p>
+    <p class="ag-card-text">Add one MCP endpoint to Claude Code or Cursor and call agents and groups as tools — <code>ask_logs-agent</code>, <code>group__incident-response</code>, and more.</p>
   </div>
   <div class="ag-card">
     <div class="ag-card-icon">📊</div>
@@ -254,7 +254,7 @@ data: {"type":"RUN_FINISHED","threadId":"…","runId":"…"}
   <figure class="ag-shot">
     <div class="ag-shot-bar"><span></span><span></span><span></span></div>
     <img src="/images/screenshots/chat-multi-agent.webp" width="2880" height="1800" loading="lazy" decoding="async" alt="A multi-agent group thread where one question is routed to both the Logs and Metrics agents." />
-    <figcaption><strong>Multi-agent groups.</strong> Ask one question, route it across several agents, and keep the context in a single shared thread.</figcaption>
+    <figcaption><strong>Multi-agent groups.</strong> Ask one question, route it across several agents, and keep the context in your personal group thread.</figcaption>
   </figure>
   <figure class="ag-shot">
     <div class="ag-shot-bar"><span></span><span></span><span></span></div>

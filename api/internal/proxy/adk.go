@@ -58,11 +58,10 @@ func NewADKProxy(logger *zap.Logger) *ADKProxy {
 // If the agent responds with a context-limit summary, it transparently creates a new session
 // and retries the request with the summary as context.
 func (p *ADKProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *models.Agent, chatReq *models.ChatRequest, auth agents.OutboundAuth, requestID string, locale string, cfg SSEConfig, agentTimeout time.Duration) (*ProxyResult, error) {
-	sse, err := NewSSEWriter(w)
+	sse, err := resolveSSEWriter(w, cfg)
 	if err != nil {
 		return nil, err
 	}
-	sse.Apply(cfg)
 
 	// Collect user messages and extract attachments from the last user message
 	var parts []string

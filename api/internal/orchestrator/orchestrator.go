@@ -7,6 +7,7 @@ package orchestrator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -24,10 +25,66 @@ type AgentBrief struct {
 
 // TurnResult is the outcome of one agent turn in a debate.
 type TurnResult struct {
-	AgentID string
-	Text    string
-	Err     error // per-turn failure; the debate continues
+	AgentID     string
+	Text        string
+	Err         error // per-turn failure; the debate continues
+	FailureKind TurnFailureKind
 }
+
+type TurnFailureKind string
+
+const (
+	TurnFailureAgent       TurnFailureKind = "agent"
+	TurnFailurePersistence TurnFailureKind = "persistence"
+)
+
+type turnError struct {
+	kind TurnFailureKind
+	err  error
+}
+
+func (e *turnError) Error() string { return e.err.Error() }
+func (e *turnError) Unwrap() error { return e.err }
+
+// NewTurnError labels a per-turn failure without losing its underlying cause.
+func NewTurnError(kind TurnFailureKind, err error) error {
+	if err == nil {
+		return nil
+	}
+	return &turnError{kind: kind, err: err}
+}
+
+func TurnErrorKind(err error) TurnFailureKind {
+	if hasTurnFailure(err, TurnFailurePersistence) {
+		return TurnFailurePersistence
+	}
+	if err != nil {
+		return TurnFailureAgent
+	}
+	return ""
+}
+
+func hasTurnFailure(err error, kind TurnFailureKind) bool {
+	if err == nil {
+		return false
+	}
+	if tagged, ok := err.(*turnError); ok && tagged.kind == kind {
+		return true
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, child := range joined.Unwrap() {
+			if hasTurnFailure(child, kind) {
+				return true
+			}
+		}
+	}
+	if wrapped, ok := err.(interface{ Unwrap() error }); ok {
+		return hasTurnFailure(wrapped.Unwrap(), kind)
+	}
+	return false
+}
+
+var ErrMaxTurnsReached = errors.New("maximum debate turns reached")
 
 // TurnRunner executes one agent turn and returns the agent's reply text.
 // The API implements it by streaming SSE; MCP by collecting text. The runner
@@ -146,9 +203,8 @@ func (m *Moderator) Debate(ctx context.Context, roster []AgentBrief, transcript 
 	var results []TurnResult
 	for turn := 0; turn < maxTurns; turn++ {
 		// Stop when the caller's deadline expired: each turn's outbound agent
-		// call runs on its own detached timeout (by design, to survive client
-		// disconnects), so this check is what bounds the debate's total time
-		// to the caller's deadline plus at most one turn.
+		// call survives client disconnects but is clamped to the same absolute
+		// deadline, so this check prevents new work after the budget expires.
 		if ctx.Err() != nil {
 			return results, ctx.Err()
 		}
@@ -157,7 +213,7 @@ func (m *Moderator) Debate(ctx context.Context, roster []AgentBrief, transcript 
 			return results, err
 		}
 		if done {
-			break
+			return results, nil
 		}
 
 		text, err := run(ctx, agentID)
@@ -170,14 +226,14 @@ func (m *Moderator) Debate(ctx context.Context, roster []AgentBrief, transcript 
 			} else {
 				transcript += fmt.Sprintf("\nAgent[%s]: [error: %v]", agentID, err)
 			}
-			results = append(results, TurnResult{AgentID: agentID, Text: text, Err: err})
+			results = append(results, TurnResult{AgentID: agentID, Text: text, Err: err, FailureKind: TurnErrorKind(err)})
 			continue
 		}
 
 		transcript += fmt.Sprintf("\nAgent[%s]: %s", agentID, text)
 		results = append(results, TurnResult{AgentID: agentID, Text: text})
 	}
-	return results, nil
+	return results, ErrMaxTurnsReached
 }
 
 // Synthesize produces an optional final consolidation when several agents

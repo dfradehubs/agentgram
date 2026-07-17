@@ -167,6 +167,16 @@ func TestDebatePreservesPartialTextOnError(t *testing.T) {
 	}
 }
 
+func TestTurnErrorKindPrioritizesPersistence(t *testing.T) {
+	err := errors.Join(
+		NewTurnError(TurnFailureAgent, errors.New("stream failed")),
+		NewTurnError(TurnFailurePersistence, errors.New("store failed")),
+	)
+	if got := TurnErrorKind(err); got != TurnFailurePersistence {
+		t.Fatalf("TurnErrorKind = %q, want persistence", got)
+	}
+}
+
 func TestNextSpeakerParsing(t *testing.T) {
 	tests := []struct {
 		name     string

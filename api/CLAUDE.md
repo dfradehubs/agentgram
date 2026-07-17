@@ -123,7 +123,8 @@ multi-agent context delta (`proxy.PrepareMessagesForMultiAgent`). Key pieces:
 - **`orchestrator/`**: `Moderator.NextSpeaker` (LLM pick or FINISH) + `Debate`
   loop (cap `maxTurns`, failed turns don't abort) + optional `Synthesize`.
   Surface-agnostic via an injected `TurnRunner`.
-- **SSE surface** (`handlers/group_chat.go`): one outer `RUN_STARTED`/`RUN_FINISHED`;
+- **SSE surface** (`handlers/group_chat.go`): one outer `RUN_STARTED` and one terminal
+  `RUN_FINISHED` or `RUN_ERROR`; `debate.incomplete` reports partial outcomes;
   per-turn lifecycle suppressed via `HandleOptions.SuppressLifecycle`; all
   `TEXT_MESSAGE_*`/`TOOL_CALL_START` events tagged with `agentId` via
   `HandleOptions.AgentID`. Optional `agent_ids` in the body restricts the roster.

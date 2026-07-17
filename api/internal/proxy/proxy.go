@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -33,6 +34,69 @@ type ProxyResult struct {
 	ContentParts   []ContentPart      // Ordered text/tool interleaving for reconstruction
 	SessionRotated bool               // true if session was rotated due to context-limit
 	Error          string             // Non-empty when the stream ended with an error (partial response)
+}
+
+// HasPersistableContent reports whether the result contains anything that must
+// survive a reload, including non-text chart/tool responses.
+func (r *ProxyResult) HasPersistableContent() bool {
+	return r != nil && (r.AssistantText != "" || len(r.ContentParts) > 0 || len(r.ToolCalls) > 0 || r.Error != "")
+}
+
+// ToChatMessage converts a proxy result into the canonical stored form. The
+// caller supplies a sanitized public error; raw transport errors stay in logs.
+func (r *ProxyResult) ToChatMessage(agentID, publicError string) models.ChatMessage {
+	msg := models.ChatMessage{Role: "assistant", Content: r.AssistantText, AgentID: agentID, IsError: publicError != ""}
+	if publicError != "" {
+		if msg.Content != "" {
+			msg.Content += "\n\n"
+		}
+		msg.Content += "---\n**Error**: " + publicError
+	}
+	for _, cp := range r.ContentParts {
+		msg.ContentParts = append(msg.ContentParts, models.ContentPart{
+			Type: cp.Type, Text: cp.Text, ToolIndex: models.IntPtr(cp.ToolIndex), Chart: cp.Chart,
+		})
+	}
+	for _, tc := range r.ToolCalls {
+		var args map[string]interface{}
+		if tc.Args != "" && json.Unmarshal([]byte(tc.Args), &args) != nil {
+			args = map[string]interface{}{"raw": tc.Args}
+		}
+		msg.ToolCalls = append(msg.ToolCalls, models.StoredToolCall{ID: tc.ID, Name: tc.Name, Args: args})
+		var response map[string]interface{}
+		if tc.Result != "" && json.Unmarshal([]byte(tc.Result), &response) != nil {
+			response = map[string]interface{}{"text": tc.Result}
+		}
+		msg.ToolResults = append(msg.ToolResults, models.StoredToolResult{ID: tc.ID, Name: tc.Name, Response: response})
+	}
+	return msg
+}
+
+// PublicErrorMessage returns a stable client-safe message. Raw upstream URLs,
+// bodies and storage diagnostics must only appear in server logs/traces.
+func PublicErrorMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	if errors.Is(err, context.DeadlineExceeded) || strings.Contains(strings.ToLower(err.Error()), "timeout") || strings.Contains(strings.ToLower(err.Error()), "deadline exceeded") {
+		return "The agent response timed out."
+	}
+	return "The agent response could not be completed."
+}
+
+// TranscriptText gives the moderator a non-empty marker for valid structured
+// responses that have no plain assistant text.
+func TranscriptText(r *ProxyResult) string {
+	if r == nil {
+		return ""
+	}
+	if r.AssistantText != "" {
+		return r.AssistantText
+	}
+	if len(r.ContentParts) > 0 || len(r.ToolCalls) > 0 {
+		return "[structured agent response]"
+	}
+	return ""
 }
 
 // ContentPart represents an ordered segment in the streaming response
@@ -98,6 +162,8 @@ type HandleOptions struct {
 	OnEvent           func(event interface{}) // Called for each AG-UI event (for Pub/Sub broadcast)
 	AgentID           string                  // Tag all stream events with this agent id (group debates)
 	SuppressLifecycle bool                    // Skip this call's RUN_STARTED/RUN_FINISHED (outer run owns the lifecycle)
+	DeferLifecycle    bool                    // Handler emits the terminal event after persistence succeeds
+	SSEWriter         *SSEWriter              // Reuse a handler-owned writer and lifecycle IDs
 	AgentTimeout      time.Duration           // Max time to wait for the agent response; 0 = default (10m)
 }
 
@@ -162,6 +228,8 @@ func (p *Proxy) Handle(ctx context.Context, w http.ResponseWriter, agent *models
 		SessionName:       opts.SessionName,
 		AgentID:           opts.AgentID,
 		SuppressLifecycle: opts.SuppressLifecycle,
+		DeferLifecycle:    opts.DeferLifecycle,
+		Writer:            opts.SSEWriter,
 		OnEvent:           opts.OnEvent,
 	}
 

@@ -305,6 +305,9 @@ func (h *ProxyHandler) Chat(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.store.AddMessage(ctx, session.SessionID, userMsg); err != nil {
 		h.logger.Error("failed to save user message", zap.Error(err))
+		w.Header().Set("Content-Type", "application/json")
+		http.Error(w, `{"error":"failed to persist user message"}`, http.StatusInternalServerError)
+		return
 	}
 
 	// Extract request ID from chi middleware for end-to-end correlation
@@ -424,8 +427,8 @@ func (h *ProxyHandler) Chat(w http.ResponseWriter, r *http.Request) {
 
 	// Build OnEvent callback. Every AG-UI event is buffered into the session's
 	// run stream so a client that reloads can reconnect and replay the run live.
-	// Group sessions additionally broadcast to Redis Pub/Sub for live multi-user
-	// collaboration. Both are fire-and-forget: a buffering failure must not break
+	// Group sessions additionally broadcast to Redis Pub/Sub so the owner's open
+	// clients stay in sync. Both are fire-and-forget: a buffering failure must not break
 	// the run or the original client's SSE.
 	sessionID := session.SessionID
 	onEvent := func(event interface{}) {
@@ -471,21 +474,34 @@ func (h *ProxyHandler) Chat(w http.ResponseWriter, r *http.Request) {
 	// reply is persisted (see post-proxy block), so the invariant holds: if no
 	// active run exists, the full reply is already saved. Uses a background
 	// context so cleanup runs even if the original client disconnected.
+	sse, sseErr := proxy.NewSSEWriter(w)
+	if sseErr != nil {
+		w.Header().Set("Content-Type", "application/json")
+		http.Error(w, `{"error":"streaming not supported"}`, http.StatusInternalServerError)
+		return
+	}
+	sse.Apply(proxy.SSEConfig{ThreadID: session.SessionID, SessionName: session.SessionName, OnEvent: onEvent})
+
 	_ = h.store.SetActiveRun(ctx, session.SessionID, requestID)
 	defer func() {
 		clearCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = h.store.ClearActiveRun(clearCtx, session.SessionID, requestID)
 	}()
+	if err := sse.SendRunStarted(); err != nil {
+		return
+	}
 
 	result, err := h.proxy.Handle(ctx, w, agent, agentReq, authHeader, proxy.HandleOptions{
-		ThreadID:    session.SessionID,
-		SessionName: session.SessionName,
-		Locale:      locale,
-		RequestID:   requestID,
-		UserEmail:   claims.GetEmail(),
-		UserGroups:  claims.GetGroups(),
-		OnEvent:     onEvent,
+		ThreadID:       session.SessionID,
+		SessionName:    session.SessionName,
+		Locale:         locale,
+		RequestID:      requestID,
+		UserEmail:      claims.GetEmail(),
+		UserGroups:     claims.GetGroups(),
+		OnEvent:        onEvent,
+		DeferLifecycle: true,
+		SSEWriter:      sse,
 	})
 	proxyErr = err
 
@@ -579,8 +595,19 @@ func (h *ProxyHandler) Chat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 5. Post-proxy: save assistant response and agent session mapping
-	if _, err := h.persistTurnResult(context.Background(), session, agent, result, agentSessionID, hasAgentSession, locale); err != nil {
-		h.logger.Error("failed to persist turn result", zap.Error(err))
+	_, persistErr := h.persistTurnResult(context.Background(), session, agent, result, agentSessionID, hasAgentSession, locale, err)
+	if persistErr != nil {
+		h.logger.Error("failed to persist turn result", zap.Error(persistErr))
+	}
+	terminalErr := errors.Join(err, persistErr)
+	if result != nil && result.Error != "" {
+		terminalErr = errors.Join(terminalErr, errors.New(result.Error))
+	}
+	sse.Apply(proxy.SSEConfig{DeferLifecycle: false})
+	if terminalErr != nil {
+		_ = sse.SendRunError(proxy.PublicErrorMessage(terminalErr))
+	} else {
+		_ = sse.SendRunFinished()
 	}
 
 	// Async: generate a short LLM-based session name for new sessions
@@ -606,11 +633,11 @@ func (h *ProxyHandler) Chat(w http.ResponseWriter, r *http.Request) {
 // persistTurnResult saves the assistant response of one agent turn: the
 // optional session-rotation info message, the assistant message (content
 // parts, tool calls) and the agent session mapping. The caller chooses the
-// parent context: single-agent chat passes Background so persistence survives
-// disconnects; group chat passes its absolute debate context. Returns the
+// parent context: callers detach it from client cancellation so finalization
+// survives disconnects and apply the bounded timeout below. Returns the
 // persisted assistant message plus any persistence/mapping error.
-func (h *ProxyHandler) persistTurnResult(ctx context.Context, session *models.Session, agent *models.Agent, result *proxy.ProxyResult, agentSessionID string, hasAgentSession bool, locale string) (*models.ChatMessage, error) {
-	if result == nil || (result.AssistantText == "" && len(result.ToolCalls) == 0 && result.Error == "") {
+func (h *ProxyHandler) persistTurnResult(ctx context.Context, session *models.Session, agent *models.Agent, result *proxy.ProxyResult, agentSessionID string, hasAgentSession bool, locale string, proxyErr error) (*models.ChatMessage, error) {
+	if !result.HasPersistableContent() {
 		return nil, nil
 	}
 	agentID := agent.ID
@@ -644,65 +671,13 @@ func (h *ProxyHandler) persistTurnResult(ctx context.Context, session *models.Se
 			}
 		}
 
-		// Build assistant message content. If an error interrupted the stream,
-		// append the error so it's visible when the user refreshes.
-		content := result.AssistantText
+		rawResultErr := proxyErr
 		if result.Error != "" {
-			if content != "" {
-				content += "\n\n"
-			}
-			content += fmt.Sprintf("\n\n---\n**Error**: %s", result.Error)
+			rawResultErr = errors.Join(rawResultErr, errors.New(result.Error))
 		}
-
-		assistantMsg := models.ChatMessage{
-			Role:    "assistant",
-			Content: content,
-			IsError: result.Error != "",
-		}
-		// Convert proxy ContentParts to model ContentParts
-		if len(result.ContentParts) > 0 {
-			for _, cp := range result.ContentParts {
-				mcp := models.ContentPart{
-					Type:      cp.Type,
-					Text:      cp.Text,
-					ToolIndex: models.IntPtr(cp.ToolIndex),
-				}
-				if cp.Chart != nil {
-					mcp.Chart = cp.Chart
-				}
-				assistantMsg.ContentParts = append(assistantMsg.ContentParts, mcp)
-			}
-		}
+		assistantMsg := result.ToChatMessage("", proxy.PublicErrorMessage(rawResultErr))
 		if session.IsMultiAgent {
 			assistantMsg.AgentID = agentID
-		}
-
-		// Persist tool calls from the streaming session
-		if len(result.ToolCalls) > 0 {
-			for _, tc := range result.ToolCalls {
-				var args map[string]interface{}
-				if tc.Args != "" {
-					if err := json.Unmarshal([]byte(tc.Args), &args); err != nil {
-						h.logger.Warn("invalid tool args JSON", zap.String("tool", tc.Name), zap.Error(err))
-					}
-				}
-				assistantMsg.ToolCalls = append(assistantMsg.ToolCalls, models.StoredToolCall{
-					ID:   tc.ID,
-					Name: tc.Name,
-					Args: args,
-				})
-				var resp map[string]interface{}
-				if tc.Result != "" {
-					if json.Unmarshal([]byte(tc.Result), &resp) != nil {
-						resp = map[string]interface{}{"text": tc.Result}
-					}
-				}
-				assistantMsg.ToolResults = append(assistantMsg.ToolResults, models.StoredToolResult{
-					ID:       tc.ID,
-					Name:     tc.Name,
-					Response: resp,
-				})
-			}
 		}
 		assistantPersisted := true
 		if err := h.store.AddMessage(saveCtx, session.SessionID, assistantMsg); err != nil {
@@ -713,7 +688,7 @@ func (h *ProxyHandler) persistTurnResult(ctx context.Context, session *models.Se
 
 		// Save agent session mapping only on success — don't map sessions for
 		// failed requests so retries start fresh without a stale session ID.
-		if result.Error == "" && assistantPersisted {
+		if rawResultErr == nil && assistantPersisted {
 			if result.AgentSessionID != "" && result.AgentSessionID != agentSessionID {
 				if err := h.store.SetAgentSessionID(saveCtx, session.SessionID, agentID, result.AgentSessionID); err != nil {
 					h.logger.Error("failed to save agent session mapping", zap.Error(err))

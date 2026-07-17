@@ -173,7 +173,7 @@ func (h *Handler) handleGroupToolCall(w http.ResponseWriter, r *http.Request, re
 		lfTrace.End(!cr.isError, truncateString(responseText, 2000))
 	}
 
-	// isError=true when the debate produced no successful agent reply.
+	// isError=true for incomplete outcomes as well as total agent failure.
 	flushSSE(h.server.MarshalToolResult(req.ID, responseText, cr.isError))
 }
 
@@ -215,7 +215,7 @@ func (h *Handler) buildGroupRoster(ctx context.Context, group *models.AgentGroup
 // callGroup runs the moderated debate and returns the collected replies as a
 // single markdown text, plus the Agentgram session ID for continuity.
 // callGroup returns the collected debate text, the session ID, an isError flag
-// (true when no agent produced a successful reply), and a transport error.
+// (true for an incomplete outcome or when no agent responded), and a transport error.
 func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roster []orchestrator.AgentBrief, agentsByID map[string]*models.Agent, question, sessionID, userEmail string, userGroups []string, lfTrace *lf.Trace) (string, string, bool, error) {
 	// The MCP user's JWT, forwarded only when the agent's auth method is "forward"
 	authHeader := middleware.GetAuthHeaderFromContext(ctx)
@@ -359,33 +359,29 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 				agentSpan.End(nil)
 			}
 		}
-		var turnErr error
-		if err != nil {
-			turnErr = err
-		}
+		turnErr := orchestrator.NewTurnError(orchestrator.TurnFailureAgent, err)
 		if result == nil {
 			return "", turnErr
 		}
 		if result.Error != "" && turnErr == nil {
-			turnErr = errors.New(result.Error)
+			turnErr = orchestrator.NewTurnError(orchestrator.TurnFailureAgent, errors.New(result.Error))
 		}
 
-		// Persist the reply and grow the in-memory session for the next turn.
-		// Bound by callCtx (the absolute call deadline), not a fresh timeout, so
-		// slow persistence can't push the whole tool call past its budget.
-		assistantMsg := models.ChatMessage{
-			Role:    "assistant",
-			Content: result.AssistantText,
-			AgentID: agentID,
-			IsError: turnErr != nil,
-		}
-		if err := h.sessionStore.AddMessage(callCtx, session.SessionID, assistantMsg); err != nil {
+		// Finalization is detached from the execution deadline but independently
+		// bounded, so a result completed at the deadline is not silently lost.
+		saveCtx, saveCancel := context.WithTimeout(context.WithoutCancel(callCtx), 5*time.Second)
+		defer saveCancel()
+		assistantMsg := result.ToChatMessage(agentID, proxy.PublicErrorMessage(turnErr))
+		assistantPersisted := true
+		if err := h.sessionStore.AddMessage(saveCtx, session.SessionID, assistantMsg); err != nil {
 			h.logger.Error("failed to persist assistant message", zap.Error(err))
-			turnErr = errors.Join(turnErr, fmt.Errorf("reply persistence failed: %w", err))
+			turnErr = errors.Join(turnErr, orchestrator.NewTurnError(orchestrator.TurnFailurePersistence, fmt.Errorf("reply persistence failed: %w", err)))
+			assistantPersisted = false
+		} else {
+			session.Messages = append(session.Messages, assistantMsg)
 		}
-		session.Messages = append(session.Messages, assistantMsg)
 
-		if turnErr == nil {
+		if turnErr == nil && assistantPersisted {
 			mappingID := ""
 			if result.AgentSessionID != "" && result.AgentSessionID != agentSessionID {
 				mappingID = result.AgentSessionID
@@ -393,14 +389,14 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 				mappingID = session.SessionID
 			}
 			if mappingID != "" {
-				if err := h.sessionStore.SetAgentSessionID(callCtx, session.SessionID, agentID, mappingID); err != nil {
+				if err := h.sessionStore.SetAgentSessionID(saveCtx, session.SessionID, agentID, mappingID); err != nil {
 					h.logger.Error("failed to persist agent session mapping", zap.Error(err))
-					turnErr = fmt.Errorf("session mapping persistence failed: %w", err)
+					turnErr = orchestrator.NewTurnError(orchestrator.TurnFailurePersistence, fmt.Errorf("session mapping persistence failed: %w", err))
 				}
 			}
 		}
 
-		return result.AssistantText, turnErr
+		return proxy.TranscriptText(result), turnErr
 	}
 
 	maxTurns := h.settings.Int(appsettings.KeyGroupMaxTurnsMCP)
@@ -426,10 +422,14 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 			name = agent.Name
 		}
 		if res.Err != nil {
+			publicTurnError := "agent response could not be completed"
+			if res.FailureKind == orchestrator.TurnFailurePersistence {
+				publicTurnError = "reply could not be saved"
+			}
 			if res.Text != "" {
-				parts = append(parts, fmt.Sprintf("**[%s]**\n\n%s\n\n_error: %v_", name, res.Text, res.Err))
+				parts = append(parts, fmt.Sprintf("**[%s]**\n\n%s\n\n_error: %s_", name, res.Text, publicTurnError))
 			} else {
-				parts = append(parts, fmt.Sprintf("**[%s]**\n\n_error: %v_", name, res.Err))
+				parts = append(parts, fmt.Sprintf("**[%s]**\n\n_error: %s_", name, publicTurnError))
 			}
 			continue
 		}
@@ -440,31 +440,39 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 	// moderator failed or the deadline hit before FINISH — is incomplete, not a
 	// clean success. Tell the client rather than presenting a partial result.
 	if debateErr != nil {
-		note := "the debate ended early (moderator error or timeout)"
+		note := "the debate ended early because the moderator failed"
 		if errors.Is(debateErr, context.DeadlineExceeded) {
 			note = "the debate hit the tool-call timeout before finishing"
+		} else if errors.Is(debateErr, orchestrator.ErrMaxTurnsReached) {
+			note = "the debate reached its turn limit"
 		}
 		parts = append(parts, fmt.Sprintf("_⚠️ Note: %s; the answer above may be incomplete._", note))
 	}
 
 	resultIncomplete := debateErr != nil
+	for _, result := range results {
+		if result.FailureKind == orchestrator.TurnFailurePersistence {
+			resultIncomplete = true
+		}
+	}
 	// Optional synthesis when several agents contributed
-	if distinctSpeakers(results) >= 2 {
+	if !resultIncomplete && distinctSpeakers(results) >= 2 {
 		synthesis, err := h.moderator.Synthesize(callCtx, orchestrator.RenderTranscript(session.Messages))
 		if err != nil {
 			h.logger.Warn("group synthesis failed", zap.String("group_id", group.ID), zap.Error(err))
 		} else if synthesis != "" {
 			parts = append(parts, fmt.Sprintf("**[Moderator]**\n\n%s", synthesis))
-			// Bound by callCtx (absolute deadline), see per-turn persistence above.
-			if err := h.sessionStore.AddMessage(callCtx, session.SessionID, models.ChatMessage{
+			saveCtx, saveCancel := context.WithTimeout(context.WithoutCancel(callCtx), 5*time.Second)
+			if err := h.sessionStore.AddMessage(saveCtx, session.SessionID, models.ChatMessage{
 				Role:    "assistant",
 				Content: synthesis,
 				AgentID: "moderator",
 			}); err != nil {
 				h.logger.Error("failed to persist moderator synthesis", zap.Error(err))
-				parts = append(parts, fmt.Sprintf("_error: synthesis persistence failed: %v_", err))
+				parts = append(parts, "_error: synthesis could not be saved_")
 				resultIncomplete = true
 			}
+			saveCancel()
 		}
 	}
 
@@ -502,11 +510,12 @@ func (h *Handler) deleteOrphanSession(groupID, sessionID, userEmail, agentID str
 	}
 }
 
-// distinctSpeakers counts how many different agents replied successfully.
+// distinctSpeakers counts agents that returned content; persistence failures
+// still count as responses, while agent execution failures do not.
 func distinctSpeakers(results []orchestrator.TurnResult) int {
 	seen := make(map[string]bool)
 	for _, r := range results {
-		if r.Err == nil && r.Text != "" {
+		if r.Text != "" && r.FailureKind != orchestrator.TurnFailureAgent {
 			seen[r.AgentID] = true
 		}
 	}

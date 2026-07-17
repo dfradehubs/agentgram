@@ -170,7 +170,12 @@ func (s *Server) handleToolsList(req jsonRPCRequest, userEmail string, userGroup
 
 	// Add agent group tools (moderated multi-agent debates)
 	for _, group := range s.AccessibleGroups(userEmail, userGroups) {
-		tools = append(tools, s.buildGroupTool(group))
+		toolName, err := groupToolName(group.ID)
+		if err != nil {
+			s.logger.Warn("skipping group with invalid MCP tool id", zap.String("group_id", group.ID), zap.Error(err))
+			continue
+		}
+		tools = append(tools, s.buildGroupTool(group, toolName))
 	}
 
 	// Add utility tools
@@ -202,7 +207,7 @@ func (s *Server) AccessibleGroupsContext(ctx context.Context, userEmail string, 
 }
 
 // buildGroupTool creates an MCP tool definition from an agent group
-func (s *Server) buildGroupTool(group *models.AgentGroup) map[string]interface{} {
+func (s *Server) buildGroupTool(group *models.AgentGroup, toolName string) map[string]interface{} {
 	// Resolve member names for a useful description
 	var members []string
 	for _, agentID := range group.AgentIDs {
@@ -212,7 +217,7 @@ func (s *Server) buildGroupTool(group *models.AgentGroup) map[string]interface{}
 	}
 
 	return map[string]interface{}{
-		"name": groupToolPrefix + group.ID,
+		"name": toolName,
 		"description": fmt.Sprintf(
 			"[Group: %s] Moderated multi-agent group (%s). A moderator picks the most relevant agent(s) to answer; they can build on each other's replies.",
 			group.Name, strings.Join(members, ", ")),
@@ -231,6 +236,13 @@ func (s *Server) buildGroupTool(group *models.AgentGroup) map[string]interface{}
 			"required": []string{"question"},
 		},
 	}
+}
+
+func groupToolName(groupID string) (string, error) {
+	if err := models.ValidateGroupID(groupID); err != nil {
+		return "", err
+	}
+	return groupToolPrefix + groupID, nil
 }
 
 // buildAgentTool creates an MCP tool definition from an agent
@@ -306,7 +318,8 @@ func GetAgentIDFromToolName(toolName string) (string, bool) {
 // GetGroupIDFromToolName extracts the group ID from group__<group-id>.
 func GetGroupIDFromToolName(toolName string) (string, bool) {
 	if strings.HasPrefix(toolName, groupToolPrefix) && len(toolName) > len(groupToolPrefix) {
-		return toolName[len(groupToolPrefix):], true
+		id := toolName[len(groupToolPrefix):]
+		return id, models.ValidateGroupID(id) == nil
 	}
 	return "", false
 }

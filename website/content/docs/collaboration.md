@@ -78,7 +78,8 @@ POST /api/groups/{groupId}/chat
 }
 ```
 
-- The response is a **single SSE stream** (one `RUN_STARTED` / `RUN_FINISHED` pair). Every
+- The response is a **single SSE stream** with one `RUN_STARTED` and one terminal
+  `RUN_FINISHED` or `RUN_ERROR`. Every
   `TEXT_MESSAGE_*` and `TOOL_CALL_*` event carries an `agentId`, so clients render each agent's turn
   separately; `CUSTOM` events with subtype `moderator.select` announce whose turn it is.
 - `agent_ids` optionally restricts the roster the moderator can pick from. In the web UI you don't
@@ -89,6 +90,8 @@ POST /api/groups/{groupId}/chat
   speaker.
 - A failed agent turn doesn't kill the debate — it's reported as a scoped `turn.error` event and the
   moderator moves on.
+- Partial outcomes emit `debate.incomplete` with a machine-readable reason such as `timeout`,
+  `max_turns`, `persistence_error`, `moderator_error`, or `all_agents_failed`.
 
 **Setup:** the moderator is an LLM model with the role `moderator` (Admin → LLM Models). Any
 provider works; the routing quality comes from your agents' **descriptions**, so keep them accurate.

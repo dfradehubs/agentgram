@@ -199,6 +199,7 @@ func (sw *StreamingWriter) sendUpdate(isFinal bool) {
 	fullText := sw.textBuf.String()
 	overflow := sw.overflowPending
 	offset := sw.msgStartOffset
+	lastError := sw.lastError
 	sw.mu.Unlock()
 
 	if ts == "" || fullText == "" {
@@ -207,6 +208,9 @@ func (sw *StreamingWriter) sendUpdate(isFinal bool) {
 
 	// Text for the CURRENT message only (from offset onwards)
 	currentText := fullText[offset:]
+	if isFinal {
+		currentText = finalDisplayText(currentText, lastError)
+	}
 	if currentText == "" {
 		return
 	}
@@ -264,6 +268,17 @@ func (sw *StreamingWriter) sendUpdate(isFinal bool) {
 		sw.mu.Unlock()
 	}
 	SlackAPICallsTotal.WithLabelValues(sw.agentID, "chat.update").Inc()
+}
+
+func finalDisplayText(text, rawError string) string {
+	if rawError == "" {
+		return text
+	}
+	notice := ":warning: Response incomplete. " + classifyError(fmt.Errorf("%s", rawError))
+	if text == "" {
+		return notice
+	}
+	return text + "\n\n" + notice
 }
 
 func (sw *StreamingWriter) postError(msg string) {

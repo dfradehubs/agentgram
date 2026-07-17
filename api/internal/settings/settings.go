@@ -1,5 +1,5 @@
 // Package settings holds runtime-editable operational settings, backed by the
-// app_settings table and edited from the admin "General Configuration" panel.
+// runtime_config table and edited from the admin "General Configuration" panel.
 // Only values consulted per-request live here; startup/infra config stays in
 // YAML. Unknown keys are ignored; missing keys fall back to the code default.
 package settings
@@ -51,11 +51,11 @@ var Defs = []Def{
 	{Key: KeyMCPMaxToolRounds, Section: "MCP Chat", Label: "Max tool-call rounds", Type: TypeInt, Default: "10",
 		Description: "Max LLM ↔ tool iterations per MCP chat request before stopping.", Min: 1, Max: 50},
 	{Key: KeyGroupDebateTimeout, Section: "Group debates", Label: "Debate timeout (API / web)", Type: TypeDuration, Default: "10m",
-		Description: "Absolute time budget for an entire moderated debate over the streaming API, shared by moderator calls, agent turns and persistence."},
+		Description: "Absolute execution budget for an entire moderated debate over the streaming API, shared by moderator and agent turns. Final persistence has its own short bounded grace period."},
 	{Key: KeyGroupMaxTurnsAPI, Section: "Group debates", Label: "Max turns (API / web)", Type: TypeInt, Default: "6",
 		Description: "Default cap on moderated-debate turns over the streaming API. A group's own max_turns overrides this.", Min: 1, Max: 50},
 	{Key: KeyGroupMaxTurnsMCP, Section: "Group debates", Label: "Max turns (MCP)", Type: TypeInt, Default: "3",
-		Description: "Default cap for the synchronous MCP ask_group tool (kept lower to fit tool-call timeouts). A group's own max_turns overrides this.", Min: 1, Max: 50},
+		Description: "Default cap for synchronous MCP group__ tools (kept lower to fit tool-call timeouts). A group's own max_turns overrides this.", Min: 1, Max: 50},
 }
 
 var defByKey = func() map[string]Def {
