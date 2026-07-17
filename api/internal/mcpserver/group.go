@@ -186,6 +186,9 @@ func (h *Handler) buildGroupRoster(ctx context.Context, group *models.AgentGroup
 	if !isAdmin {
 		inheritedMap, _ = h.groupRepo.GetAllInheritedPermissions(ctx)
 	}
+	// The MCP surface has no interactive GitHub-connect flow, so an agent that
+	// needs a GitHub token only works if one was forwarded on this request.
+	hasGitHubToken := middleware.GetGitHubTokenFromContext(ctx) != ""
 
 	var roster []orchestrator.AgentBrief
 	agentsByID := make(map[string]*models.Agent)
@@ -195,6 +198,9 @@ func (h *Handler) buildGroupRoster(ctx context.Context, group *models.AgentGroup
 			continue
 		}
 		if !isAdmin && !agents.HasAccessWithInherited(agent, userEmail, userGroups, inheritedMap[agentID]) {
+			continue
+		}
+		if agent.RequireGitHubToken && !hasGitHubToken {
 			continue
 		}
 		roster = append(roster, orchestrator.AgentBrief{
@@ -210,12 +216,19 @@ func (h *Handler) buildGroupRoster(ctx context.Context, group *models.AgentGroup
 // callGroup runs the moderated debate and returns the collected replies as a
 // single markdown text, plus the Agentgram session ID for continuity.
 func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roster []orchestrator.AgentBrief, agentsByID map[string]*models.Agent, question, sessionID, userEmail string, userGroups []string, lfTrace *lf.Trace) (string, string, error) {
-	// Resolve or create the group session
+	// Resolve or create the group session. Personal sessions: a resume must
+	// exist, belong to this group, and be owned by the caller — a transient
+	// error or another user's session must not silently fork a new session.
 	var session *models.Session
 	if sessionID != "" {
-		if s, err := h.sessionStore.GetSession(ctx, sessionID); err == nil && s != nil && s.GroupID == group.ID {
-			session = s
+		s, err := h.sessionStore.GetSession(ctx, sessionID)
+		if err != nil || s == nil {
+			return "", "", fmt.Errorf("session not found")
 		}
+		if s.GroupID != group.ID || s.UserID != userEmail {
+			return "", "", fmt.Errorf("access denied to session")
+		}
+		session = s
 	}
 	if session == nil {
 		s, err := h.sessionStore.CreateSession(ctx, userEmail, roster[0].ID, truncateString(question, 50))
@@ -291,10 +304,11 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 			Messages:  prep.Messages,
 			SessionID: agentSessionID,
 		}, authHeader, proxy.HandleOptions{
-			ThreadID:   session.SessionID,
-			RequestID:  fmt.Sprintf("mcp-group-%s", reqIDSuffix),
-			UserEmail:  userEmail,
-			UserGroups: userGroups,
+			ThreadID:     session.SessionID,
+			RequestID:    fmt.Sprintf("mcp-group-%s", reqIDSuffix),
+			UserEmail:    userEmail,
+			UserGroups:   userGroups,
+			AgentTimeout: h.settings.Duration(appsettings.KeyMCPToolCallTimeout),
 		})
 
 		if agentSpan != nil {
@@ -368,7 +382,10 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 
 	// Optional synthesis when several agents contributed
 	if distinctSpeakers(results) >= 2 {
-		if synthesis, err := h.moderator.Synthesize(callCtx, orchestrator.RenderTranscript(session.Messages)); err == nil && synthesis != "" {
+		synthesis, err := h.moderator.Synthesize(callCtx, orchestrator.RenderTranscript(session.Messages))
+		if err != nil {
+			h.logger.Warn("group synthesis failed", zap.String("group_id", group.ID), zap.Error(err))
+		} else if synthesis != "" {
 			parts = append(parts, fmt.Sprintf("**[Moderator]**\n\n%s", synthesis))
 			modSaveCtx, modSaveCancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer modSaveCancel()

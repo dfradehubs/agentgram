@@ -63,6 +63,6 @@ type Event struct {
 
 // EventActions contains action metadata in an ADK event
 type EventActions struct {
-	StateDelta    map[string]any    `json:"stateDelta,omitempty"`
-	ArtifactDelta map[string]int64  `json:"artifactDelta,omitempty"`
+	StateDelta    map[string]any   `json:"stateDelta,omitempty"`
+	ArtifactDelta map[string]int64 `json:"artifactDelta,omitempty"`
 }

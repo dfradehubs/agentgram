@@ -97,8 +97,11 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 	isAdmin, _ := h.userService.IsAdmin(ctx, userEmail, userGroups)
 
 	// Build the debate roster: group agents the user can access, optionally
-	// restricted by the agent_ids override (@mention semantics).
-	roster, agentsByID := h.buildRoster(ctx, group.AgentIDs, chatReq.AgentIDs, userEmail, userGroups, isAdmin)
+	// restricted by the agent_ids override (@mention semantics). Agents that
+	// require a GitHub token are excluded when the caller has none, so the
+	// moderator never picks an agent that would fail mid-debate.
+	hasGitHubToken := middleware.GetGitHubTokenFromContext(r.Context()) != ""
+	roster, agentsByID := h.buildRoster(ctx, group.AgentIDs, chatReq.AgentIDs, userEmail, userGroups, isAdmin, hasGitHubToken)
 	if len(roster) == 0 {
 		w.Header().Set("Content-Type", "application/json")
 		http.Error(w, `{"error":"no accessible agents in this group"}`, http.StatusForbidden)
@@ -118,7 +121,11 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 	session, err := h.getOrCreateGroupSession(ctx, claims, groupID, rosterIDs, &chatReq)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusForbidden)
+		status := http.StatusForbidden
+		if err == errSessionNotFound {
+			status = http.StatusNotFound
+		}
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), status)
 		return
 	}
 
@@ -318,7 +325,10 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 		h.persistModeratorMessage(session.SessionID, "moderator", noAgentMsg)
 	} else if speakers := distinctSuccessfulSpeakers(results); speakers >= 2 {
 		// Optional synthesis when several agents contributed
-		if synthesis, err := h.moderator.Synthesize(ctx, orchestrator.RenderTranscript(session.Messages)); err == nil && synthesis != "" {
+		synthesis, err := h.moderator.Synthesize(ctx, orchestrator.RenderTranscript(session.Messages))
+		if err != nil {
+			h.logger.Warn("group synthesis failed", zap.String("group_id", groupID), zap.Error(err))
+		} else if synthesis != "" {
 			h.streamModeratorMessage(sse, "moderator", synthesis)
 			h.persistModeratorMessage(session.SessionID, "moderator", synthesis)
 		}
@@ -333,7 +343,7 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 
 // buildRoster returns the accessible agents of the group as moderator briefs
 // plus a lookup map. An optional override list restricts the roster further.
-func (h *ProxyHandler) buildRoster(ctx context.Context, groupAgentIDs, override []string, userEmail string, userGroups []string, isAdmin bool) ([]orchestrator.AgentBrief, map[string]*models.Agent) {
+func (h *ProxyHandler) buildRoster(ctx context.Context, groupAgentIDs, override []string, userEmail string, userGroups []string, isAdmin, hasGitHubToken bool) ([]orchestrator.AgentBrief, map[string]*models.Agent) {
 	overrideSet := make(map[string]bool, len(override))
 	for _, id := range override {
 		overrideSet[id] = true
@@ -357,6 +367,10 @@ func (h *ProxyHandler) buildRoster(ctx context.Context, groupAgentIDs, override 
 		if !isAdmin && !agents.HasAccessWithInherited(agent, userEmail, userGroups, inheritedMap[agentID]) {
 			continue
 		}
+		// Skip agents that need a GitHub token the caller doesn't have.
+		if agent.RequireGitHubToken && !hasGitHubToken {
+			continue
+		}
 		roster = append(roster, orchestrator.AgentBrief{
 			ID:          agent.ID,
 			Name:        agent.Name,
@@ -367,24 +381,30 @@ func (h *ProxyHandler) buildRoster(ctx context.Context, groupAgentIDs, override 
 	return roster, agentsByID
 }
 
-// getOrCreateGroupSession resolves the session for a group chat request:
-// an existing group session (with membership check) or a fresh multi-agent
-// session linked to the group. rosterIDs become the session's AgentIDs so
-// clients recognize it as a multi-agent group session.
+// errSessionNotFound signals a resume request for a session_id that doesn't exist.
+var errSessionNotFound = fmt.Errorf("session not found")
+
+// getOrCreateGroupSession resolves the session for a group chat request.
+// Group sessions are PERSONAL: resuming a session_id requires it to exist,
+// belong to this group, and be owned by the caller — a transient store error
+// or someone else's session must never silently fork a new conversation.
+// Only an empty session_id creates a fresh session.
 func (h *ProxyHandler) getOrCreateGroupSession(ctx context.Context, claims *auth.Claims, groupID string, rosterIDs []string, chatReq *models.ChatRequest) (*models.Session, error) {
 	userEmail := claims.GetEmail()
 
 	if chatReq.SessionID != "" {
 		session, err := h.store.GetSession(ctx, chatReq.SessionID)
-		if err == nil && session != nil {
-			if session.GroupID != groupID {
-				return nil, fmt.Errorf("session does not belong to this group")
-			}
-			if session.UserID != userEmail && !CanAccessGroup(ctx, claims, groupID, h.groupRepo, h.userService) {
-				return nil, fmt.Errorf("access denied")
-			}
-			return session, nil
+		if err != nil || session == nil {
+			return nil, errSessionNotFound
 		}
+		if session.GroupID != groupID {
+			return nil, fmt.Errorf("session does not belong to this group")
+		}
+		// Personal sessions: only the owner may resume, no membership/admin bypass.
+		if session.UserID != userEmail {
+			return nil, fmt.Errorf("access denied")
+		}
+		return session, nil
 	}
 
 	sessionName := chatReq.Messages[len(chatReq.Messages)-1].Content

@@ -320,7 +320,6 @@ func GetMCPToolFromName(toolName string) (serverID, mcpToolName string, ok bool)
 	return parts[0], parts[1], true
 }
 
-
 // marshalResult creates a JSON-RPC success response
 func (s *Server) marshalResult(id json.RawMessage, result interface{}) []byte {
 	resp := jsonRPCResponse{
@@ -386,4 +385,3 @@ func (s *Server) ListAccessibleAgents(userEmail string, userGroups []string) []m
 	}
 	return result
 }
-

@@ -175,8 +175,12 @@ func Validate(key, value string) string {
 			return fmt.Sprintf("%s must be <= %d", key, d.Max)
 		}
 	case TypeDuration:
-		if _, err := time.ParseDuration(value); err != nil {
+		d, err := time.ParseDuration(value)
+		if err != nil {
 			return fmt.Sprintf("%s must be a duration like \"10m\" or \"90s\"", key)
+		}
+		if d <= 0 {
+			return fmt.Sprintf("%s must be a positive duration", key)
 		}
 	}
 	return ""

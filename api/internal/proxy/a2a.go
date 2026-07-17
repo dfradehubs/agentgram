@@ -33,7 +33,7 @@ func NewA2AProxy(logger *zap.Logger) *A2AProxy {
 
 // Handle handles a request to an A2A agent using AG-UI protocol.
 // It sends message/stream to the agent, reads SSE events, and converts them to AG-UI events.
-func (p *A2AProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *models.Agent, chatReq *models.ChatRequest, auth agents.OutboundAuth, requestID string, cfg SSEConfig) (*ProxyResult, error) {
+func (p *A2AProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *models.Agent, chatReq *models.ChatRequest, auth agents.OutboundAuth, requestID string, cfg SSEConfig, agentTimeout time.Duration) (*ProxyResult, error) {
 	// Create SSE writer for AG-UI output
 	sse, err := NewSSEWriter(w)
 	if err != nil {
@@ -72,7 +72,7 @@ func (p *A2AProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *mod
 
 	// Use a detached context for upstream A2A streaming so frontend/client
 	// disconnects do not abort the agent stream mid-run.
-	a2aCtx, a2aCancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	a2aCtx, a2aCancel := context.WithTimeout(context.Background(), agentTimeout)
 	defer a2aCancel()
 
 	// Propagate current trace span into the detached context.

@@ -57,7 +57,7 @@ func NewADKProxy(logger *zap.Logger) *ADKProxy {
 // It sends POST /run_sse to the agent, reads SSE events, and converts them to AG-UI events.
 // If the agent responds with a context-limit summary, it transparently creates a new session
 // and retries the request with the summary as context.
-func (p *ADKProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *models.Agent, chatReq *models.ChatRequest, auth agents.OutboundAuth, requestID string, locale string, cfg SSEConfig) (*ProxyResult, error) {
+func (p *ADKProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *models.Agent, chatReq *models.ChatRequest, auth agents.OutboundAuth, requestID string, locale string, cfg SSEConfig, agentTimeout time.Duration) (*ProxyResult, error) {
 	sse, err := NewSSEWriter(w)
 	if err != nil {
 		return nil, err
@@ -120,7 +120,7 @@ func (p *ADKProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *mod
 	// disconnects mid-stream, the backend can still finish reading the agent
 	// response and persist it. The original ctx is only used to detect client
 	// disconnection for early SSE write abort.
-	adkCtx, adkCancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	adkCtx, adkCancel := context.WithTimeout(context.Background(), agentTimeout)
 	defer adkCancel()
 
 	// Propagate trace span into the detached context

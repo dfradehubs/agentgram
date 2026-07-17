@@ -836,10 +836,11 @@ func (h *Handler) callAgent(ctx context.Context, agent *models.Agent, question s
 	// UserEmail/UserGroups travel as explicit options (not via context):
 	// the proxy call below runs on a detached context.Background().
 	opts := proxy.HandleOptions{
-		ThreadID:   agentgramSessionID,
-		RequestID:  fmt.Sprintf("mcp-%s", reqIDSuffix),
-		UserEmail:  userEmail,
-		UserGroups: userGroups,
+		ThreadID:     agentgramSessionID,
+		RequestID:    fmt.Sprintf("mcp-%s", reqIDSuffix),
+		UserEmail:    userEmail,
+		UserGroups:   userGroups,
+		AgentTimeout: h.settings.Duration(appsettings.KeyMCPToolCallTimeout),
 	}
 
 	// Call the proxy with its own context, independent of the HTTP request.

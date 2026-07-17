@@ -100,6 +100,10 @@ Conversation:
 
 const moderatorMaxTokens = 64
 
+// synthesisMaxTokens bounds the final consolidation. MUST be > 0: several
+// providers (Anthropic, OpenAI) require a positive max_tokens and reject 0.
+const synthesisMaxTokens = 1024
+
 // NextSpeaker asks the LLM who should speak next. Returns done=true when the
 // debate should end (explicit FINISH, empty answer, or an id not in the roster).
 func (m *Moderator) NextSpeaker(ctx context.Context, roster []AgentBrief, transcript string) (string, bool, error) {
@@ -176,7 +180,8 @@ func (m *Moderator) Debate(ctx context.Context, roster []AgentBrief, transcript 
 // contributed. Callers decide whether to invoke it (typically ≥2 speakers).
 func (m *Moderator) Synthesize(ctx context.Context, transcript string) (string, error) {
 	resp, err := m.provider.GenerateContent(ctx, &llm.Request{
-		Messages: []llm.Message{{Role: "user", Content: fmt.Sprintf(synthesisPrompt, transcript)}},
+		Messages:  []llm.Message{{Role: "user", Content: fmt.Sprintf(synthesisPrompt, transcript)}},
+		MaxTokens: synthesisMaxTokens,
 	})
 	if err != nil {
 		return "", fmt.Errorf("moderator synthesis call failed: %w", err)

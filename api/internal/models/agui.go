@@ -45,8 +45,8 @@ type AGUIRunErrorEvent struct {
 type AGUITextMessageStartEvent struct {
 	Type       AGUIEventType `json:"type"`
 	MessageID  string        `json:"messageId"`
-	Role       string        `json:"role"`                // "assistant"
-	AgentID    string        `json:"agentId,omitempty"`   // Which agent is responding (broadcast)
+	Role       string        `json:"role"`                 // "assistant"
+	AgentID    string        `json:"agentId,omitempty"`    // Which agent is responding (broadcast)
 	IsThinking bool          `json:"isThinking,omitempty"` // Marks intermediate thinking steps
 }
 
@@ -55,14 +55,14 @@ type AGUITextMessageContentEvent struct {
 	Type      AGUIEventType `json:"type"`
 	MessageID string        `json:"messageId"`
 	Delta     string        `json:"delta"`
-	AgentID   string        `json:"agentId,omitempty"`   // Which agent is responding (broadcast)
+	AgentID   string        `json:"agentId,omitempty"` // Which agent is responding (broadcast)
 }
 
 // AGUITextMessageEndEvent signals the end of a text message
 type AGUITextMessageEndEvent struct {
 	Type      AGUIEventType `json:"type"`
 	MessageID string        `json:"messageId"`
-	AgentID   string        `json:"agentId,omitempty"`   // Which agent is responding (broadcast)
+	AgentID   string        `json:"agentId,omitempty"` // Which agent is responding (broadcast)
 }
 
 // NewAGUIRunStartedEvent creates a new run started event
@@ -149,9 +149,9 @@ func NewAGUITextMessageEndEventWithAgent(messageID, agentID string) *AGUITextMes
 
 // AGUICustomEvent is a generic custom event
 type AGUICustomEvent struct {
-	Type       AGUIEventType          `json:"type"`
-	SubType    string                 `json:"subType"`
-	Data       map[string]interface{} `json:"data,omitempty"`
+	Type    AGUIEventType          `json:"type"`
+	SubType string                 `json:"subType"`
+	Data    map[string]interface{} `json:"data,omitempty"`
 }
 
 // NewAGUIConversationStepEvent creates a CUSTOM event for conversation step progress

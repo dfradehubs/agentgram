@@ -1104,13 +1104,11 @@ export function useChat({
 
     const retryTargets = targetAgentIds || targetMsg.broadcast_agent_ids;
 
-    // Moderated group retry: mirror handleSend's routing — a single explicit
-    // target goes direct, anything else goes through the debate endpoint
-    // (with the targets as roster override when present).
-    if (groupId && (!retryTargets || retryTargets.length !== 1)) {
-      sendMessage(undefined, undefined, targetMsg.attachments, targetMsg.content, messagesBeforeRetry, {
-        agentIds: retryTargets && retryTargets.length > 0 ? retryTargets : undefined,
-      });
+    // Moderated group retry: always go through the debate endpoint (never a
+    // direct single-agent send), so moderation + synthesis + session semantics
+    // match the original send. The moderator re-decides who answers.
+    if (groupId) {
+      sendMessage(undefined, undefined, targetMsg.attachments, targetMsg.content, messagesBeforeRetry, {});
       return;
     }
 

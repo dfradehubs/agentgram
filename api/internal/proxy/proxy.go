@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/dfradehubs/agentgram-api/internal/agents"
 	"github.com/dfradehubs/agentgram-api/internal/models"
@@ -96,6 +97,18 @@ type HandleOptions struct {
 	OnEvent           func(event interface{}) // Called for each AG-UI event (for Pub/Sub broadcast)
 	AgentID           string                  // Tag all stream events with this agent id (group debates)
 	SuppressLifecycle bool                    // Skip this call's RUN_STARTED/RUN_FINISHED (outer run owns the lifecycle)
+	AgentTimeout      time.Duration           // Max time to wait for the agent response; 0 = default (10m)
+}
+
+// defaultAgentTimeout bounds an agent call when the caller sets no AgentTimeout.
+const defaultAgentTimeout = 10 * time.Minute
+
+// resolveAgentTimeout returns the effective agent timeout for a call.
+func resolveAgentTimeout(d time.Duration) time.Duration {
+	if d > 0 {
+		return d
+	}
+	return defaultAgentTimeout
 }
 
 // Handle handles a request and routes it to the corresponding protocol.
@@ -125,19 +138,21 @@ func (p *Proxy) Handle(ctx context.Context, w http.ResponseWriter, agent *models
 		OnEvent:           opts.OnEvent,
 	}
 
+	agentTimeout := resolveAgentTimeout(opts.AgentTimeout)
+
 	switch agent.Protocol {
 	case "custom":
 		body, err := FormatRequestBody(agent, chatReq)
 		if err != nil {
 			return nil, err
 		}
-		return p.restProxy.Handle(ctx, w, agent, body, auth, opts.RequestID, sseCfg)
+		return p.restProxy.Handle(ctx, w, agent, body, auth, opts.RequestID, sseCfg, agentTimeout)
 
 	case "a2a":
-		return p.a2aProxy.Handle(ctx, w, agent, chatReq, auth, opts.RequestID, sseCfg)
+		return p.a2aProxy.Handle(ctx, w, agent, chatReq, auth, opts.RequestID, sseCfg, agentTimeout)
 
 	case "adk":
-		return p.adkProxy.Handle(ctx, w, agent, chatReq, auth, opts.RequestID, opts.Locale, sseCfg)
+		return p.adkProxy.Handle(ctx, w, agent, chatReq, auth, opts.RequestID, opts.Locale, sseCfg, agentTimeout)
 
 	default:
 		return nil, fmt.Errorf("unknown protocol: %s", agent.Protocol)

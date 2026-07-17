@@ -291,3 +291,31 @@ func TestGroupExistsGuard(t *testing.T) {
 		t.Error("nonexistent group reported as existing")
 	}
 }
+
+// Use case (CRITICAL): callGroup rejects resuming a session owned by another
+// user, even within an accessible group.
+func TestCallGroupCrossUserSessionDenied(t *testing.T) {
+	h, group := newGroupTestHandler(t, http.StatusOK, "agent-a", "FINISH")
+	roster, agentsByID := h.buildGroupRoster(context.Background(), group, "user@example.com", nil)
+
+	// Seed a session owned by someone else in this group.
+	other, _ := h.sessionStore.CreateSession(context.Background(), "someone-else@example.com", "agent-a", "seed")
+	other.GroupID = group.ID
+	_ = h.sessionStore.SaveSession(context.Background(), other)
+
+	_, _, err := h.callGroup(context.Background(), group, roster, agentsByID, "leak?", other.SessionID, "user@example.com", nil, nil)
+	if err == nil {
+		t.Fatal("expected access denied resuming another user's session")
+	}
+}
+
+// Use case (HIGH): an unknown session_id errors instead of forking a session.
+func TestCallGroupUnknownSession(t *testing.T) {
+	h, group := newGroupTestHandler(t, http.StatusOK, "agent-a", "FINISH")
+	roster, agentsByID := h.buildGroupRoster(context.Background(), group, "user@example.com", nil)
+
+	_, _, err := h.callGroup(context.Background(), group, roster, agentsByID, "hi", "does-not-exist", "user@example.com", nil, nil)
+	if err == nil {
+		t.Fatal("expected error for unknown session_id")
+	}
+}

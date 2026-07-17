@@ -34,7 +34,7 @@ func NewRESTProxy(logger *zap.Logger) *RESTProxy {
 }
 
 // Handle handles a request to a REST agent using AG-UI protocol
-func (p *RESTProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *models.Agent, body io.Reader, auth agents.OutboundAuth, requestID string, cfg SSEConfig) (*ProxyResult, error) {
+func (p *RESTProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *models.Agent, body io.Reader, auth agents.OutboundAuth, requestID string, cfg SSEConfig, agentTimeout time.Duration) (*ProxyResult, error) {
 	// Create SSE writer
 	sse, err := NewSSEWriter(w)
 	if err != nil {
@@ -49,8 +49,8 @@ func (p *RESTProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *mo
 
 	// Use a separate context for the agent request so the stream continues
 	// even if the client disconnects. This lets us capture the full response
-	// for session persistence.
-	agentCtx, agentCancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	// for session persistence. Bounded by the (configurable) agent timeout.
+	agentCtx, agentCancel := context.WithTimeout(context.Background(), agentTimeout)
 	defer agentCancel()
 
 	// Propagate trace span into the detached context so child spans remain

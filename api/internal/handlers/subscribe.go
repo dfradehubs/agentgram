@@ -124,4 +124,3 @@ func (h *SubscribeHandler) Subscribe(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
-

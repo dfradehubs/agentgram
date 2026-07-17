@@ -74,12 +74,12 @@ type ServerConfig struct {
 
 // MCPServerConfig holds configuration for the MCP server endpoint
 type MCPServerConfig struct {
-	Enabled           bool          `yaml:"enabled"`
-	Issuer            string        `yaml:"issuer"`               // Independent Keycloak issuer for MCP server. Defaults to Auth.Keycloak.Issuer
-	ClientID          string        `yaml:"client_id"`            // Keycloak client ID for MCP clients (e.g. "agentgram-mcp")
-	DCRMode           string        `yaml:"dcr_mode"`             // Dynamic Client Registration mode: "static" (canned response), "upstream" (Keycloak DCR), or "disabled"
-	ExtraScopes       []string      `yaml:"extra_scopes"`         // Extra OAuth scopes advertised to MCP clients on top of the required base set. Typically a Keycloak client scope with an audience mapper (e.g. "mcp:custom-audience") so strict clients like Claude get a token whose aud the upstream agent accepts.
-	StaticTokens      []StaticToken `yaml:"static_tokens"`        // Service-account tokens that bypass Keycloak (e.g. internal automation)
+	Enabled      bool          `yaml:"enabled"`
+	Issuer       string        `yaml:"issuer"`        // Independent Keycloak issuer for MCP server. Defaults to Auth.Keycloak.Issuer
+	ClientID     string        `yaml:"client_id"`     // Keycloak client ID for MCP clients (e.g. "agentgram-mcp")
+	DCRMode      string        `yaml:"dcr_mode"`      // Dynamic Client Registration mode: "static" (canned response), "upstream" (Keycloak DCR), or "disabled"
+	ExtraScopes  []string      `yaml:"extra_scopes"`  // Extra OAuth scopes advertised to MCP clients on top of the required base set. Typically a Keycloak client scope with an audience mapper (e.g. "mcp:custom-audience") so strict clients like Claude get a token whose aud the upstream agent accepts.
+	StaticTokens []StaticToken `yaml:"static_tokens"` // Service-account tokens that bypass Keycloak (e.g. internal automation)
 	// NOTE: tool-call timeout and max tool-call rounds are runtime settings now
 	// (admin → General Configuration), not YAML — see internal/settings.
 }

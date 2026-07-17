@@ -49,11 +49,13 @@ const RUN_RECOVERY_POLL_MS = 1500;
 const RUN_RECOVERY_MAX_POLLS = 40; // ~60s before falling back to a re-send
 
 // extractMentions returns the roster agent IDs @mentioned in the text.
-// Case-insensitive and tolerant of trailing punctuation (e.g. "@Logs-Agent,").
+// Case-insensitive and tolerant of trailing punctuation: agent IDs are slugs
+// ([a-z0-9_-]), so "." / "," after the mention (e.g. "@logs-agent.") is not
+// captured as part of the ID and the mention still matches.
 function extractMentions(text: string, roster: string[]): string[] {
   const rosterLower = new Map(roster.map((id) => [id.toLowerCase(), id]));
   const found = new Set<string>();
-  for (const m of text.matchAll(/@([a-z0-9._-]+)/gi)) {
+  for (const m of text.matchAll(/@([a-z0-9_-]+)/gi)) {
     const id = rosterLower.get(m[1].toLowerCase());
     if (id) found.add(id);
   }

@@ -20,7 +20,7 @@ var ErrGitHubTokenExpired = errors.New("github token expired or revoked")
 type GitHubTokenResponse struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
-	ExpiresIn    int    `json:"expires_in"`    // seconds (0 = no expiration)
+	ExpiresIn    int    `json:"expires_in"` // seconds (0 = no expiration)
 }
 
 // GitHubOAuthClient handles GitHub OAuth operations

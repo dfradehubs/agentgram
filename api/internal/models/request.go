@@ -12,7 +12,7 @@ type ChatRequest struct {
 
 // ChatMessage represents a message in the conversation
 type ChatMessage struct {
-	Role              string             `json:"role"`                          // "user" | "assistant" | "system"
+	Role              string             `json:"role"` // "user" | "assistant" | "system"
 	Content           string             `json:"content"`
 	AgentID           string             `json:"agent_id,omitempty"`            // Which agent sent/received this message (multi-agent sessions)
 	UserName          string             `json:"user_name,omitempty"`           // Display name of the user who sent this message
@@ -28,10 +28,10 @@ type ChatMessage struct {
 
 // ContentPart represents an ordered segment of an assistant message
 type ContentPart struct {
-	Type      string                 `json:"type"`                  // "text", "tool_use", or "chart"
-	Text      string                 `json:"text,omitempty"`        // Text content (for type="text")
-	ToolIndex *int                   `json:"tool_index,omitempty"`  // Index into ToolCalls (for type="tool_use"); pointer so 0 is not omitted
-	Chart     map[string]interface{} `json:"chart,omitempty"`       // Chart data (for type="chart")
+	Type      string                 `json:"type"`                 // "text", "tool_use", or "chart"
+	Text      string                 `json:"text,omitempty"`       // Text content (for type="text")
+	ToolIndex *int                   `json:"tool_index,omitempty"` // Index into ToolCalls (for type="tool_use"); pointer so 0 is not omitted
+	Chart     map[string]interface{} `json:"chart,omitempty"`      // Chart data (for type="chart")
 }
 
 // StoredToolCall represents a tool call stored in session history

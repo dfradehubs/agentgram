@@ -677,4 +677,3 @@ func (s *RedisSessionStore) HasActiveRun(ctx context.Context, sessionID string) 
 	n, err := s.rdb.Exists(ctx, ActiveRunKey(sessionID)).Result()
 	return err == nil && n > 0
 }
-

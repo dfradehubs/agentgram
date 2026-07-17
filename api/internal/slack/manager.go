@@ -26,26 +26,26 @@ const syncInterval = 60 * time.Second
 // BotManager orchestrates the lifecycle of multiple Slack bots (one per agent).
 // All pods run all bots; event dedup via Redis prevents duplicate processing.
 type BotManager struct {
-	bots       map[string]*Bot
-	mu         sync.RWMutex
-	rdb        *redis.Client
-	instanceID string
-	slackRepo  repository.SlackIntegrationRepository
-	linkRepo   repository.SlackUserLinkRepository
-	registry   *agents.Registry
-	groupRepo  repository.GroupRepository
-	sessionStore store.SessionStore
-	proxyInst  *proxy.Proxy
-	oidcClient   *auth.OIDCClient
-	githubClient *auth.GitHubOAuthClient
-	cipher       *crypto.AESCrypto
-	summarizer *summarizer.Summarizer
+	bots          map[string]*Bot
+	mu            sync.RWMutex
+	rdb           *redis.Client
+	instanceID    string
+	slackRepo     repository.SlackIntegrationRepository
+	linkRepo      repository.SlackUserLinkRepository
+	registry      *agents.Registry
+	groupRepo     repository.GroupRepository
+	sessionStore  store.SessionStore
+	proxyInst     *proxy.Proxy
+	oidcClient    *auth.OIDCClient
+	githubClient  *auth.GitHubOAuthClient
+	cipher        *crypto.AESCrypto
+	summarizer    *summarizer.Summarizer
 	lfTracer      *lf.Tracer
 	chatEventRepo repository.ChatEventRepository
 	hostURL       string
-	logger     *zap.Logger
-	stopCh     chan struct{}
-	stopped    chan struct{}
+	logger        *zap.Logger
+	stopCh        chan struct{}
+	stopped       chan struct{}
 }
 
 // NewBotManager creates a new BotManager.
@@ -67,25 +67,25 @@ func NewBotManager(
 	logger *zap.Logger,
 ) *BotManager {
 	return &BotManager{
-		bots:         make(map[string]*Bot),
-		rdb:          rdb,
-		instanceID:   uuid.New().String(),
-		slackRepo:    slackRepo,
-		linkRepo:     linkRepo,
-		registry:     registry,
-		groupRepo:    groupRepo,
-		sessionStore: sessionStore,
-		proxyInst:    proxyInst,
+		bots:          make(map[string]*Bot),
+		rdb:           rdb,
+		instanceID:    uuid.New().String(),
+		slackRepo:     slackRepo,
+		linkRepo:      linkRepo,
+		registry:      registry,
+		groupRepo:     groupRepo,
+		sessionStore:  sessionStore,
+		proxyInst:     proxyInst,
 		oidcClient:    oidcClient,
 		githubClient:  githubClient,
 		cipher:        cipher,
-		summarizer:   sum,
+		summarizer:    sum,
 		lfTracer:      lfTracer,
 		chatEventRepo: chatEventRepo,
 		hostURL:       hostURL,
-		logger:       logger.Named("slack-manager"),
-		stopCh:       make(chan struct{}),
-		stopped:      make(chan struct{}),
+		logger:        logger.Named("slack-manager"),
+		stopCh:        make(chan struct{}),
+		stopped:       make(chan struct{}),
 	}
 }
 
@@ -350,4 +350,3 @@ func (m *BotManager) reprocessListener() {
 		}
 	}
 }
-

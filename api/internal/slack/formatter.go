@@ -9,10 +9,10 @@ import (
 type Formatter struct{}
 
 var (
-	reHeaders      = regexp.MustCompile(`(?m)^#{1,6}\s+(.+)$`)
-	reBold         = regexp.MustCompile(`\*\*(.+?)\*\*`)
-	reTableSep     = regexp.MustCompile(`(?m)^\|[-:\s|]+\|$`)
-	reExcessNL     = regexp.MustCompile(`\n{3,}`)
+	reHeaders       = regexp.MustCompile(`(?m)^#{1,6}\s+(.+)$`)
+	reBold          = regexp.MustCompile(`\*\*(.+?)\*\*`)
+	reTableSep      = regexp.MustCompile(`(?m)^\|[-:\s|]+\|$`)
+	reExcessNL      = regexp.MustCompile(`\n{3,}`)
 	reCodeBlockLang = regexp.MustCompile("(?m)^```\\w*\\s*$")
 )
 

@@ -32,14 +32,16 @@ import (
 
 // scriptedProvider returns moderator responses in order, then FINISH.
 type scriptedProvider struct {
-	mu        sync.Mutex
-	responses []string
-	prompts   []string
+	mu            sync.Mutex
+	responses     []string
+	prompts       []string
+	lastMaxTokens int
 }
 
 func (f *scriptedProvider) GenerateContent(_ context.Context, req *llm.Request) (*llm.Response, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.lastMaxTokens = req.MaxTokens
 	if len(req.Messages) > 0 {
 		if s, ok := req.Messages[len(req.Messages)-1].Content.(string); ok {
 			f.prompts = append(f.prompts, s)
@@ -252,14 +254,27 @@ func newGroupChatFixture(t *testing.T, agentAStatus, agentBStatus int, moderator
 }
 
 func (fx *groupChatFixture) post(t *testing.T, groupID string, body string) *httptest.ResponseRecorder {
+	return fx.postAs(t, testUserEmail, groupID, body)
+}
+
+func (fx *groupChatFixture) postAs(t *testing.T, email, groupID, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest("POST", "/api/groups/"+groupID+"/chat", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	claims := &auth.Claims{Email: testUserEmail}
+	claims := &auth.Claims{Email: email}
 	req = req.WithContext(context.WithValue(req.Context(), middleware.UserContextKey, claims))
 	rec := httptest.NewRecorder()
 	fx.router.ServeHTTP(rec, req)
 	return rec
+}
+
+// seedGroupSession inserts a group session owned by ownerEmail.
+func (fx *groupChatFixture) seedGroupSession(ownerEmail, groupID string) string {
+	s, _ := fx.store.CreateSession(context.Background(), ownerEmail, "agent-a", "seed")
+	s.IsMultiAgent = true
+	s.GroupID = groupID
+	_ = fx.store.SaveSession(context.Background(), s)
+	return s.SessionID
 }
 
 // parseSSEEvents extracts the JSON events from an SSE body.
@@ -530,5 +545,57 @@ func TestGroupChatSessionGroupMismatch(t *testing.T) {
 	rec := fx.post(t, "g1", fmt.Sprintf(`{"messages":[{"role":"user","content":"hi"}],"session_id":"%s"}`, s.SessionID))
 	if rec.Code != http.StatusForbidden {
 		t.Errorf("status = %d, want 403 (session belongs to another group)", rec.Code)
+	}
+}
+
+// Use case (CRITICAL): a group member cannot resume another member's personal
+// session even though both can access the group.
+func TestGroupChatCrossUserSessionDenied(t *testing.T) {
+	fx := newGroupChatFixture(t, http.StatusOK, http.StatusOK, "agent-a", "FINISH")
+
+	// A session owned by someone else, in the same accessible group.
+	otherSession := fx.seedGroupSession("someone-else@example.com", "g1")
+
+	rec := fx.postAs(t, testUserEmail, "g1",
+		fmt.Sprintf(`{"messages":[{"role":"user","content":"leak?"}],"session_id":"%s"}`, otherSession))
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want 403 (cannot resume another user's session)", rec.Code)
+	}
+	// And the debate must not have run against that session.
+	msgs := fx.store.messages(otherSession)
+	for _, m := range msgs {
+		if m.Content == "leak?" {
+			t.Error("attacker's message was appended to another user's session")
+		}
+	}
+}
+
+// Use case (HIGH): an unknown session_id is a 404, never a silently forked session.
+func TestGroupChatUnknownSessionNotFound(t *testing.T) {
+	fx := newGroupChatFixture(t, http.StatusOK, http.StatusOK, "agent-a", "FINISH")
+
+	rec := fx.post(t, "g1", `{"messages":[{"role":"user","content":"hi"}],"session_id":"11111111-1111-1111-1111-111111111111"}`)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404 (unknown session_id)", rec.Code)
+	}
+	// No new session should have been created as a side effect.
+	if len(fx.store.order) != 0 {
+		t.Errorf("a session was created for an unknown session_id (%d sessions)", len(fx.store.order))
+	}
+}
+
+// Use case (HIGH): the synthesis LLM call carries a positive MaxTokens so
+// providers that reject max_tokens:0 don't fail.
+func TestGroupChatSynthesisMaxTokens(t *testing.T) {
+	fx := newGroupChatFixture(t, http.StatusOK, http.StatusOK,
+		"agent-a", "agent-b", "FINISH", "the synthesis")
+
+	rec := fx.post(t, "g1", `{"messages":[{"role":"user","content":"both please"}]}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	// The synthesis prompt is the last moderator call; it must set MaxTokens > 0.
+	if got := fx.provider.lastMaxTokens; got <= 0 {
+		t.Errorf("synthesis MaxTokens = %d, want > 0", got)
 	}
 }

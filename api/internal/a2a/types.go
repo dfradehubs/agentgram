@@ -4,10 +4,10 @@ package a2a
 
 // Part represents a part of a message (standard A2A uses "kind" discriminator)
 type Part struct {
-	Kind     string         `json:"kind"`               // "text", "file", "data"
+	Kind     string         `json:"kind"` // "text", "file", "data"
 	Text     string         `json:"text,omitempty"`
-	File     *FileContent   `json:"file,omitempty"`     // For kind: "file"
-	Data     map[string]any `json:"data,omitempty"`     // For kind: "data" (structured data)
+	File     *FileContent   `json:"file,omitempty"` // For kind: "file"
+	Data     map[string]any `json:"data,omitempty"` // For kind: "data" (structured data)
 	Metadata map[string]any `json:"metadata,omitempty"`
 }
 
@@ -15,8 +15,8 @@ type Part struct {
 type FileContent struct {
 	Name     string `json:"name,omitempty"`
 	MimeType string `json:"mimeType,omitempty"`
-	Bytes    string `json:"bytes,omitempty"`    // Base64-encoded content
-	URI      string `json:"uri,omitempty"`      // URI reference
+	Bytes    string `json:"bytes,omitempty"` // Base64-encoded content
+	URI      string `json:"uri,omitempty"`   // URI reference
 }
 
 // IsThought returns true if this part is marked as a thinking/reasoning step.
@@ -86,7 +86,7 @@ type StreamingEvent struct {
 	// Fields for status-update
 	TaskID    string      `json:"taskId,omitempty"`
 	Status    *TaskStatus `json:"status,omitempty"`
-	ContextID string     `json:"contextId,omitempty"`
+	ContextID string      `json:"contextId,omitempty"`
 	Final     bool        `json:"final,omitempty"`
 
 	// Fields for artifact-update

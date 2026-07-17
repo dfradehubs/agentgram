@@ -38,9 +38,9 @@ type AuthSessionStore interface {
 
 // RedisAuthSessionStore implements AuthSessionStore using Redis
 type RedisAuthSessionStore struct {
-	rdb       *redis.Client
-	maxAge    time.Duration
-	logger    *zap.Logger
+	rdb    *redis.Client
+	maxAge time.Duration
+	logger *zap.Logger
 }
 
 // NewRedisAuthSessionStore creates a new Redis-backed auth session store

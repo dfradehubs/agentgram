@@ -62,8 +62,8 @@ type LoopParams struct {
 	Tools             []Tool
 	Messages          []LLMMessage // Already converted to LLM format
 	Handler           ToolHandler
-	Parallel          bool         // Execute tool calls in parallel (true) or sequentially (false)
-	MaxToolCallRounds int          // Max LLM ↔ tool iterations. 0 uses DefaultMaxToolCallRounds.
+	Parallel          bool // Execute tool calls in parallel (true) or sequentially (false)
+	MaxToolCallRounds int  // Max LLM ↔ tool iterations. 0 uses DefaultMaxToolCallRounds.
 	Logger            *zap.Logger
 
 	// OnStart is called after RUN_STARTED is emitted and before the tool loop begins.
