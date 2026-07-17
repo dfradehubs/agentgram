@@ -56,7 +56,12 @@ func (p *openaiProvider) GenerateContent(ctx context.Context, req *Request) (*Re
 		return nil, err
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", "https://api.openai.com/v1/chat/completions", bytes.NewReader(jsonBody))
+	// Custom endpoint supports OpenAI-compatible servers (Ollama, LiteLLM, gateways, mocks)
+	endpoint := p.model.Endpoint
+	if endpoint == "" {
+		endpoint = "https://api.openai.com/v1/chat/completions"
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(jsonBody))
 	if err != nil {
 		return nil, err
 	}

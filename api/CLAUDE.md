@@ -113,6 +113,23 @@ Event types:
 - `TOOL_CALL_START` / `TOOL_CALL_ARGS` / `TOOL_CALL_END` - Tool call lifecycle
 - `CUSTOM` - Custom event passthrough
 
+## Group Debates (moderated multi-agent)
+
+`POST /api/groups/{groupId}/chat` runs a **moderated debate**: an LLM moderator
+(LLM model with role `moderator`, wired like the summarizer) picks which agents
+of the group speak, in sequence, each seeing prior turns via the existing
+multi-agent context delta (`proxy.PrepareMessagesForMultiAgent`). Key pieces:
+
+- **`orchestrator/`**: `Moderator.NextSpeaker` (LLM pick or FINISH) + `Debate`
+  loop (cap `maxTurns`, failed turns don't abort) + optional `Synthesize`.
+  Surface-agnostic via an injected `TurnRunner`.
+- **SSE surface** (`handlers/group_chat.go`): one outer `RUN_STARTED`/`RUN_FINISHED`;
+  per-turn lifecycle suppressed via `HandleOptions.SuppressLifecycle`; all
+  `TEXT_MESSAGE_*`/`TOOL_CALL_START` events tagged with `agentId` via
+  `HandleOptions.AgentID`. Optional `agent_ids` in the body restricts the roster.
+- **MCP surface** (`mcpserver/group.go`): tool `ask_group_<groupId>` (synchronous,
+  lower cap, progress notifications), collected replies as one markdown result.
+
 ## Sessions API
 
 Sessions are managed by the API and stored in Redis via `store.SessionStore`. The `SessionsHandler` in `handlers/sessions.go` reads/writes directly to Redis:
@@ -127,8 +144,23 @@ DELETE /api/agents/{agentId}/sessions/{sessionId}  # Delete session from Redis
 ## Test Environment
 
 `docker/docker-compose.yml` runs:
-- API (:8080) with `configs/config.dev.yaml` (auth disabled)
-- Mock agent (:9000) - supports REST SSE, A2A JSON-RPC, and Sessions API
+- API (:8080) with `configs/config.dev.yaml` (auth disabled; includes a dev-only
+  MCP static token `dev-token` so the MCP facade is testable without Keycloak)
+- Mock agent (:9000) - supports REST SSE, A2A JSON-RPC, Sessions API, and an
+  **OpenAI-compatible mock LLM** at `/v1/chat/completions` that plays the
+  group-debate moderator deterministically
 - Redis (:6379) - session storage + pub/sub
 - PostgreSQL (:5432) - groups + persistent data
 - Test frontend (:3001)
+
+To test **group debates** end-to-end without a real LLM key, register the mock
+as the moderator (LLM models support an optional custom `endpoint` for
+OpenAI-compatible servers — Ollama, LiteLLM, gateways, mocks):
+
+```bash
+curl -X POST localhost:8080/api/admin/llm -H 'Content-Type: application/json' -d '{
+  "id":"mock-moderator","name":"Mock Moderator","provider":"openai","model":"mock-gpt",
+  "api_key":"mock-key","endpoint":"http://mock-agent:9000/v1/chat/completions",
+  "role":"moderator","enabled":true}'
+# restart the API (the moderator is wired at startup, like the summarizer)
+```

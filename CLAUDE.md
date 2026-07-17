@@ -89,6 +89,18 @@ data: {"type":"RUN_FINISHED","threadId":"...","runId":"..."}
 
 Event types: `RUN_STARTED`, `RUN_FINISHED`, `RUN_ERROR`, `TEXT_MESSAGE_START`, `TEXT_MESSAGE_CONTENT`, `TEXT_MESSAGE_END`, `TOOL_CALL_START`, `TOOL_CALL_ARGS`, `TOOL_CALL_END`, `CUSTOM`
 
+### Group Debate Endpoint (moderated multi-agent)
+
+```
+POST /api/groups/{groupId}/chat
+{ "messages": [...], "session_id": "optional", "agent_ids": ["optional", "roster", "override"] }
+```
+
+An LLM moderator (admin: LLM model with role `moderator`) decides which agents of
+the group respond, in sequence — each sees the previous agents' replies. Single
+SSE stream: one `RUN_STARTED`/`RUN_FINISHED` pair, `TEXT_MESSAGE_*` events tagged
+per agent via `agentId`. Also exposed via MCP as the `ask_group_<groupId>` tool.
+
 ### Sessions API (Stored in Redis)
 
 ```

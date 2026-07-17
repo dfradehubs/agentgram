@@ -1,5 +1,24 @@
 basePath: /
 definitions:
+  github_com_dfradehubs_agentgram-api_internal_models.AgentAPIKeyRule:
+    properties:
+      agent_id:
+        type: string
+      api_key:
+        type: string
+      id:
+        type: string
+      priority:
+        description: |-
+          Priority orders group rules: lower is evaluated first (ASC). A user-exact
+          rule always wins over group rules regardless of priority.
+        type: integer
+      subject:
+        type: string
+      subject_type:
+        description: '"user" | "group"'
+        type: string
+    type: object
   github_com_dfradehubs_agentgram-api_internal_models.AgentListResponse:
     properties:
       agents:
@@ -59,6 +78,9 @@ definitions:
       is_admin:
         description: Whether the user who sent this message is an admin
         type: boolean
+      is_error:
+        description: Whether this message represents an error response
+        type: boolean
       role:
         description: '"user" | "assistant" | "system"'
         type: string
@@ -81,6 +103,12 @@ definitions:
     type: object
   github_com_dfradehubs_agentgram-api_internal_models.ChatRequest:
     properties:
+      agent_ids:
+        description: 'Group chat only: restrict the debate roster to these agents
+          (@mention)'
+        items:
+          type: string
+        type: array
       group_id:
         type: string
       messages:
@@ -94,6 +122,10 @@ definitions:
     type: object
   github_com_dfradehubs_agentgram-api_internal_models.ContentPart:
     properties:
+      chart:
+        additionalProperties: true
+        description: Chart data (for type="chart")
+        type: object
       text:
         description: Text content (for type="text")
         type: string
@@ -102,7 +134,18 @@ definitions:
           omitted
         type: integer
       type:
-        description: '"text" or "tool_use"'
+        description: '"text", "tool_use", or "chart"'
+        type: string
+    type: object
+  github_com_dfradehubs_agentgram-api_internal_models.CustomFormatConfig:
+    properties:
+      request_content_type:
+        type: string
+      request_method:
+        type: string
+      request_template:
+        type: string
+      response_content_path:
         type: string
     type: object
   github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse:
@@ -167,6 +210,9 @@ definitions:
     type: object
   github_com_dfradehubs_agentgram-api_internal_models.Session:
     properties:
+      active_run:
+        description: True when a run is in flight (ephemeral, resolved at read time)
+        type: boolean
       agent_ids:
         description: Participating agents
         items:
@@ -196,6 +242,12 @@ definitions:
       session_id:
         type: string
       session_name:
+        type: string
+      slack_thread_id:
+        description: For syncing sibling sessions in same thread
+        type: string
+      source:
+        description: 'Origin: "slack" or "" (web)'
         type: string
       user_id:
         type: string
@@ -262,8 +314,25 @@ definitions:
         items:
           type: string
         type: array
+      api_key_rules:
+        items:
+          $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.AgentAPIKeyRule'
+        type: array
+      auth_header_name:
+        type: string
+      auth_type:
+        description: |-
+          Outbound auth. AuthType: "" | "none" | "forward" | "bearer" ("oauth2"
+          is reserved and rejected). Empty keeps the legacy ForwardAuthorization
+          semantics. APIKeyRules nil means "leave existing rules untouched" so
+          older API clients don't wipe them on update.
+        type: string
+      bearer_token:
+        type: string
       category:
         type: string
+      custom_format:
+        $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.CustomFormatConfig'
       description:
         type: string
       endpoint:
@@ -278,6 +347,8 @@ definitions:
         $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.HealthCheckConfig'
       id:
         type: string
+      max_context_tokens:
+        type: integer
       name:
         type: string
       pipeline_final_agent:
@@ -290,6 +361,8 @@ definitions:
         $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.RateLimitConfig'
       require_github_token:
         type: boolean
+      summarize_threshold:
+        type: number
     type: object
   internal_handlers.AdminAgentResponse:
     properties:
@@ -307,8 +380,20 @@ definitions:
         items:
           type: string
         type: array
+      api_key_rules:
+        items:
+          $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.AgentAPIKeyRule'
+        type: array
+      auth_header_name:
+        type: string
+      auth_type:
+        type: string
+      bearer_token:
+        type: string
       category:
         type: string
+      custom_format:
+        $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.CustomFormatConfig'
       description:
         type: string
       endpoint:
@@ -325,6 +410,8 @@ definitions:
         type: string
       inherited_permissions:
         $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.InheritedPerms'
+      max_context_tokens:
+        type: integer
       name:
         type: string
       pipeline_final_agent:
@@ -339,6 +426,8 @@ definitions:
         type: boolean
       status:
         type: string
+      summarize_threshold:
+        type: number
     type: object
   internal_handlers.FeatureFlags:
     properties:
@@ -382,7 +471,7 @@ info:
   description: Multiplexer API for AI agents with AG-UI protocol. Connects to remote
     agents, handles authentication, permissions, and emits AG-UI SSE events.
   title: Agentgram API
-  version: "0.1.0"
+  version: 0.1.0
 paths:
   /api/admin/agents:
     get:
@@ -909,6 +998,58 @@ paths:
       summary: Rename a session
       tags:
       - sessions
+  /api/agents/{agentId}/sessions/{sessionId}/charts:
+    post:
+      consumes:
+      - application/json
+      description: Persists extracted chart data as content_parts on the last assistant
+        message in the session
+      parameters:
+      - description: Agent ID
+        in: path
+        name: agentId
+        required: true
+        type: string
+      - description: Session ID (UUID)
+        in: path
+        name: sessionId
+        required: true
+        type: string
+      - description: Charts payload
+        in: body
+        name: request
+        required: true
+        schema:
+          type: object
+      responses:
+        "204":
+          description: Charts appended
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      - CookieAuth: []
+      summary: Append charts to the last assistant message
+      tags:
+      - sessions
   /api/config:
     get:
       description: Returns feature flags and available LLM models (without API keys)
@@ -925,6 +1066,61 @@ paths:
       summary: Get public configuration
       tags:
       - config
+  /api/groups/{groupId}/chat:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Sends a message to a group. An LLM moderator picks which agents respond,
+        in sequence, each seeing the previous agents' replies. The response is a single
+        SSE stream (one RUN_STARTED/RUN_FINISHED pair) with TEXT_MESSAGE_* events tagged
+        per agent via the agentId field.
+      parameters:
+      - description: Group ID
+        in: path
+        name: groupId
+        required: true
+        type: string
+      - description: Chat request with messages, optional session_id and optional
+          agent_ids roster override
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ChatRequest'
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: SSE stream with AG-UI events
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      - CookieAuth: []
+      summary: Chat with an agent group (moderated debate)
+      tags:
+      - chat
   /api/me:
     get:
       description: Returns the authenticated user's email, groups, and admin status

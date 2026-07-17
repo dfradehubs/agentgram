@@ -50,6 +50,11 @@ func main() {
 	mux.HandleFunc("/api/sessions", handleSessions)
 	mux.HandleFunc("/api/sessions/", handleSessionByID)
 
+	// OpenAI-compatible chat completions (mock LLM for the group-debate
+	// moderator: point an LLM model with role "moderator", provider "openai"
+	// and endpoint http://mock-agent:9000/v1/chat/completions at this)
+	mux.HandleFunc("/v1/chat/completions", handleOpenAICompletions)
+
 	// A2A endpoints
 	mux.HandleFunc("/.well-known/agent-card.json", handleAgentCard)
 	mux.HandleFunc("/", handleA2AJSONRPC)

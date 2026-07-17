@@ -46,9 +46,9 @@ layout: hextra-home
     subtitle="Conversation history per agent, stored in Redis and managed by the API. Agents stay stateless."
   >}}
   {{< hextra/feature-card
-    title="Multi-agent chats"
+    title="Moderated multi-agent debates"
     icon="user-group"
-    subtitle="Talk to several agents in one thread and propagate context between them."
+    subtitle="Message a group like a Telegram chat: an LLM moderator picks who answers, agents build on each other's replies, and you get the consolidated result."
   >}}
   {{< hextra/feature-card
     title="Share & collaborate"
@@ -204,6 +204,11 @@ data: {"type":"RUN_FINISHED","threadId":"…","runId":"…"}
     <div class="ag-card-icon">🚨</div>
     <div class="ag-card-title">Incident response</div>
     <p class="ag-card-text">Bundle logs, metrics and Kubernetes agents into a shared group and triage an outage together — everyone sees the same thread.</p>
+  </div>
+  <div class="ag-card">
+    <div class="ag-card-icon">🎙️</div>
+    <div class="ag-card-title">Moderated debates</div>
+    <p class="ag-card-text">Ask the group, not an agent: an LLM moderator picks who answers, each agent builds on the previous replies, and a synthesis closes the thread.</p>
   </div>
   <div class="ag-card">
     <div class="ag-card-icon">🧰</div>

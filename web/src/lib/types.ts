@@ -267,6 +267,7 @@ export interface AdminLLMModel {
   provider: string;
   model: string;
   api_key: string;
+  endpoint?: string; // Optional custom API endpoint (OpenAI-compatible)
   role: string;
   enabled: boolean;
   is_default: boolean;

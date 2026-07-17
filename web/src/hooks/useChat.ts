@@ -14,7 +14,7 @@ function isValidChartData(data: unknown): data is ChartData {
     d.datasets.length > 0
   );
 }
-import { getChatEndpoint, getMCPChatEndpoint, getMultiMCPChatEndpoint, getRunStreamUrl } from "@/lib/api";
+import { getChatEndpoint, getGroupChatEndpoint, getMCPChatEndpoint, getMultiMCPChatEndpoint, getRunStreamUrl } from "@/lib/api";
 import { useBackgroundStreamContext } from "@/contexts/BackgroundStreamContext";
 import { reportMetric } from "@/lib/telemetry";
 
@@ -128,10 +128,56 @@ export function useChat({
     let currentContent = "";
     let currentIsThinking = false;
     let hasOpenMessage = false;
-    const segments: ContentSegment[] = [];
+    let segments: ContentSegment[] = [];
     let streamItems: TimelineItem[] = [];
     const streamStartMs = Date.now();
     let ttfbReported = false;
+
+    // Group debates: one stream carries several agents' turns, each event
+    // tagged with agentId. Track the current speaker and finalize a message
+    // per agent turn instead of one per stream.
+    let currentAgentId = effectiveAgentId;
+    let completedMessages: Message[] = [];
+    let agentStartIdx = 0; // streamItems index where the current agent's items begin
+
+    // Finalize the current agent's open segments into a completed message.
+    // Tool-only turns (no text) are kept too — dropping them would lose the
+    // agent's tool calls from the in-memory history.
+    const finalizeCurrentAgent = () => {
+      const finalized = buildFinalizedSegments(segments, hasOpenMessage, currentContent, currentIsThinking);
+      const finalContent = finalizeSegments(finalized);
+      const agentItems = streamItems.slice(agentStartIdx);
+      const hasToolItems = agentItems.some((i) => i.type === "tool_group");
+      if (finalContent || hasToolItems) {
+        const finalMsg: Message = attachToolCalls(
+          { role: "assistant" as const, content: finalContent, agent_id: currentAgentId },
+          agentItems,
+        );
+        completedMessages = [...completedMessages, finalMsg];
+        streamItems = [...streamItems.slice(0, agentStartIdx), ...applyFinalMessage(agentItems, finalMsg)];
+        setMessages([...allMessages, ...completedMessages]);
+      }
+      segments = [];
+      currentContent = "";
+      hasOpenMessage = false;
+      agentStartIdx = streamItems.length;
+    };
+
+    // Switch speakers when an event is tagged with an agentId. Keeps the
+    // "who is thinking" indicator pointing at the actual speaker.
+    let sawTaggedEvent = false;
+    const maybeSwitchAgent = (eventAgentId?: string) => {
+      if (!eventAgentId) return;
+      if (!sawTaggedEvent) {
+        sawTaggedEvent = true;
+        if (!isStale()) setActiveStreamAgentIds([eventAgentId]);
+      }
+      if (eventAgentId === currentAgentId) return;
+      finalizeCurrentAgent();
+      currentAgentId = eventAgentId;
+      ttfbReported = false; // report ttfb once per agent turn, labeled correctly
+      if (!isStale()) setActiveStreamAgentIds([eventAgentId]);
+    };
 
     const isStale = () => requestGenRef.current !== gen;
     let rafId: number | null = null;
@@ -181,6 +227,7 @@ export function useChat({
               break;
 
             case "TEXT_MESSAGE_START":
+              maybeSwitchAgent(event.agentId);
               currentContent = "";
               currentIsThinking = event.isThinking === true;
               hasOpenMessage = true;
@@ -189,24 +236,25 @@ export function useChat({
             case "TEXT_MESSAGE_CONTENT": {
               if (!ttfbReported && !currentIsThinking) {
                 ttfbReported = true;
-                reportMetric({ name: "ttfb", labels: { agent_id: effectiveAgentId }, value: (Date.now() - streamStartMs) / 1000 });
+                reportMetric({ name: "ttfb", labels: { agent_id: currentAgentId }, value: (Date.now() - streamStartMs) / 1000 });
               }
               currentContent += event.delta;
               const latestThinking = [...segments].reverse().find(s => s.isThinking);
 
               setMessages([
                 ...allMessages,
+                ...completedMessages,
                 ...(latestThinking && !currentIsThinking ? [{
                   role: "assistant" as const,
                   content: latestThinking.content,
                   isThinking: true,
-                  agent_id: effectiveAgentId,
+                  agent_id: currentAgentId,
                 }] : []),
                 {
                   role: "assistant" as const,
                   content: currentContent,
                   isThinking: currentIsThinking,
-                  agent_id: effectiveAgentId,
+                  agent_id: currentAgentId,
                 },
               ]);
 
@@ -216,7 +264,7 @@ export function useChat({
                   role: "assistant",
                   content: currentContent,
                   isThinking: currentIsThinking,
-                  agent_id: effectiveAgentId,
+                  agent_id: currentAgentId,
                 },
               };
               const lastStream = streamItems[streamItems.length - 1];
@@ -237,6 +285,7 @@ export function useChat({
               break;
 
             case "TOOL_CALL_START": {
+              maybeSwitchAgent(event.agentId);
               const newTc: ToolCall = {
                 toolCallId: event.toolCallId!,
                 toolName: event.toolName!,
@@ -246,9 +295,9 @@ export function useChat({
               };
               const lastItem = streamItems[streamItems.length - 1];
               if (lastItem?.type === "tool_group") {
-                streamItems = [...streamItems.slice(0, -1), { type: "tool_group", toolCalls: [...lastItem.toolCalls, newTc], agentId: effectiveAgentId }];
+                streamItems = [...streamItems.slice(0, -1), { type: "tool_group", toolCalls: [...lastItem.toolCalls, newTc], agentId: currentAgentId }];
               } else {
-                streamItems = [...streamItems, { type: "tool_group", toolCalls: [newTc], agentId: effectiveAgentId }];
+                streamItems = [...streamItems, { type: "tool_group", toolCalls: [newTc], agentId: currentAgentId }];
               }
               flushUpdate();
               break;
@@ -291,7 +340,7 @@ export function useChat({
                 streamItems = [...streamItems, {
                   type: "chart" as const,
                   chart: event.data,
-                  agentId: effectiveAgentId,
+                  agentId: currentAgentId,
                 }];
                 flushUpdate();
               }
@@ -301,18 +350,8 @@ export function useChat({
             case "RUN_FINISHED": {
               runFinished = true;
               retryCountRef.current = 0;
-              const finalized = buildFinalizedSegments(segments, hasOpenMessage, currentContent, currentIsThinking);
-              const finalContent = finalizeSegments(finalized);
-
-              if (finalContent) {
-                const finalMsg: Message = attachToolCalls(
-                  { role: "assistant" as const, content: finalContent, agent_id: effectiveAgentId },
-                  streamItems,
-                );
-                setMessages([...allMessages, finalMsg]);
-                streamItems = applyFinalMessage(streamItems, finalMsg);
-                flushUpdate();
-              }
+              finalizeCurrentAgent();
+              flushUpdate();
               break;
             }
 
@@ -323,15 +362,8 @@ export function useChat({
       }
 
       // Fallback if stream ended without RUN_FINISHED
-      const finalized = buildFinalizedSegments(segments, hasOpenMessage, currentContent, currentIsThinking);
-      if (finalized.length > 0) {
-        const finalContent = finalizeSegments(finalized);
-        const finalMsg: Message = attachToolCalls(
-          { role: "assistant" as const, content: finalContent, agent_id: effectiveAgentId },
-          streamItems,
-        );
-        setMessages([...allMessages, finalMsg]);
-        streamItems = applyFinalMessage(streamItems, finalMsg);
+      if (!runFinished) {
+        finalizeCurrentAgent();
         flushUpdate();
       }
 
@@ -462,7 +494,10 @@ export function useChat({
   }, [stopStream]);
 
   // Single-agent send (also used for MCP)
-  const sendMessage = useCallback((targetAgentId?: string, sendContext?: boolean, attachments?: Attachment[], textOverride?: string, baseMessagesOverride?: Message[]) => {
+  // groupDebate: when set (and the hook has a groupId), the message goes to the
+  // moderated group debate endpoint. agentIds optionally restricts the roster
+  // (@mention); empty/omitted lets the moderator pick freely.
+  const sendMessage = useCallback((targetAgentId?: string, sendContext?: boolean, attachments?: Attachment[], textOverride?: string, baseMessagesOverride?: Message[], groupDebate?: { agentIds?: string[] }) => {
     const text = (textOverride || input).trim();
     if (!text || isLoading) return;
 
@@ -486,7 +521,9 @@ export function useChat({
     setError(null);
     setErrorType(null);
     setIsLoading(true);
-    setActiveStreamAgentIds([effectiveAgentId]);
+    // Group debates: the moderator decides who speaks — the real speaker ids
+    // arrive tagged on the stream events (see maybeSwitchAgent).
+    setActiveStreamAgentIds(groupDebate && groupId ? [] : [effectiveAgentId]);
 
     retryCountRef.current = 0;
 
@@ -498,9 +535,11 @@ export function useChat({
     streamSessionNameRef.current = sessionName;
     streamMessagesRef.current = allMessages;
 
-    // Determine endpoint: MCP mode uses MCP endpoints, otherwise agent endpoint
+    // Determine endpoint: group debate > MCP > agent endpoint
     let endpoint: string;
-    if (mcpConfig) {
+    if (groupDebate && groupId) {
+      endpoint = getGroupChatEndpoint(groupId);
+    } else if (mcpConfig) {
       endpoint = mcpConfig.serverIds.length > 1
         ? getMultiMCPChatEndpoint()
         : getMCPChatEndpoint(mcpConfig.serverIds[0]);
@@ -532,6 +571,9 @@ export function useChat({
 
     // Group ID for collaborative sessions
     if (groupId) bodyObj.group_id = groupId;
+
+    // Group debate roster override (@mention)
+    if (groupDebate?.agentIds?.length) bodyObj.agent_ids = groupDebate.agentIds;
 
     fetch(endpoint, {
       method: "POST",
@@ -1038,15 +1080,26 @@ export function useChat({
     const messagesBeforeRetry = messages.slice(0, startIdx);
     setError(null);
 
-    // Multi-agent retry: use sendMultiple with the provided or original target agents
     const retryTargets = targetAgentIds || targetMsg.broadcast_agent_ids;
+
+    // Moderated group retry: mirror handleSend's routing — a single explicit
+    // target goes direct, anything else goes through the debate endpoint
+    // (with the targets as roster override when present).
+    if (groupId && (!retryTargets || retryTargets.length !== 1)) {
+      sendMessage(undefined, undefined, targetMsg.attachments, targetMsg.content, messagesBeforeRetry, {
+        agentIds: retryTargets && retryTargets.length > 0 ? retryTargets : undefined,
+      });
+      return;
+    }
+
+    // Multi-agent retry: use sendMultiple with the provided or original target agents
     if (retryTargets && retryTargets.length > 0) {
       sendMultiple(retryTargets, true, targetMsg.attachments, targetMsg.content, messagesBeforeRetry);
       return;
     }
 
     sendMessage(targetMsg.agent_id, undefined, targetMsg.attachments, targetMsg.content, messagesBeforeRetry);
-  }, [messages, isLoading, sendMessage, sendMultiple]);
+  }, [messages, isLoading, groupId, sendMessage, sendMultiple]);
 
   // Allow external code to replace messages (e.g. when reloading session from server)
   const replaceMessages = useCallback((newMessages: Message[]) => {

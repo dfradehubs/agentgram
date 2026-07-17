@@ -174,6 +174,7 @@ type AGUIToolCallStartEvent struct {
 	ToolCallID string        `json:"toolCallId"`
 	ToolName   string        `json:"toolName"`
 	ServerID   string        `json:"serverId,omitempty"` // MCP server that owns this tool (multi-MCP)
+	AgentID    string        `json:"agentId,omitempty"`  // Which agent is calling the tool (group debates)
 }
 
 // AGUIToolCallArgsEvent contains the arguments for a tool call

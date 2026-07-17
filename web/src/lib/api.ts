@@ -161,6 +161,11 @@ export function getChatEndpoint(agentId: string): string {
   return `${API_BASE_URL}/api/agents/${agentId}/chat`;
 }
 
+// Get the moderated group debate endpoint URL
+export function getGroupChatEndpoint(groupId: string): string {
+  return `${API_BASE_URL}/api/groups/${groupId}/chat`;
+}
+
 // URL to reconnect to an in-flight run's live SSE stream (replay + live).
 export function getRunStreamUrl(agentId: string, sessionId: string): string {
   return `${API_BASE_URL}/api/agents/${agentId}/sessions/${sessionId}/stream`;

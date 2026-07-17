@@ -153,6 +153,9 @@ func (rl *RateLimiter) ChatHandler(next http.Handler) http.Handler {
 			agentID = chi.URLParam(r, "id")
 		}
 		if agentID == "" {
+			agentID = chi.URLParam(r, "groupId")
+		}
+		if agentID == "" {
 			next.ServeHTTP(w, r)
 			return
 		}

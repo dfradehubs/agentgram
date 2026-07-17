@@ -1,11 +1,13 @@
 package models
 
 // ChatRequest is the expected body for POST /api/agents/:agentId/chat
+// and POST /api/groups/:groupId/chat
 type ChatRequest struct {
 	Messages    []ChatMessage `json:"messages"`
 	SessionID   string        `json:"session_id,omitempty"`
 	SendContext *bool         `json:"send_context,omitempty"`
 	GroupID     string        `json:"group_id,omitempty"`
+	AgentIDs    []string      `json:"agent_ids,omitempty"` // Group chat only: restrict the debate roster to these agents (@mention)
 }
 
 // ChatMessage represents a message in the conversation

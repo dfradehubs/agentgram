@@ -24,7 +24,7 @@ export interface UseChatReturn {
   timeline: TimelineItem[];
   input: string;
   setInput: (input: string) => void;
-  sendMessage: (targetAgentId?: string, sendContext?: boolean, attachments?: Attachment[], textOverride?: string) => void;
+  sendMessage: (targetAgentId?: string, sendContext?: boolean, attachments?: Attachment[], textOverride?: string, baseMessagesOverride?: Message[], groupDebate?: { agentIds?: string[] }) => void;
   sendMultiple: (targetAgentIds: string[], sendContext?: boolean, attachments?: Attachment[], textOverride?: string, baseMessagesOverride?: Message[]) => void;
   activeStreamAgentIds: string[];
   isLoading: boolean;

@@ -35,6 +35,7 @@ type AdminLLMRequest struct {
 	Provider  string `json:"provider"`
 	Model     string `json:"model"`
 	APIKey    string `json:"api_key"`
+	Endpoint  string `json:"endpoint"`
 	Role      string `json:"role"`
 	Enabled   bool   `json:"enabled"`
 	IsDefault bool   `json:"is_default"`
@@ -56,6 +57,7 @@ func (h *AdminLLMHandler) ListLLMModels(w http.ResponseWriter, r *http.Request) 
 		Provider  string `json:"provider"`
 		Model     string `json:"model"`
 		APIKey    string `json:"api_key"`
+		Endpoint  string `json:"endpoint,omitempty"`
 		Role      string `json:"role"`
 		Enabled   bool   `json:"enabled"`
 		IsDefault bool   `json:"is_default"`
@@ -73,6 +75,7 @@ func (h *AdminLLMHandler) ListLLMModels(w http.ResponseWriter, r *http.Request) 
 			Provider:  m.Provider,
 			Model:     m.Model,
 			APIKey:    masked,
+			Endpoint:  m.Endpoint,
 			Role:      m.Role,
 			Enabled:   m.Enabled,
 			IsDefault: m.IsDefault,
@@ -126,6 +129,7 @@ func (h *AdminLLMHandler) CreateLLMModel(w http.ResponseWriter, r *http.Request)
 		Provider:  req.Provider,
 		Model:     req.Model,
 		APIKey:    req.APIKey,
+		Endpoint:  req.Endpoint,
 		Role:      req.Role,
 		Enabled:   req.Enabled,
 		IsDefault: req.IsDefault,
@@ -183,6 +187,7 @@ func (h *AdminLLMHandler) UpdateLLMModel(w http.ResponseWriter, r *http.Request)
 		Provider:  req.Provider,
 		Model:     req.Model,
 		APIKey:    req.APIKey,
+		Endpoint:  req.Endpoint,
 		Role:      req.Role,
 		Enabled:   req.Enabled,
 		IsDefault: req.IsDefault,

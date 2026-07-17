@@ -124,7 +124,7 @@ func SetupRoutes(cfg *config.Config, registry *agents.Registry, sessionStore sto
 
 	// MCP server endpoint (exposes agents as MCP tools for Claude Code and other MCP clients)
 	if cfg.MCPServer.Enabled {
-		mcpServerHandler := mcpserver.NewHandler(registry, mcpRegistry, sessionStore, adminDeps.UserService, adminDeps.GroupRepo, oidcClient, cfg, logger, adminDeps.LangfuseTracer, adminDeps.OAuth2Manager, adminDeps.MCPRepo)
+		mcpServerHandler := mcpserver.NewHandler(registry, mcpRegistry, sessionStore, adminDeps.UserService, adminDeps.GroupRepo, oidcClient, cfg, logger, adminDeps.LangfuseTracer, adminDeps.OAuth2Manager, adminDeps.MCPRepo, llmRepo)
 
 		// Public: OAuth2 Protected Resource Metadata (RFC 9728)
 		// Serve at both root and path-based locations per RFC 9728 Section 3.1:
@@ -153,6 +153,10 @@ func SetupRoutes(cfg *config.Config, registry *agents.Registry, sessionStore sto
 
 		// Protected: MCP protocol endpoint
 		r.Route("/mcp", func(r chi.Router) {
+			if !cfg.Auth.Enabled {
+				// Dev mode: inject the anonymous user, same as the /api router
+				r.Use(middleware.NoAuth(logger))
+			}
 			if cfg.Auth.Enabled {
 				mcpIssuer := cfg.MCPServer.Issuer
 				if mcpIssuer == "" {
@@ -358,6 +362,8 @@ func SetupRoutes(cfg *config.Config, registry *agents.Registry, sessionStore sto
 		groupsHandler := handlers.NewGroupsHandler(adminDeps.GroupRepo, sessionStore, adminDeps.UserService, registry, logger)
 		r.Get("/groups", groupsHandler.ListGroups)
 		r.Post("/groups", groupsHandler.CreateGroup)
+		// Moderated group debate (SSE): the moderator LLM picks which agents respond
+		r.With(chatRateLimiter.ChatHandler).Post("/groups/{groupId}/chat", proxyHandler.GroupChat)
 		r.Put("/groups/{groupId}", groupsHandler.UpdateGroup)
 		r.Delete("/groups/{groupId}", groupsHandler.DeleteGroup)
 		r.Get("/groups/{groupId}/sessions", groupsHandler.ListGroupSessions)

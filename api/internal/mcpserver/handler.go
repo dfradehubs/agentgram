@@ -16,9 +16,11 @@ import (
 	"github.com/dfradehubs/agentgram-api/internal/config"
 	"github.com/dfradehubs/agentgram-api/internal/identity"
 	lf "github.com/dfradehubs/agentgram-api/internal/langfuse"
+	"github.com/dfradehubs/agentgram-api/internal/llm"
 	"github.com/dfradehubs/agentgram-api/internal/mcp"
 	"github.com/dfradehubs/agentgram-api/internal/middleware"
 	"github.com/dfradehubs/agentgram-api/internal/models"
+	"github.com/dfradehubs/agentgram-api/internal/orchestrator"
 	"github.com/dfradehubs/agentgram-api/internal/proxy"
 	"github.com/dfradehubs/agentgram-api/internal/repository"
 	"github.com/dfradehubs/agentgram-api/internal/service"
@@ -40,6 +42,7 @@ type Handler struct {
 	cfg            *config.Config
 	oauth2Mgr      *mcp.OAuth2Manager
 	mcpRepo        repository.MCPServerRepository
+	moderator      *orchestrator.Moderator
 	logger         *zap.Logger
 }
 
@@ -56,9 +59,27 @@ func NewHandler(
 	lfTracer *lf.Tracer,
 	oauth2Mgr *mcp.OAuth2Manager,
 	mcpRepo repository.MCPServerRepository,
+	llmRepo repository.LLMModelRepository,
 ) *Handler {
+	// Moderator LLM for group debate tools (role "moderator"); nil when unconfigured
+	var moderator *orchestrator.Moderator
+	if llmRepo != nil {
+		if modModels, err := llmRepo.ListByRole(context.Background(), "moderator"); err == nil && len(modModels) > 0 {
+			model := modModels[0]
+			provider, provErr := llm.NewProvider(model)
+			if provErr == nil && lfTracer != nil && lfTracer.Enabled() {
+				provider = lf.WrapProvider(provider, "moderator", model.Model)
+			}
+			if provErr == nil {
+				moderator = orchestrator.NewWithProvider(provider, logger)
+			} else {
+				moderator = orchestrator.New(model, logger)
+			}
+		}
+	}
+
 	return &Handler{
-		server:         NewServer(registry, mcpRegistry, userService, logger),
+		server:         NewServer(registry, mcpRegistry, userService, groupRepo, logger),
 		registry:       registry,
 		mcpRegistry:    mcpRegistry,
 		proxy:          proxy.NewProxy(logger),
@@ -70,6 +91,7 @@ func NewHandler(
 		cfg:            cfg,
 		oauth2Mgr:      oauth2Mgr,
 		mcpRepo:        mcpRepo,
+		moderator:      moderator,
 		logger:         logger,
 	}
 }
@@ -401,6 +423,15 @@ func (h *Handler) handleToolsCall(w http.ResponseWriter, r *http.Request, req js
 	// Handle MCP server tool calls (mcp_{serverID}__{toolName})
 	if serverID, mcpToolName, ok := GetMCPToolFromName(params.Name); ok {
 		h.handleMCPToolCall(w, r, req, serverID, mcpToolName, params.Arguments, userEmail, userGroups)
+		return
+	}
+
+	// Handle agent group debate calls (ask_group_{groupID}) — must be checked
+	// before the plain ask_ agent prefix, which also matches these names.
+	// Only route to the group handler when the group actually exists, so an
+	// agent whose ID starts with "group_" still resolves via the agent path.
+	if groupID, ok := GetGroupIDFromToolName(params.Name); ok && h.groupExists(r.Context(), groupID) {
+		h.handleGroupToolCall(w, r, req, groupID, params.Arguments, userEmail, userGroups, mcpSessionID)
 		return
 	}
 

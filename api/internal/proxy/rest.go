@@ -34,23 +34,13 @@ func NewRESTProxy(logger *zap.Logger) *RESTProxy {
 }
 
 // Handle handles a request to a REST agent using AG-UI protocol
-func (p *RESTProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *models.Agent, body io.Reader, auth agents.OutboundAuth, requestID string, threadID string, sessionName string, onEvent func(interface{})) (*ProxyResult, error) {
+func (p *RESTProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *models.Agent, body io.Reader, auth agents.OutboundAuth, requestID string, cfg SSEConfig) (*ProxyResult, error) {
 	// Create SSE writer
 	sse, err := NewSSEWriter(w)
 	if err != nil {
 		return nil, err
 	}
-
-	if onEvent != nil {
-		sse.SetOnEvent(onEvent)
-	}
-
-	if threadID != "" {
-		sse.SetThreadID(threadID)
-	}
-	if sessionName != "" {
-		sse.SetSessionName(sessionName)
-	}
+	sse.Apply(cfg)
 
 	// Send run started event
 	if err := sse.SendRunStarted(); err != nil {

@@ -57,22 +57,12 @@ func NewADKProxy(logger *zap.Logger) *ADKProxy {
 // It sends POST /run_sse to the agent, reads SSE events, and converts them to AG-UI events.
 // If the agent responds with a context-limit summary, it transparently creates a new session
 // and retries the request with the summary as context.
-func (p *ADKProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *models.Agent, chatReq *models.ChatRequest, auth agents.OutboundAuth, requestID string, threadID string, sessionName string, locale string, onEvent func(interface{})) (*ProxyResult, error) {
+func (p *ADKProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *models.Agent, chatReq *models.ChatRequest, auth agents.OutboundAuth, requestID string, locale string, cfg SSEConfig) (*ProxyResult, error) {
 	sse, err := NewSSEWriter(w)
 	if err != nil {
 		return nil, err
 	}
-
-	if onEvent != nil {
-		sse.SetOnEvent(onEvent)
-	}
-
-	if threadID != "" {
-		sse.SetThreadID(threadID)
-	}
-	if sessionName != "" {
-		sse.SetSessionName(sessionName)
-	}
+	sse.Apply(cfg)
 
 	// Collect user messages and extract attachments from the last user message
 	var parts []string

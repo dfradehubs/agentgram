@@ -82,8 +82,12 @@ export function Chat() {
   const isMCP = !!(currentMCPServer || isMCPMulti);
   const activeMCPSession = isMCPMulti ? currentMultiMCPSession : currentMCPSession;
 
+  // Group detection: explicit selection in the sidebar, or the open session's
+  // own group binding (e.g. a group session opened from an agent's session list).
+  const effectiveGroupId = activeGroupId || currentSession?.group_id || null;
+
   // Multi-agent detection: prefer group's agentIds, then session, then pending
-  const activeGroup = activeGroupId ? multiAgentGroups.find(g => g.id === activeGroupId) : null;
+  const activeGroup = effectiveGroupId ? multiAgentGroups.find(g => g.id === effectiveGroupId) : null;
   const multiAgentIds = activeGroup && activeGroup.agentIds.length > 0
     ? activeGroup.agentIds
     : currentSession?.is_multi_agent || currentSession?.source === "slack"
@@ -93,27 +97,30 @@ export function Chat() {
   const isMultiAgent = !isMCP && (multiAgentIds.length >= 2 || isSlackSession);
   const [selectedTargetAgentIds, setSelectedTargetAgentIds] = useState<string[]>([]);
 
-  // Auto-select all agents in multi-agent mode
+  // Auto-select agents in multi-agent mode. Moderated groups default to no
+  // selection (the moderator picks); other multi-agent sessions keep the first.
   useEffect(() => {
     if (isMultiAgent && multiAgentIds.length > 0) {
       setSelectedTargetAgentIds((prev) => {
         // Keep current selection if all selected agents are still valid
         const valid = prev.filter((id) => multiAgentIds.includes(id));
-        return valid.length > 0 ? valid : [multiAgentIds[0]];
+        if (valid.length > 0) return valid;
+        return effectiveGroupId ? [] : [multiAgentIds[0]];
       });
     }
-  }, [isMultiAgent, multiAgentIds]);
+  }, [isMultiAgent, multiAgentIds, effectiveGroupId]);
 
   const toggleTargetAgent = useCallback((agentId: string) => {
     setSelectedTargetAgentIds((prev) => {
       if (prev.includes(agentId)) {
-        // Don't allow deselecting the last one
-        if (prev.length <= 1) return prev;
+        // Moderated groups allow empty selection (= moderator decides);
+        // other multi-agent sessions keep at least one target.
+        if (prev.length <= 1 && !effectiveGroupId) return prev;
         return prev.filter((id) => id !== agentId);
       }
       return [...prev, agentId];
     });
-  }, []);
+  }, [effectiveGroupId]);
 
   // MCP model selection
   const defaultModel = config.available_models.find((m) => m.default) || config.available_models[0];
@@ -192,7 +199,7 @@ export function Chat() {
     mcpConfig: isMCP && mcpServerIds.length > 0
       ? { serverIds: mcpServerIds, modelId: selectedModelId }
       : undefined,
-    groupId: activeGroupId || undefined,
+    groupId: effectiveGroupId || undefined,
     userName: displayName,
   });
 
@@ -210,7 +217,7 @@ export function Chat() {
   // Real-time subscription for group sessions: reload messages + sessions on RUN_FINISHED
   useSessionSubscription({
     sessionId: chatSessionId,
-    groupId: activeGroupId || undefined,
+    groupId: effectiveGroupId || undefined,
     enabled: !!activeGroupId && !!chatSessionId && !isLoading,
     onEvent: useCallback((event: Record<string, unknown>) => {
       if (event.type === "RUN_FINISHED") {
@@ -492,8 +499,15 @@ export function Chat() {
     pinnedRef.current = true;
     scrollToBottom();
     const atts = pendingAttachments.length > 0 ? pendingAttachments : undefined;
-    if (isMultiAgent && selectedTargetAgentIds.length > 0) {
-      // Parallel send to all selected agents with context propagation
+    if (isMultiAgent && effectiveGroupId && selectedTargetAgentIds.length !== 1) {
+      // Moderated group debate: the moderator picks who answers. Selected
+      // pills (2+) restrict the roster; none selected = fully automatic.
+      sendMessage(undefined, undefined, atts, undefined, undefined, {
+        agentIds: selectedTargetAgentIds.length > 0 ? selectedTargetAgentIds : undefined,
+      });
+    } else if (isMultiAgent && selectedTargetAgentIds.length > 0) {
+      // Direct send: exactly one pill in a group (skip the moderator), or a
+      // non-group multi-agent session (parallel broadcast with context).
       sendMultiple(selectedTargetAgentIds, true, atts);
     } else {
       sendMessage(undefined, undefined, atts);
@@ -502,7 +516,7 @@ export function Chat() {
     if (inputRef.current) {
       inputRef.current.style.height = "auto";
     }
-  }, [pendingAttachments, isMultiAgent, selectedTargetAgentIds, sendMultiple, sendMessage, scrollToBottom]);
+  }, [pendingAttachments, isMultiAgent, effectiveGroupId, selectedTargetAgentIds, sendMultiple, sendMessage, scrollToBottom]);
 
   const handleFileSelect = useCallback((files: FileList | null) => {
     if (!files) return;

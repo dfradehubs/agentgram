@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -20,6 +19,7 @@ import (
 	"github.com/dfradehubs/agentgram-api/internal/metrics"
 	"github.com/dfradehubs/agentgram-api/internal/middleware"
 	"github.com/dfradehubs/agentgram-api/internal/models"
+	"github.com/dfradehubs/agentgram-api/internal/orchestrator"
 	"github.com/dfradehubs/agentgram-api/internal/proxy"
 	"github.com/dfradehubs/agentgram-api/internal/pubsub"
 	"github.com/dfradehubs/agentgram-api/internal/repository"
@@ -45,6 +45,7 @@ type ProxyHandler struct {
 	summarizer     *summarizer.Summarizer
 	sessionNamer   *sessionnamer.Namer
 	fileProcessor  *fileprocessor.Processor
+	moderator      *orchestrator.Moderator
 	audit          *audit.Logger
 	chatEventRepo  repository.ChatEventRepository
 	langfuseTracer *lf.Tracer
@@ -94,6 +95,19 @@ func NewProxyHandler(llmRepo repository.LLMModelRepository, registry *agents.Reg
 			namer = sessionnamer.New(model, logger)
 		}
 	}
+	var moderator *orchestrator.Moderator
+	if modModels, err := llmRepo.ListByRole(ctx, "moderator"); err == nil && len(modModels) > 0 {
+		model := modModels[0]
+		provider, provErr := llm.NewProvider(model)
+		if provErr == nil && lfTracer != nil && lfTracer.Enabled() {
+			provider = lf.WrapProvider(provider, "moderator", model.Model)
+		}
+		if provErr == nil {
+			moderator = orchestrator.NewWithProvider(provider, logger)
+		} else {
+			moderator = orchestrator.New(model, logger)
+		}
+	}
 
 	h := &ProxyHandler{
 		registry:       registry,
@@ -105,6 +119,7 @@ func NewProxyHandler(llmRepo repository.LLMModelRepository, registry *agents.Reg
 		summarizer:     sum,
 		sessionNamer:   namer,
 		fileProcessor:  fp,
+		moderator:      moderator,
 		audit:          auditLogger,
 		langfuseTracer: lfTracer,
 		logger:         logger,
@@ -398,17 +413,7 @@ func (h *ProxyHandler) Chat(w http.ResponseWriter, r *http.Request) {
 	authHeader := middleware.GetAuthHeaderFromContext(r.Context())
 
 	// Get locale from Accept-Language header (e.g. "es", "en")
-	locale := "en"
-	if al := r.Header.Get("Accept-Language"); al != "" {
-		// Accept-Language may be "es", "en", "es-ES,es;q=0.9", etc.
-		lang := strings.SplitN(al, ",", 2)[0]
-		lang = strings.SplitN(lang, "-", 2)[0]
-		lang = strings.SplitN(lang, ";", 2)[0]
-		lang = strings.TrimSpace(lang)
-		if lang == "es" {
-			locale = "es"
-		}
-	}
+	locale := localeFromRequest(r)
 
 	// 4. Proxy the request (always responds with SSE)
 	// Pass session ID as thread ID so frontend receives it in RUN_STARTED
@@ -574,10 +579,41 @@ func (h *ProxyHandler) Chat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 5. Post-proxy: save assistant response and agent session mapping
-	// Use a background context for saving — the original ctx may be cancelled
-	// if the client disconnected mid-stream, but we still want to persist the response.
-	// Save even partial responses from errors so users can see what arrived before the failure.
-	if result != nil && (result.AssistantText != "" || len(result.ToolCalls) > 0 || result.Error != "") {
+	h.persistTurnResult(session, agent, result, agentSessionID, hasAgentSession, locale)
+
+	// Async: generate a short LLM-based session name for new sessions
+	if isNewSession && h.sessionNamer != nil && result != nil && result.AssistantText != "" {
+		go func() {
+			namerCtx := lf.ContextWithTrace(context.Background(), lfTrace)
+			namerCtx, cancel := context.WithTimeout(namerCtx, 10*time.Second)
+			defer cancel()
+			name, err := h.sessionNamer.GenerateName(namerCtx, userMsg.Content, result.AssistantText)
+			if err != nil {
+				h.logger.Warn("session namer failed", zap.String("session_id", session.SessionID), zap.Error(err))
+				return
+			}
+			if name != "" {
+				if _, err := h.store.RenameSession(namerCtx, session.SessionID, name); err != nil {
+					h.logger.Error("failed to rename session", zap.String("session_id", session.SessionID), zap.Error(err))
+				}
+			}
+		}()
+	}
+}
+
+// persistTurnResult saves the assistant response of one agent turn: the
+// optional session-rotation info message, the assistant message (content
+// parts, tool calls) and the agent session mapping. Uses a background context
+// so persistence survives client disconnects — the request ctx may already be
+// cancelled. Saves even partial responses from errors so users can see what
+// arrived before the failure. Returns the persisted assistant message, or nil
+// when there was nothing to save.
+func (h *ProxyHandler) persistTurnResult(session *models.Session, agent *models.Agent, result *proxy.ProxyResult, agentSessionID string, hasAgentSession bool, locale string) *models.ChatMessage {
+	if result == nil || (result.AssistantText == "" && len(result.ToolCalls) == 0 && result.Error == "") {
+		return nil
+	}
+	agentID := agent.ID
+	{
 		saveCtx, saveCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer saveCancel()
 
@@ -684,24 +720,7 @@ func (h *ProxyHandler) Chat(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// Async: generate a short LLM-based session name for new sessions
-		if isNewSession && h.sessionNamer != nil && result.AssistantText != "" {
-			go func() {
-				namerCtx := lf.ContextWithTrace(context.Background(), lfTrace)
-				namerCtx, cancel := context.WithTimeout(namerCtx, 10*time.Second)
-				defer cancel()
-				name, err := h.sessionNamer.GenerateName(namerCtx, userMsg.Content, result.AssistantText)
-				if err != nil {
-					h.logger.Warn("session namer failed", zap.String("session_id", session.SessionID), zap.Error(err))
-					return
-				}
-				if name != "" {
-					if _, err := h.store.RenameSession(namerCtx, session.SessionID, name); err != nil {
-						h.logger.Error("failed to rename session", zap.String("session_id", session.SessionID), zap.Error(err))
-					}
-				}
-			}()
-		}
+		return &assistantMsg
 	}
 }
 

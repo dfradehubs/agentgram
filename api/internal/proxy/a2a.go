@@ -33,23 +33,13 @@ func NewA2AProxy(logger *zap.Logger) *A2AProxy {
 
 // Handle handles a request to an A2A agent using AG-UI protocol.
 // It sends message/stream to the agent, reads SSE events, and converts them to AG-UI events.
-func (p *A2AProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *models.Agent, chatReq *models.ChatRequest, auth agents.OutboundAuth, requestID string, threadID string, sessionName string, onEvent func(interface{})) (*ProxyResult, error) {
+func (p *A2AProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *models.Agent, chatReq *models.ChatRequest, auth agents.OutboundAuth, requestID string, cfg SSEConfig) (*ProxyResult, error) {
 	// Create SSE writer for AG-UI output
 	sse, err := NewSSEWriter(w)
 	if err != nil {
 		return nil, err
 	}
-
-	if onEvent != nil {
-		sse.SetOnEvent(onEvent)
-	}
-
-	if threadID != "" {
-		sse.SetThreadID(threadID)
-	}
-	if sessionName != "" {
-		sse.SetSessionName(sessionName)
-	}
+	sse.Apply(cfg)
 
 	// Collect all user messages (context + query) and concatenate them.
 	// This preserves context messages prepended by PrepareMessagesForMultiAgent.

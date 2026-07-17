@@ -87,13 +87,15 @@ func NewProxy(logger *zap.Logger) *Proxy {
 
 // HandleOptions configures optional parameters for Handle.
 type HandleOptions struct {
-	ThreadID    string
-	SessionName string                  // Session display name (sent in RUN_STARTED)
-	Locale      string                  // "es", "en", etc. for localized messages
-	RequestID   string                  // X-Request-ID for end-to-end correlation
-	UserEmail   string                  // Calling user's email, for per-user outbound auth (bearer rules)
-	UserGroups  []string                // Calling user's groups, for per-group outbound auth (bearer rules)
-	OnEvent     func(event interface{}) // Called for each AG-UI event (for Pub/Sub broadcast)
+	ThreadID          string
+	SessionName       string                  // Session display name (sent in RUN_STARTED)
+	Locale            string                  // "es", "en", etc. for localized messages
+	RequestID         string                  // X-Request-ID for end-to-end correlation
+	UserEmail         string                  // Calling user's email, for per-user outbound auth (bearer rules)
+	UserGroups        []string                // Calling user's groups, for per-group outbound auth (bearer rules)
+	OnEvent           func(event interface{}) // Called for each AG-UI event (for Pub/Sub broadcast)
+	AgentID           string                  // Tag all stream events with this agent id (group debates)
+	SuppressLifecycle bool                    // Skip this call's RUN_STARTED/RUN_FINISHED (outer run owns the lifecycle)
 }
 
 // Handle handles a request and routes it to the corresponding protocol.
@@ -115,19 +117,27 @@ func (p *Proxy) Handle(ctx context.Context, w http.ResponseWriter, agent *models
 	// header — if any — is sent to the agent.
 	auth := agents.ResolveOutboundAuth(agent, opts.UserEmail, opts.UserGroups, authHeader)
 
+	sseCfg := SSEConfig{
+		ThreadID:          opts.ThreadID,
+		SessionName:       opts.SessionName,
+		AgentID:           opts.AgentID,
+		SuppressLifecycle: opts.SuppressLifecycle,
+		OnEvent:           opts.OnEvent,
+	}
+
 	switch agent.Protocol {
 	case "custom":
 		body, err := FormatRequestBody(agent, chatReq)
 		if err != nil {
 			return nil, err
 		}
-		return p.restProxy.Handle(ctx, w, agent, body, auth, opts.RequestID, opts.ThreadID, opts.SessionName, opts.OnEvent)
+		return p.restProxy.Handle(ctx, w, agent, body, auth, opts.RequestID, sseCfg)
 
 	case "a2a":
-		return p.a2aProxy.Handle(ctx, w, agent, chatReq, auth, opts.RequestID, opts.ThreadID, opts.SessionName, opts.OnEvent)
+		return p.a2aProxy.Handle(ctx, w, agent, chatReq, auth, opts.RequestID, sseCfg)
 
 	case "adk":
-		return p.adkProxy.Handle(ctx, w, agent, chatReq, auth, opts.RequestID, opts.ThreadID, opts.SessionName, opts.Locale, opts.OnEvent)
+		return p.adkProxy.Handle(ctx, w, agent, chatReq, auth, opts.RequestID, opts.Locale, sseCfg)
 
 	default:
 		return nil, fmt.Errorf("unknown protocol: %s", agent.Protocol)

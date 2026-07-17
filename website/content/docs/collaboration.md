@@ -59,6 +59,41 @@ You can only add agents **you** have access to (RBAC is enforced at creation), a
 always a member. Share the group with individual teammates via `allowed_users` or with whole RBAC
 groups via `allowed_groups`. Everyone who shares the group sees its shared sessions.
 
+## Moderated group debates
+
+Send a message **to the group itself** — like posting in a Telegram group — and an LLM **moderator**
+decides which agents should answer, in sequence. Each agent sees the previous agents' replies through
+the shared session transcript, so they can build on (or verify) each other's contributions before the
+conversation comes back to you.
+
+```
+POST /api/groups/{groupId}/chat
+```
+
+```json
+{
+  "messages": [{ "role": "user", "content": "Is checkout healthy right now?" }],
+  "session_id": "optional — continue an existing group session",
+  "agent_ids": ["logs-agent", "metrics-agent"]
+}
+```
+
+- The response is a **single SSE stream** (one `RUN_STARTED` / `RUN_FINISHED` pair). Every
+  `TEXT_MESSAGE_*` and `TOOL_CALL_*` event carries an `agentId`, so clients render each agent's turn
+  separately; `CUSTOM` events with subtype `moderator.select` announce whose turn it is.
+- `agent_ids` is an optional **@mention**: it restricts the roster the moderator can pick from.
+  Omit it and the moderator chooses freely among the group's agents you have access to.
+- The moderator stops as soon as nobody else would add value (bounded to a handful of turns), and
+  when several agents contributed it can append a short **synthesis** as the special `moderator`
+  speaker.
+- A failed agent turn doesn't kill the debate — it's reported as a scoped `turn.error` event and the
+  moderator moves on.
+
+**Setup:** the moderator is an LLM model with the role `moderator` (Admin → LLM Models). Any
+provider works; the routing quality comes from your agents' **descriptions**, so keep them accurate.
+The same debate is exposed on the [MCP endpoint]({{< relref "mcp" >}}) as one `ask_group_<groupId>`
+tool per group you can access.
+
 ---
 
 Both features are available from the web UI (the sidebar groups conversations and offers

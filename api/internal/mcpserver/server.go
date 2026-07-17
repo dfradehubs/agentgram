@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/dfradehubs/agentgram-api/internal/agents"
 	"github.com/dfradehubs/agentgram-api/internal/mcp"
 	"github.com/dfradehubs/agentgram-api/internal/models"
+	"github.com/dfradehubs/agentgram-api/internal/repository"
 	"github.com/dfradehubs/agentgram-api/internal/service"
 	"go.uber.org/zap"
 )
@@ -57,21 +59,27 @@ const (
 // mcpToolPrefix is used to namespace MCP server tools: mcp_{serverID}__{toolName}
 const mcpToolPrefix = "mcp_"
 
-// Server is the MCP protocol server that exposes agents and MCP server tools
+// groupToolPrefix namespaces agent group tools: ask_group_{groupID}.
+// Must be parsed BEFORE the plain ask_ agent prefix.
+const groupToolPrefix = "ask_group_"
+
+// Server is the MCP protocol server that exposes agents, agent groups and MCP server tools
 type Server struct {
 	registry    *agents.Registry
 	mcpRegistry *mcp.Registry
 	userService *service.UserService
+	groupRepo   repository.GroupRepository
 	sessions    *SessionStore
 	logger      *zap.Logger
 }
 
 // NewServer creates a new MCP server
-func NewServer(registry *agents.Registry, mcpRegistry *mcp.Registry, userService *service.UserService, logger *zap.Logger) *Server {
+func NewServer(registry *agents.Registry, mcpRegistry *mcp.Registry, userService *service.UserService, groupRepo repository.GroupRepository, logger *zap.Logger) *Server {
 	return &Server{
 		registry:    registry,
 		mcpRegistry: mcpRegistry,
 		userService: userService,
+		groupRepo:   groupRepo,
 		sessions:    NewSessionStore(),
 		logger:      logger,
 	}
@@ -159,6 +167,11 @@ func (s *Server) handleToolsList(req jsonRPCRequest, userEmail string, userGroup
 		}
 	}
 
+	// Add agent group tools (moderated multi-agent debates)
+	for _, group := range s.AccessibleGroups(userEmail, userGroups) {
+		tools = append(tools, s.buildGroupTool(group))
+	}
+
 	// Add utility tools
 	tools = append(tools, buildListAgentsTool())
 
@@ -167,6 +180,51 @@ func (s *Server) handleToolsList(req jsonRPCRequest, userEmail string, userGroup
 	}
 
 	return s.marshalResult(req.ID, result), "", nil
+}
+
+// AccessibleGroups returns the agent groups the user can participate in.
+func (s *Server) AccessibleGroups(userEmail string, userGroups []string) []*models.AgentGroup {
+	if s.groupRepo == nil {
+		return nil
+	}
+	groups, err := s.groupRepo.ListAccessible(context.Background(), userEmail, userGroups)
+	if err != nil {
+		s.logger.Warn("failed to list accessible groups for MCP tools", zap.Error(err))
+		return nil
+	}
+	return groups
+}
+
+// buildGroupTool creates an MCP tool definition from an agent group
+func (s *Server) buildGroupTool(group *models.AgentGroup) map[string]interface{} {
+	// Resolve member names for a useful description
+	var members []string
+	for _, agentID := range group.AgentIDs {
+		if agent, err := s.registry.Get(agentID); err == nil {
+			members = append(members, agent.Name)
+		}
+	}
+
+	return map[string]interface{}{
+		"name": groupToolPrefix + group.ID,
+		"description": fmt.Sprintf(
+			"[Group: %s] Moderated multi-agent group (%s). A moderator picks the most relevant agent(s) to answer; they can build on each other's replies.",
+			group.Name, strings.Join(members, ", ")),
+		"inputSchema": map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"question": map[string]interface{}{
+					"type":        "string",
+					"description": "The question or task to send to the group",
+				},
+				"session_id": map[string]interface{}{
+					"type":        "string",
+					"description": "Optional session ID to continue a previous group conversation. Omit to start a new one.",
+				},
+			},
+			"required": []string{"question"},
+		},
+	}
 }
 
 // buildAgentTool creates an MCP tool definition from an agent
@@ -235,6 +293,16 @@ func buildMCPServerTool(server *mcp.ServerInfo, tool mcp.Tool) map[string]interf
 func GetAgentIDFromToolName(toolName string) (string, bool) {
 	if len(toolName) > 4 && toolName[:4] == "ask_" {
 		return toolName[4:], true
+	}
+	return "", false
+}
+
+// GetGroupIDFromToolName extracts the group ID from a tool name (ask_group_<group-id>).
+// Callers must check this BEFORE GetAgentIDFromToolName — the plain ask_ prefix
+// also matches group tool names.
+func GetGroupIDFromToolName(toolName string) (string, bool) {
+	if strings.HasPrefix(toolName, groupToolPrefix) && len(toolName) > len(groupToolPrefix) {
+		return toolName[len(groupToolPrefix):], true
 	}
 	return "", false
 }
