@@ -3,7 +3,6 @@
 import React from "react";
 import { useT } from "@/lib/i18n";
 import { AttachmentPreview } from "./AttachmentPreview";
-import { AgentSelector } from "./AgentSelector";
 import { Button } from "@/components/ui/button";
 import {
   ArrowUp,
@@ -17,7 +16,6 @@ const ACCEPTED_TYPES = "image/*,.pdf,.txt,.csv,.json";
 interface ChatInputProps {
   // Mode
   isMCP: boolean;
-  isMultiAgent: boolean;
   isInputDisabled: boolean;
   isLoading: boolean;
   // Input state
@@ -27,10 +25,6 @@ interface ChatInputProps {
   pendingAttachments: Attachment[];
   onRemoveAttachment: (idx: number) => void;
   onFileSelect: (files: FileList | null) => void;
-  // Multi-agent
-  multiAgentIds: string[];
-  selectedTargetAgentIds: string[];
-  onToggleTargetAgent: (agentId: string) => void;
   // Actions
   onSend: () => void;
   onStop: () => void;
@@ -43,7 +37,6 @@ interface ChatInputProps {
 
 export const ChatInput = React.memo(function ChatInput({
   isMCP,
-  isMultiAgent,
   isInputDisabled,
   isLoading,
   input,
@@ -51,9 +44,6 @@ export const ChatInput = React.memo(function ChatInput({
   pendingAttachments,
   onRemoveAttachment,
   onFileSelect,
-  multiAgentIds,
-  selectedTargetAgentIds,
-  onToggleTargetAgent,
   onSend,
   onStop,
   widthCls,
@@ -101,13 +91,6 @@ export const ChatInput = React.memo(function ChatInput({
           onDrop={handleDrop}
           onDragOver={handleDragOver}
         >
-          {isMultiAgent && (
-            <AgentSelector
-              agentIds={multiAgentIds}
-              selectedAgentIds={selectedTargetAgentIds}
-              onToggle={onToggleTargetAgent}
-            />
-          )}
           <AttachmentPreview
             attachments={pendingAttachments}
             onRemove={onRemoveAttachment}

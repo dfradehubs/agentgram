@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"net/url"
 
 	"github.com/go-chi/chi/v5"
 
@@ -11,6 +13,19 @@ import (
 	"github.com/dfradehubs/agentgram-api/internal/repository"
 	"go.uber.org/zap"
 )
+
+// validateLLMEndpoint validates the optional custom endpoint of an LLM model.
+// Empty means "provider default". Returns an error message, or "" when valid.
+func validateLLMEndpoint(endpoint string) string {
+	if endpoint == "" {
+		return ""
+	}
+	u, err := url.Parse(endpoint)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return "endpoint must be a valid http(s) URL"
+	}
+	return ""
+}
 
 // AdminLLMHandler handles admin CRUD for LLM models
 type AdminLLMHandler struct {
@@ -35,6 +50,7 @@ type AdminLLMRequest struct {
 	Provider  string `json:"provider"`
 	Model     string `json:"model"`
 	APIKey    string `json:"api_key"`
+	Endpoint  string `json:"endpoint"`
 	Role      string `json:"role"`
 	Enabled   bool   `json:"enabled"`
 	IsDefault bool   `json:"is_default"`
@@ -56,6 +72,7 @@ func (h *AdminLLMHandler) ListLLMModels(w http.ResponseWriter, r *http.Request) 
 		Provider  string `json:"provider"`
 		Model     string `json:"model"`
 		APIKey    string `json:"api_key"`
+		Endpoint  string `json:"endpoint,omitempty"`
 		Role      string `json:"role"`
 		Enabled   bool   `json:"enabled"`
 		IsDefault bool   `json:"is_default"`
@@ -73,6 +90,7 @@ func (h *AdminLLMHandler) ListLLMModels(w http.ResponseWriter, r *http.Request) 
 			Provider:  m.Provider,
 			Model:     m.Model,
 			APIKey:    masked,
+			Endpoint:  m.Endpoint,
 			Role:      m.Role,
 			Enabled:   m.Enabled,
 			IsDefault: m.IsDefault,
@@ -119,6 +137,10 @@ func (h *AdminLLMHandler) CreateLLMModel(w http.ResponseWriter, r *http.Request)
 	if req.Role == "" {
 		req.Role = "chat"
 	}
+	if errMsg := validateLLMEndpoint(req.Endpoint); errMsg != "" {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, errMsg), http.StatusBadRequest)
+		return
+	}
 
 	model := &models.LLMModel{
 		ID:        req.ID,
@@ -126,6 +148,7 @@ func (h *AdminLLMHandler) CreateLLMModel(w http.ResponseWriter, r *http.Request)
 		Provider:  req.Provider,
 		Model:     req.Model,
 		APIKey:    req.APIKey,
+		Endpoint:  req.Endpoint,
 		Role:      req.Role,
 		Enabled:   req.Enabled,
 		IsDefault: req.IsDefault,
@@ -176,6 +199,10 @@ func (h *AdminLLMHandler) UpdateLLMModel(w http.ResponseWriter, r *http.Request)
 	if req.Role == "" {
 		req.Role = "chat"
 	}
+	if errMsg := validateLLMEndpoint(req.Endpoint); errMsg != "" {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, errMsg), http.StatusBadRequest)
+		return
+	}
 
 	model := &models.LLMModel{
 		ID:        id,
@@ -183,6 +210,7 @@ func (h *AdminLLMHandler) UpdateLLMModel(w http.ResponseWriter, r *http.Request)
 		Provider:  req.Provider,
 		Model:     req.Model,
 		APIKey:    req.APIKey,
+		Endpoint:  req.Endpoint,
 		Role:      req.Role,
 		Enabled:   req.Enabled,
 		IsDefault: req.IsDefault,

@@ -325,7 +325,10 @@ func (r *ChatEventRepository) Cleanup(ctx context.Context, retentionDays int) (i
 }
 
 // scanTimelineBuckets scans timeline query rows into TimelineBucket slices
-func scanTimelineBuckets(rows interface{ Next() bool; Scan(...interface{}) error }) ([]models.TimelineBucket, error) {
+func scanTimelineBuckets(rows interface {
+	Next() bool
+	Scan(...interface{}) error
+}) ([]models.TimelineBucket, error) {
 	buckets := make([]models.TimelineBucket, 0)
 	for rows.Next() {
 		var b models.TimelineBucket

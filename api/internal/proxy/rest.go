@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/dfradehubs/agentgram-api/internal/agents"
-	"github.com/dfradehubs/agentgram-api/internal/middleware"
 	"github.com/dfradehubs/agentgram-api/internal/models"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -34,22 +33,11 @@ func NewRESTProxy(logger *zap.Logger) *RESTProxy {
 }
 
 // Handle handles a request to a REST agent using AG-UI protocol
-func (p *RESTProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *models.Agent, body io.Reader, auth agents.OutboundAuth, requestID string, threadID string, sessionName string, onEvent func(interface{})) (*ProxyResult, error) {
+func (p *RESTProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *models.Agent, body io.Reader, auth agents.OutboundAuth, requestID string, cfg SSEConfig, agentTimeout time.Duration) (*ProxyResult, error) {
 	// Create SSE writer
-	sse, err := NewSSEWriter(w)
+	sse, err := resolveSSEWriter(w, cfg)
 	if err != nil {
 		return nil, err
-	}
-
-	if onEvent != nil {
-		sse.SetOnEvent(onEvent)
-	}
-
-	if threadID != "" {
-		sse.SetThreadID(threadID)
-	}
-	if sessionName != "" {
-		sse.SetSessionName(sessionName)
 	}
 
 	// Send run started event
@@ -57,20 +45,11 @@ func (p *RESTProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *mo
 		return nil, err
 	}
 
-	// Use a separate context for the agent request so the stream continues
-	// even if the client disconnects. This lets us capture the full response
-	// for session persistence.
-	agentCtx, agentCancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	// Detached context: survives client disconnect (to capture the full
+	// response for persistence) while carrying trace span, GitHub token and
+	// identity claims, bounded by the configurable agent timeout.
+	agentCtx, agentCancel := newDetachedAgentContext(ctx, agentTimeout)
 	defer agentCancel()
-
-	// Propagate trace span into the detached context so child spans remain
-	// connected to the original trace.
-	agentCtx = trace.ContextWithSpan(agentCtx, trace.SpanFromContext(ctx))
-
-	// Propagate GitHub token from the original request context
-	if githubToken := middleware.GetGitHubTokenFromContext(ctx); githubToken != "" {
-		agentCtx = context.WithValue(agentCtx, middleware.GitHubTokenContextKey, githubToken)
-	}
 
 	// Record the outgoing request body as a span event
 	bodyBytes, _ := io.ReadAll(body)
@@ -91,7 +70,15 @@ func (p *RESTProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *mo
 				zap.String("agent_id", agent.ID),
 				zap.Int("attempt", attempt+1),
 				zap.Duration("delay", delay))
-			time.Sleep(delay)
+			// Cancelable backoff: don't sleep past the agent timeout / cancellation.
+			select {
+			case <-time.After(delay):
+			case <-agentCtx.Done():
+				// Emit a visible error (RUN_ERROR, or a scoped turn.error when
+				// lifecycle is suppressed) so an aborted turn is never silent.
+				sse.SendRunError(fmt.Sprintf("agent timed out: %v", agentCtx.Err()))
+				return nil, agentCtx.Err()
+			}
 		}
 		resp, lastErr = p.client.Request(agentCtx, agent, bytes.NewReader(bodyBytes), auth, requestID)
 		if lastErr == nil {

@@ -14,7 +14,9 @@ function isValidChartData(data: unknown): data is ChartData {
     d.datasets.length > 0
   );
 }
-import { getChatEndpoint, getMCPChatEndpoint, getMultiMCPChatEndpoint, getRunStreamUrl } from "@/lib/api";
+import { getChatEndpoint, getGroupChatEndpoint, getMCPChatEndpoint, getMultiMCPChatEndpoint, getRunStreamUrl } from "@/lib/api";
+import { resolveMentions } from "@/lib/mentions";
+import { debateIncompleteMessage, debateIncompleteReason, type DebateIncompleteReason } from "@/lib/group-events";
 import { useBackgroundStreamContext } from "@/contexts/BackgroundStreamContext";
 import { reportMetric } from "@/lib/telemetry";
 
@@ -81,6 +83,7 @@ export function useChat({
   chatEndpoint: chatEndpointOverride,
   mcpConfig,
   groupId,
+  groupAgentIds,
   userName,
 }: UseChatOptions): UseChatReturn {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
@@ -96,7 +99,6 @@ export function useChat({
   const [errorType, setErrorType] = useState<"github_auth" | "mcp_oauth2" | null>(null);
   const [activeStreamAgentIds, setActiveStreamAgentIds] = useState<string[]>([]);
   const [isReconnecting, setIsReconnecting] = useState(false);
-  const retryCountRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const readerRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
   // Track active session ID across messages (set immediately on RUN_STARTED)
@@ -128,10 +130,56 @@ export function useChat({
     let currentContent = "";
     let currentIsThinking = false;
     let hasOpenMessage = false;
-    const segments: ContentSegment[] = [];
+    let segments: ContentSegment[] = [];
     let streamItems: TimelineItem[] = [];
     const streamStartMs = Date.now();
     let ttfbReported = false;
+
+    // Group debates: one stream carries several agents' turns, each event
+    // tagged with agentId. Track the current speaker and finalize a message
+    // per agent turn instead of one per stream.
+    let currentAgentId = effectiveAgentId;
+    let completedMessages: Message[] = [];
+    let agentStartIdx = 0; // streamItems index where the current agent's items begin
+
+    // Finalize the current agent's open segments into a completed message.
+    // Tool-only turns (no text) are kept too — dropping them would lose the
+    // agent's tool calls from the in-memory history.
+    const finalizeCurrentAgent = () => {
+      const finalized = buildFinalizedSegments(segments, hasOpenMessage, currentContent, currentIsThinking);
+      const finalContent = finalizeSegments(finalized);
+      const agentItems = streamItems.slice(agentStartIdx);
+      const hasStructuredItems = agentItems.some((i) => i.type === "tool_group" || i.type === "chart");
+      if (finalContent || hasStructuredItems) {
+        const finalMsg: Message = attachToolCalls(
+          { role: "assistant" as const, content: finalContent, agent_id: currentAgentId },
+          agentItems,
+        );
+        completedMessages = [...completedMessages, finalMsg];
+        streamItems = [...streamItems.slice(0, agentStartIdx), ...applyFinalMessage(agentItems, finalMsg)];
+        setMessages([...allMessages, ...completedMessages]);
+      }
+      segments = [];
+      currentContent = "";
+      hasOpenMessage = false;
+      agentStartIdx = streamItems.length;
+    };
+
+    // Switch speakers when an event is tagged with an agentId. Keeps the
+    // "who is thinking" indicator pointing at the actual speaker.
+    let sawTaggedEvent = false;
+    const maybeSwitchAgent = (eventAgentId?: string) => {
+      if (!eventAgentId) return;
+      if (!sawTaggedEvent) {
+        sawTaggedEvent = true;
+        if (!isStale()) setActiveStreamAgentIds([eventAgentId]);
+      }
+      if (eventAgentId === currentAgentId) return;
+      finalizeCurrentAgent();
+      currentAgentId = eventAgentId;
+      ttfbReported = false; // report ttfb once per agent turn, labeled correctly
+      if (!isStale()) setActiveStreamAgentIds([eventAgentId]);
+    };
 
     const isStale = () => requestGenRef.current !== gen;
     let rafId: number | null = null;
@@ -157,6 +205,7 @@ export function useChat({
 
     const processLoop = async () => {
       let runFinished = false;
+      let incompleteReason: DebateIncompleteReason | null = null;
 
       while (true) {
         if (isStale()) break;
@@ -181,6 +230,7 @@ export function useChat({
               break;
 
             case "TEXT_MESSAGE_START":
+              maybeSwitchAgent(event.agentId);
               currentContent = "";
               currentIsThinking = event.isThinking === true;
               hasOpenMessage = true;
@@ -189,24 +239,25 @@ export function useChat({
             case "TEXT_MESSAGE_CONTENT": {
               if (!ttfbReported && !currentIsThinking) {
                 ttfbReported = true;
-                reportMetric({ name: "ttfb", labels: { agent_id: effectiveAgentId }, value: (Date.now() - streamStartMs) / 1000 });
+                reportMetric({ name: "ttfb", labels: { agent_id: currentAgentId }, value: (Date.now() - streamStartMs) / 1000 });
               }
               currentContent += event.delta;
               const latestThinking = [...segments].reverse().find(s => s.isThinking);
 
               setMessages([
                 ...allMessages,
+                ...completedMessages,
                 ...(latestThinking && !currentIsThinking ? [{
                   role: "assistant" as const,
                   content: latestThinking.content,
                   isThinking: true,
-                  agent_id: effectiveAgentId,
+                  agent_id: currentAgentId,
                 }] : []),
                 {
                   role: "assistant" as const,
                   content: currentContent,
                   isThinking: currentIsThinking,
-                  agent_id: effectiveAgentId,
+                  agent_id: currentAgentId,
                 },
               ]);
 
@@ -216,7 +267,7 @@ export function useChat({
                   role: "assistant",
                   content: currentContent,
                   isThinking: currentIsThinking,
-                  agent_id: effectiveAgentId,
+                  agent_id: currentAgentId,
                 },
               };
               const lastStream = streamItems[streamItems.length - 1];
@@ -237,6 +288,7 @@ export function useChat({
               break;
 
             case "TOOL_CALL_START": {
+              maybeSwitchAgent(event.agentId);
               const newTc: ToolCall = {
                 toolCallId: event.toolCallId!,
                 toolName: event.toolName!,
@@ -246,17 +298,19 @@ export function useChat({
               };
               const lastItem = streamItems[streamItems.length - 1];
               if (lastItem?.type === "tool_group") {
-                streamItems = [...streamItems.slice(0, -1), { type: "tool_group", toolCalls: [...lastItem.toolCalls, newTc], agentId: effectiveAgentId }];
+                streamItems = [...streamItems.slice(0, -1), { type: "tool_group", toolCalls: [...lastItem.toolCalls, newTc], agentId: currentAgentId }];
               } else {
-                streamItems = [...streamItems, { type: "tool_group", toolCalls: [newTc], agentId: effectiveAgentId }];
+                streamItems = [...streamItems, { type: "tool_group", toolCalls: [newTc], agentId: currentAgentId }];
               }
               flushUpdate();
               break;
             }
 
             case "TOOL_CALL_ARGS": {
+              // Scope to the emitting agent's tool group so two agents reusing a
+              // toolCallId (group debates) don't cross-contaminate.
               streamItems = streamItems.map((item) => {
-                if (item.type === "tool_group") {
+                if (item.type === "tool_group" && (!event.agentId || item.agentId === event.agentId)) {
                   return {
                     ...item,
                     toolCalls: item.toolCalls.map((tc) =>
@@ -272,7 +326,7 @@ export function useChat({
 
             case "TOOL_CALL_END": {
               streamItems = streamItems.map((item) => {
-                if (item.type === "tool_group") {
+                if (item.type === "tool_group" && (!event.agentId || item.agentId === event.agentId)) {
                   return {
                     ...item,
                     toolCalls: item.toolCalls.map((tc) =>
@@ -287,12 +341,37 @@ export function useChat({
             }
 
             case "CUSTOM": {
+			  maybeSwitchAgent(event.agentId);
+              const reason = debateIncompleteReason(event);
+              if (reason) incompleteReason = reason;
               if (event.subType === "CHART" && isValidChartData(event.data)) {
                 streamItems = [...streamItems, {
                   type: "chart" as const,
                   chart: event.data,
-                  agentId: effectiveAgentId,
+                  agentId: currentAgentId,
                 }];
+                flushUpdate();
+              } else if (event.subType === "moderator.select") {
+                // Group debate: the moderator picked the next speaker — drive
+                // the "who is thinking" indicator during the pre-content gap.
+                const data = event.data as { agentId?: string } | undefined;
+                if (data?.agentId && !isStale()) setActiveStreamAgentIds([data.agentId]);
+              } else if (event.subType === "turn.error") {
+                // Group debate: one agent's turn failed but the debate goes on.
+                // Surface it as an error bubble for that agent — otherwise an
+                // all-failed debate would end in total silence.
+                const data = event.data as { agentId?: string; message?: string } | undefined;
+                if (data?.agentId) maybeSwitchAgent(data.agentId);
+                finalizeCurrentAgent();
+                const errMsg: Message = {
+                  role: "assistant" as const,
+                  content: `⚠️ ${data?.message || "Agent error"}`,
+                  agent_id: data?.agentId || currentAgentId,
+                };
+                completedMessages = [...completedMessages, errMsg];
+                streamItems = [...streamItems, { type: "message" as const, message: errMsg }];
+                agentStartIdx = streamItems.length;
+                setMessages([...allMessages, ...completedMessages]);
                 flushUpdate();
               }
               break;
@@ -300,18 +379,10 @@ export function useChat({
 
             case "RUN_FINISHED": {
               runFinished = true;
-              retryCountRef.current = 0;
-              const finalized = buildFinalizedSegments(segments, hasOpenMessage, currentContent, currentIsThinking);
-              const finalContent = finalizeSegments(finalized);
-
-              if (finalContent) {
-                const finalMsg: Message = attachToolCalls(
-                  { role: "assistant" as const, content: finalContent, agent_id: effectiveAgentId },
-                  streamItems,
-                );
-                setMessages([...allMessages, finalMsg]);
-                streamItems = applyFinalMessage(streamItems, finalMsg);
-                flushUpdate();
+              finalizeCurrentAgent();
+              flushUpdate();
+              if (incompleteReason) {
+                throw new AgentError(debateIncompleteMessage(incompleteReason));
               }
               break;
             }
@@ -323,15 +394,8 @@ export function useChat({
       }
 
       // Fallback if stream ended without RUN_FINISHED
-      const finalized = buildFinalizedSegments(segments, hasOpenMessage, currentContent, currentIsThinking);
-      if (finalized.length > 0) {
-        const finalContent = finalizeSegments(finalized);
-        const finalMsg: Message = attachToolCalls(
-          { role: "assistant" as const, content: finalContent, agent_id: effectiveAgentId },
-          streamItems,
-        );
-        setMessages([...allMessages, finalMsg]);
-        streamItems = applyFinalMessage(streamItems, finalMsg);
+      if (!runFinished) {
+        finalizeCurrentAgent();
         flushUpdate();
       }
 
@@ -462,7 +526,10 @@ export function useChat({
   }, [stopStream]);
 
   // Single-agent send (also used for MCP)
-  const sendMessage = useCallback((targetAgentId?: string, sendContext?: boolean, attachments?: Attachment[], textOverride?: string, baseMessagesOverride?: Message[]) => {
+  // groupDebate: when set (and the hook has a groupId), the message goes to the
+  // moderated group debate endpoint. agentIds optionally restricts the roster
+  // (@mention); empty/omitted lets the moderator pick freely.
+  const sendMessage = useCallback((targetAgentId?: string, sendContext?: boolean, attachments?: Attachment[], textOverride?: string, baseMessagesOverride?: Message[], groupDebate?: { agentIds?: string[] }) => {
     const text = (textOverride || input).trim();
     if (!text || isLoading) return;
 
@@ -486,9 +553,9 @@ export function useChat({
     setError(null);
     setErrorType(null);
     setIsLoading(true);
-    setActiveStreamAgentIds([effectiveAgentId]);
-
-    retryCountRef.current = 0;
+    // Group debates: the moderator decides who speaks — the real speaker ids
+    // arrive tagged on the stream events (see maybeSwitchAgent).
+    setActiveStreamAgentIds(groupDebate && groupId ? [] : [effectiveAgentId]);
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -498,9 +565,11 @@ export function useChat({
     streamSessionNameRef.current = sessionName;
     streamMessagesRef.current = allMessages;
 
-    // Determine endpoint: MCP mode uses MCP endpoints, otherwise agent endpoint
+    // Determine endpoint: group debate > MCP > agent endpoint
     let endpoint: string;
-    if (mcpConfig) {
+    if (groupDebate && groupId) {
+      endpoint = getGroupChatEndpoint(groupId);
+    } else if (mcpConfig) {
       endpoint = mcpConfig.serverIds.length > 1
         ? getMultiMCPChatEndpoint()
         : getMCPChatEndpoint(mcpConfig.serverIds[0]);
@@ -532,6 +601,9 @@ export function useChat({
 
     // Group ID for collaborative sessions
     if (groupId) bodyObj.group_id = groupId;
+
+    // Group debate roster override (@mention)
+    if (groupDebate?.agentIds?.length) bodyObj.agent_ids = groupDebate.agentIds;
 
     fetch(endpoint, {
       method: "POST",
@@ -578,25 +650,6 @@ export function useChat({
         if (err.name === "AbortError") return;
         if (requestGenRef.current !== thisGen) return;
 
-        if (isRetryableError(err) && retryCountRef.current < 3) {
-          retryCountRef.current++;
-          const delay = Math.pow(2, retryCountRef.current - 1) * 1000; // 1s, 2s, 4s
-          setIsReconnecting(true);
-          setError(null);
-          reportMetric({ name: "sse_reconnect", labels: { agent_id: effectiveAgentId, attempt: String(retryCountRef.current) }, value: 1 });
-
-          setTimeout(() => {
-            if (requestGenRef.current !== thisGen) {
-              setIsReconnecting(false);
-              return;
-            }
-            setIsReconnecting(false);
-            retry();
-          }, delay);
-          return;
-        }
-
-        retryCountRef.current = 0;
         setIsReconnecting(false);
         setError(err.message);
         setErrorType(err instanceof GitHubAuthError ? "github_auth" : err instanceof MCPOAuth2Error ? "mcp_oauth2" : null);
@@ -604,8 +657,6 @@ export function useChat({
       })
       .finally(() => {
         if (requestGenRef.current !== thisGen) return;
-        // Don't reset loading state if a reconnection retry is pending
-        if (retryCountRef.current > 0) return;
         abortRef.current = null;
         readerRef.current = null;
         setIsLoading(false);
@@ -1038,15 +1089,37 @@ export function useChat({
     const messagesBeforeRetry = messages.slice(0, startIdx);
     setError(null);
 
-    // Multi-agent retry: use sendMultiple with the provided or original target agents
     const retryTargets = targetAgentIds || targetMsg.broadcast_agent_ids;
+
+    // Moderated group retry: always go through the debate endpoint (never a
+    // direct single-agent send), so moderation + synthesis + session semantics
+    // match the original send. Re-derive the @mention roster override from the
+    // original text so "@agent-a ..." stays targeted (the backend validates the
+    // ids against the real group roster); no mentions = moderator decides.
+    if (groupId) {
+      // Re-derive the @mention roster override with the same parser as a fresh
+      // send (case-insensitive, canonicalized against the group roster).
+      const mentionResolution = resolveMentions(targetMsg.content, groupAgentIds || []);
+      if (mentionResolution.error) {
+        setError(mentionResolution.error === "ambiguous"
+          ? "That @mention matches more than one agent. Use a unique agent ID."
+          : "One or more @mentions do not match an agent in this group.");
+        return;
+      }
+      sendMessage(undefined, undefined, targetMsg.attachments, targetMsg.content, messagesBeforeRetry, {
+        agentIds: mentionResolution.agentIds.length > 0 ? mentionResolution.agentIds : undefined,
+      });
+      return;
+    }
+
+    // Multi-agent retry: use sendMultiple with the provided or original target agents
     if (retryTargets && retryTargets.length > 0) {
       sendMultiple(retryTargets, true, targetMsg.attachments, targetMsg.content, messagesBeforeRetry);
       return;
     }
 
     sendMessage(targetMsg.agent_id, undefined, targetMsg.attachments, targetMsg.content, messagesBeforeRetry);
-  }, [messages, isLoading, sendMessage, sendMultiple]);
+  }, [messages, isLoading, groupId, groupAgentIds, sendMessage, sendMultiple]);
 
   // Allow external code to replace messages (e.g. when reloading session from server)
   const replaceMessages = useCallback((newMessages: Message[]) => {

@@ -23,7 +23,6 @@ const (
 	GitHubTokenContextKey ContextKey = "githubToken"
 	// TokenRefreshThreshold seconds before expiry to proactively refresh
 	TokenRefreshThreshold int64 = 60
-
 )
 
 // Auth JWT authentication middleware with dual auth (cookie + bearer)

@@ -7,9 +7,9 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 # Copy source and build
-COPY main.go .
+COPY *.go ./
 
-RUN CGO_ENABLED=0 GOOS=linux go build -o /mock-agent main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -o /mock-agent .
 
 # Runtime image
 FROM alpine:3.19

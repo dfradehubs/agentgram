@@ -19,14 +19,14 @@ type SlackIntegration struct {
 
 // SlackUserLink represents a Slack user linked to a Keycloak identity via offline token.
 type SlackUserLink struct {
-	SlackUserID  string    `json:"slack_user_id"`
-	Email        string    `json:"email"`
-	RefreshToken string    `json:"-"`
+	SlackUserID        string    `json:"slack_user_id"`
+	Email              string    `json:"email"`
+	RefreshToken       string    `json:"-"`
 	GitHubToken        string    `json:"-"`
 	GitHubRefreshToken string    `json:"-"`
 	HasGitHub          bool      `json:"has_github"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
 }
 
 // SlackIntegrationResponse is the safe response for admin API (no tokens).

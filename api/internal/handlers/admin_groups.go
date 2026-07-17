@@ -2,10 +2,12 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/dfradehubs/agentgram-api/internal/metrics"
 	"github.com/dfradehubs/agentgram-api/internal/middleware"
 	"github.com/dfradehubs/agentgram-api/internal/models"
 	"github.com/dfradehubs/agentgram-api/internal/repository"
@@ -35,6 +37,7 @@ type AdminGroupRequest struct {
 	AgentIDs      []string `json:"agent_ids"`
 	AllowedUsers  []string `json:"allowed_users"`
 	AllowedGroups []string `json:"allowed_groups"`
+	MaxTurns      int      `json:"max_turns"`
 }
 
 // AdminGroupResponse is the response for admin group views
@@ -45,6 +48,7 @@ type AdminGroupResponse struct {
 	CreatedBy     string   `json:"created_by"`
 	AllowedUsers  []string `json:"allowed_users"`
 	AllowedGroups []string `json:"allowed_groups"`
+	MaxTurns      int      `json:"max_turns"`
 	CreatedAt     string   `json:"created_at"`
 	UpdatedAt     string   `json:"updated_at"`
 }
@@ -57,6 +61,7 @@ func groupToAdminResponse(g *models.AgentGroup) AdminGroupResponse {
 		CreatedBy:     g.CreatedBy,
 		AllowedUsers:  g.AllowedUsers,
 		AllowedGroups: g.AllowedGroups,
+		MaxTurns:      g.MaxTurns,
 		CreatedAt:     g.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		UpdatedAt:     g.UpdatedAt.Format("2006-01-02T15:04:05Z"),
 	}
@@ -106,20 +111,33 @@ func (h *AdminGroupsHandler) CreateGroup(w http.ResponseWriter, r *http.Request)
 		http.Error(w, `{"error":"id, name, and at least 2 agent_ids are required"}`, http.StatusBadRequest)
 		return
 	}
+	if err := models.ValidateGroupID(req.ID); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
+		return
+	}
+	if req.MaxTurns < 0 || req.MaxTurns > 50 {
+		http.Error(w, `{"error":"max_turns must be between 0 (default) and 50"}`, http.StatusBadRequest)
+		return
+	}
 
 	claims := middleware.GetUserFromContext(r.Context())
 
 	group := &models.AgentGroup{
-		ID:       req.ID,
-		Name:     req.Name,
-		AgentIDs: req.AgentIDs,
+		ID:        req.ID,
+		Name:      req.Name,
+		AgentIDs:  req.AgentIDs,
 		CreatedBy: claims.GetEmail(),
+		MaxTurns:  req.MaxTurns,
 	}
 
 	if err := h.groupRepo.Create(r.Context(), group, req.AllowedUsers, req.AllowedGroups); err != nil {
 		h.logger.Error("create group failed", zap.Error(err))
 		http.Error(w, `{"error":"failed to create group"}`, http.StatusInternalServerError)
 		return
+	}
+
+	if metrics.IsEnabled() {
+		metrics.GroupsCreatedTotal.Inc()
 	}
 
 	h.auditRepo.Log(r.Context(), &models.AuditEntry{
@@ -155,11 +173,21 @@ func (h *AdminGroupsHandler) UpdateGroup(w http.ResponseWriter, r *http.Request)
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
 		return
 	}
+	if req.Name == "" || len(req.AgentIDs) < 2 {
+		http.Error(w, `{"error":"name and at least 2 agent_ids are required"}`, http.StatusBadRequest)
+		return
+	}
+
+	if req.MaxTurns < 0 || req.MaxTurns > 50 {
+		http.Error(w, `{"error":"max_turns must be between 0 (default) and 50"}`, http.StatusBadRequest)
+		return
+	}
 
 	group := &models.AgentGroup{
 		ID:       id,
 		Name:     req.Name,
 		AgentIDs: req.AgentIDs,
+		MaxTurns: req.MaxTurns,
 	}
 
 	if err := h.groupRepo.Update(r.Context(), group); err != nil {
@@ -194,6 +222,10 @@ func (h *AdminGroupsHandler) DeleteGroup(w http.ResponseWriter, r *http.Request)
 	if err := h.groupRepo.Delete(r.Context(), id); err != nil {
 		http.Error(w, `{"error":"group not found"}`, http.StatusNotFound)
 		return
+	}
+
+	if metrics.IsEnabled() {
+		metrics.GroupsDeletedTotal.Inc()
 	}
 
 	claims := middleware.GetUserFromContext(r.Context())

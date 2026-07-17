@@ -135,29 +135,30 @@ func PrepareMessagesForMultiAgent(
 
 // allMessagesExceptLast returns all non-system, non-error messages from the
 // session excluding the most recent one that matches newMessage (which will be
-// sent separately). This gives a new participant the full conversation history.
+// sent separately). The matching user message may no longer be last after
+// another agent has replied in the same debate.
 func allMessagesExceptLast(messages []models.ChatMessage, newMessage models.ChatMessage) []models.ChatMessage {
-	// Find how many messages to consider (exclude the last one if it matches newMessage)
-	end := len(messages)
-	if end > 0 {
-		last := messages[end-1]
-		if last.Role == newMessage.Role && last.Content == newMessage.Content {
-			end--
+	exclude := -1
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == newMessage.Role && messages[i].Content == newMessage.Content {
+			exclude = i
+			break
 		}
 	}
 
 	var result []models.ChatMessage
-	// Take last N messages for context (same limit as other context builders)
-	start := 0
-	if end > maxContextMessages {
-		start = end - maxContextMessages
-	}
-	for i := start; i < end; i++ {
+	for i := 0; i < len(messages); i++ {
+		if i == exclude {
+			continue
+		}
 		msg := messages[i]
 		if msg.Role == "system" || msg.IsError {
 			continue
 		}
 		result = append(result, msg)
+	}
+	if len(result) > maxContextMessages {
+		result = result[len(result)-maxContextMessages:]
 	}
 	return result
 }

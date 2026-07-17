@@ -15,6 +15,7 @@ const roleLabels: Record<string, string> = {
   file_processor: "File Processor",
   chart_extractor: "Chart Extractor",
   session_namer: "Session Namer",
+  moderator: "Moderator",
 };
 
 export default function AdminLLMPage() {

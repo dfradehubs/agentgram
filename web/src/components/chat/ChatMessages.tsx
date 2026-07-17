@@ -286,7 +286,6 @@ interface ChatMessagesProps {
   currentMCPServer: MCPServer | null;
   mcpServers: MCPServer[];
   multiMCPServerNames: string[];
-  selectedTargetAgentIds: string[];
   selectedModelId: string;
   getAgentName: (agentId: string) => string;
   // User info
@@ -323,7 +322,6 @@ export const ChatMessages = React.memo(function ChatMessages({
   currentMCPServer,
   mcpServers,
   multiMCPServerNames,
-  selectedTargetAgentIds,
   selectedModelId,
   getAgentName,
   user,
@@ -475,10 +473,9 @@ export const ChatMessages = React.memo(function ChatMessages({
                 } else {
                   const targetMsg = messages.find((m) => m.role === "user" && m.content === msg.content);
                   if (targetMsg) {
-                    const retryTargets = isMultiAgent && selectedTargetAgentIds.length > 0
-                      ? selectedTargetAgentIds
-                      : undefined;
-                    onRetry(targetMsg, retryTargets);
+                    // Group retry routes through the debate endpoint (handled in
+                    // useChat via groupId); no per-agent target needed.
+                    onRetry(targetMsg);
                   }
                 }
               }}

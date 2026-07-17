@@ -81,13 +81,15 @@ type Registry struct {
 	mu              sync.RWMutex
 	logger          *zap.Logger
 	mcpRepo         repository.MCPServerRepository // nil when running without DB
-	toolCallTimeout time.Duration
+	toolCallTimeout func() time.Duration           // read per call, so runtime settings changes apply to cached clients
 	stopCh          chan struct{}
 }
 
 // NewDBRegistry creates a new DB-backed MCP registry.
-// toolCallTimeout is the max duration for a single MCP tool call (0 means no limit).
-func NewDBRegistry(mcpRepo repository.MCPServerRepository, toolCallTimeout time.Duration, logger *zap.Logger) *Registry {
+// toolCallTimeout returns the max duration for a single MCP tool call, read per
+// call (nil or <= 0 means no limit) so a runtime settings change applies without
+// a restart even to the long-lived, cached clients this registry reuses.
+func NewDBRegistry(mcpRepo repository.MCPServerRepository, toolCallTimeout func() time.Duration, logger *zap.Logger) *Registry {
 	return &Registry{
 		servers:         make(map[string]*ServerInfo),
 		logger:          logger,

@@ -11,9 +11,7 @@ import (
 
 	"github.com/dfradehubs/agentgram-api/internal/a2a"
 	"github.com/dfradehubs/agentgram-api/internal/agents"
-	"github.com/dfradehubs/agentgram-api/internal/middleware"
 	"github.com/dfradehubs/agentgram-api/internal/models"
-	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
@@ -33,22 +31,11 @@ func NewA2AProxy(logger *zap.Logger) *A2AProxy {
 
 // Handle handles a request to an A2A agent using AG-UI protocol.
 // It sends message/stream to the agent, reads SSE events, and converts them to AG-UI events.
-func (p *A2AProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *models.Agent, chatReq *models.ChatRequest, auth agents.OutboundAuth, requestID string, threadID string, sessionName string, onEvent func(interface{})) (*ProxyResult, error) {
+func (p *A2AProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *models.Agent, chatReq *models.ChatRequest, auth agents.OutboundAuth, requestID string, cfg SSEConfig, agentTimeout time.Duration) (*ProxyResult, error) {
 	// Create SSE writer for AG-UI output
-	sse, err := NewSSEWriter(w)
+	sse, err := resolveSSEWriter(w, cfg)
 	if err != nil {
 		return nil, err
-	}
-
-	if onEvent != nil {
-		sse.SetOnEvent(onEvent)
-	}
-
-	if threadID != "" {
-		sse.SetThreadID(threadID)
-	}
-	if sessionName != "" {
-		sse.SetSessionName(sessionName)
 	}
 
 	// Collect all user messages (context + query) and concatenate them.
@@ -80,18 +67,10 @@ func (p *A2AProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *mod
 		return nil, err
 	}
 
-	// Use a detached context for upstream A2A streaming so frontend/client
-	// disconnects do not abort the agent stream mid-run.
-	a2aCtx, a2aCancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	// Detached context: survives client disconnect while carrying trace span,
+	// GitHub token and identity claims, bounded by the configurable timeout.
+	a2aCtx, a2aCancel := newDetachedAgentContext(ctx, agentTimeout)
 	defer a2aCancel()
-
-	// Propagate current trace span into the detached context.
-	a2aCtx = trace.ContextWithSpan(a2aCtx, trace.SpanFromContext(ctx))
-
-	// Preserve GitHub token for upstream forwarding logic.
-	if githubToken := middleware.GetGitHubTokenFromContext(ctx); githubToken != "" {
-		a2aCtx = context.WithValue(a2aCtx, middleware.GitHubTokenContextKey, githubToken)
-	}
 
 	// Send message/stream to A2A agent with retry on connection errors (pre-content)
 	const maxAgentRetries = 3
@@ -105,7 +84,13 @@ func (p *A2AProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *mod
 				zap.String("agent_id", agent.ID),
 				zap.Int("attempt", attempt+1),
 				zap.Duration("delay", delay))
-			time.Sleep(delay)
+			// Cancelable backoff: don't sleep past the agent timeout / cancellation.
+			select {
+			case <-time.After(delay):
+			case <-a2aCtx.Done():
+				sse.SendRunError(fmt.Sprintf("agent timed out: %v", a2aCtx.Err()))
+				return nil, a2aCtx.Err()
+			}
 		}
 		resp, lastErr = p.client.SendMessageStream(a2aCtx, agent, userMessage, chatReq.SessionID, auth, requestID, attachments)
 		if lastErr == nil {
@@ -169,27 +154,45 @@ func (p *A2AProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *mod
 
 		line, err := reader.ReadString('\n')
 		if err != nil {
-			// Stream ended
+			// The A2A protocol has explicit terminal states. Reaching EOF (or a
+			// transport reset) before one of those states is always incomplete,
+			// even when the server already emitted partial text/tool calls.
 			if messageStarted {
 				sendToClient(func() error { return sse.SendTextMessageEnd() })
 			}
-			// If we accumulated text or tool calls, it was a successful run
-			if accumulated.Len() > 0 || len(toolCalls) > 0 {
-				sendToClient(func() error { return sse.SendRunFinished() })
+			// A context error (deadline/cancel) means the stream was cut mid-flight:
+			// whatever we have is truncated, not a completed answer. Surface it as a
+			// partial/error result so the debate doesn't treat it as success. The
+			// detached ctx isn't cancelled by client disconnect, so this only fires
+			// on a real timeout/cancellation.
+			if ctxErr := a2aCtx.Err(); ctxErr != nil {
+				errMsg := fmt.Sprintf("agent timed out: %v", ctxErr)
+				sendToClient(func() error { sse.SendRunError(errMsg); return nil })
 				flushText()
 				return &ProxyResult{
 					AssistantText:  accumulated.String(),
 					AgentSessionID: agentContextID,
 					ToolCalls:      toolCalls,
 					ContentParts:   contentParts,
-				}, nil
+					Error:          errMsg,
+				}, fmt.Errorf("%s", errMsg)
 			}
-			// Stream ended without content
-			p.logger.Error("stream ended unexpectedly",
+			errMsg := fmt.Sprintf("agent stream ended before completion: %v", err)
+			p.logger.Error("A2A stream ended before terminal status",
 				zap.String("agent_id", agent.ID),
 				zap.Error(err))
-			sendToClient(func() error { sse.SendRunError("stream ended unexpectedly"); return nil })
-			return nil, fmt.Errorf("stream ended: %w", err)
+			sendToClient(func() error { sse.SendRunError(errMsg); return nil })
+			if accumulated.Len() == 0 && len(toolCalls) == 0 {
+				return nil, fmt.Errorf("stream ended: %w", err)
+			}
+			flushText()
+			return &ProxyResult{
+				AssistantText:  accumulated.String(),
+				AgentSessionID: agentContextID,
+				ToolCalls:      toolCalls,
+				ContentParts:   contentParts,
+				Error:          errMsg,
+			}, fmt.Errorf("%s", errMsg)
 		}
 
 		line = strings.TrimSpace(line)
@@ -324,17 +327,24 @@ func (p *A2AProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *mod
 				return nil, fmt.Errorf("%s", fullErr)
 
 			case "canceled":
+				// A canceled task is incomplete, not a successful answer — treat it
+				// like failed/rejected so partial content is flagged as an error.
 				if messageStarted {
 					sendToClient(func() error { return sse.SendTextMessageEnd() })
 				}
-				sendToClient(func() error { return sse.SendRunFinished() })
-				flushText()
-				return &ProxyResult{
-					AssistantText:  accumulated.String(),
-					AgentSessionID: agentContextID,
-					ToolCalls:      toolCalls,
-					ContentParts:   contentParts,
-				}, nil
+				const canceledErr = "task canceled by agent"
+				sendToClient(func() error { sse.SendRunError(canceledErr); return nil })
+				if accumulated.Len() > 0 || len(toolCalls) > 0 {
+					flushText()
+					return &ProxyResult{
+						AssistantText:  accumulated.String(),
+						AgentSessionID: agentContextID,
+						ToolCalls:      toolCalls,
+						ContentParts:   contentParts,
+						Error:          canceledErr,
+					}, fmt.Errorf("%s", canceledErr)
+				}
+				return nil, fmt.Errorf("%s", canceledErr)
 
 			case "working":
 				// Working status messages contain intermediate steps:

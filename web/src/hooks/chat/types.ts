@@ -16,6 +16,7 @@ export interface UseChatOptions {
   chatEndpoint?: string; // Override default chat endpoint
   mcpConfig?: MCPConfig; // MCP mode: use MCP endpoint + include model_id/server_ids
   groupId?: string; // Group ID for collaborative sessions
+  groupAgentIds?: string[]; // Roster of the active group (for @mention parsing on retry)
   userName?: string; // Display name of current user (for multi-user group sessions)
 }
 
@@ -24,7 +25,7 @@ export interface UseChatReturn {
   timeline: TimelineItem[];
   input: string;
   setInput: (input: string) => void;
-  sendMessage: (targetAgentId?: string, sendContext?: boolean, attachments?: Attachment[], textOverride?: string) => void;
+  sendMessage: (targetAgentId?: string, sendContext?: boolean, attachments?: Attachment[], textOverride?: string, baseMessagesOverride?: Message[], groupDebate?: { agentIds?: string[] }) => void;
   sendMultiple: (targetAgentIds: string[], sendContext?: boolean, attachments?: Attachment[], textOverride?: string, baseMessagesOverride?: Message[]) => void;
   activeStreamAgentIds: string[];
   isLoading: boolean;

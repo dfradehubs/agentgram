@@ -5,13 +5,13 @@ import "time"
 // ChatEvent represents a single chat interaction for analytics
 type ChatEvent struct {
 	ID             string         `json:"id"`
-	ResourceType   string         `json:"resource_type"`   // agent, custom_agent, mcp
+	ResourceType   string         `json:"resource_type"` // agent, custom_agent, mcp
 	ResourceID     string         `json:"resource_id"`
 	ResourceName   string         `json:"resource_name"`
 	Protocol       string         `json:"protocol,omitempty"` // custom/a2a/adk (system agents only)
 	UserEmail      string         `json:"user_email"`
 	SessionID      string         `json:"session_id,omitempty"`
-	Status         string         `json:"status"`     // ok, error
+	Status         string         `json:"status"` // ok, error
 	ErrorType      string         `json:"error_type,omitempty"`
 	ErrorMsg       string         `json:"error_msg,omitempty"`
 	DurationMs     int            `json:"duration_ms"`
@@ -21,7 +21,7 @@ type ChatEvent struct {
 	TokenUsage     *TokenUsage    `json:"token_usage,omitempty"`
 	LLMModel       string         `json:"llm_model,omitempty"`
 	SessionRotated bool           `json:"session_rotated"`
-	Source         string         `json:"source"`          // web, slack
+	Source         string         `json:"source"` // web, slack
 	CreatedAt      time.Time      `json:"created_at"`
 }
 
@@ -40,66 +40,66 @@ type TokenUsage struct {
 
 // ResourceStats holds aggregate stats for a resource
 type ResourceStats struct {
-	TotalRequests    int64        `json:"total_requests"`
-	SuccessCount     int64        `json:"success_count"`
-	ErrorCount       int64        `json:"error_count"`
-	ErrorRate        float64      `json:"error_rate"`
-	AvgDurationMs    float64      `json:"avg_duration_ms"`
-	P95DurationMs    float64      `json:"p95_duration_ms"`
-	AvgTTFBMs        *float64     `json:"avg_ttfb_ms,omitempty"`
-	TokenUsage       *TokenUsage  `json:"token_usage,omitempty"`
-	UniqueUsers      int64        `json:"unique_users"`
-	ContextRotations int64        `json:"context_rotations"`
-	TotalToolCalls   int64        `json:"total_tool_calls"`
-	LLMModel         *string      `json:"llm_model,omitempty"`
+	TotalRequests    int64       `json:"total_requests"`
+	SuccessCount     int64       `json:"success_count"`
+	ErrorCount       int64       `json:"error_count"`
+	ErrorRate        float64     `json:"error_rate"`
+	AvgDurationMs    float64     `json:"avg_duration_ms"`
+	P95DurationMs    float64     `json:"p95_duration_ms"`
+	AvgTTFBMs        *float64    `json:"avg_ttfb_ms,omitempty"`
+	TokenUsage       *TokenUsage `json:"token_usage,omitempty"`
+	UniqueUsers      int64       `json:"unique_users"`
+	ContextRotations int64       `json:"context_rotations"`
+	TotalToolCalls   int64       `json:"total_tool_calls"`
+	LLMModel         *string     `json:"llm_model,omitempty"`
 }
 
 // TimelineBucket holds a single bucket in a timeline chart
 type TimelineBucket struct {
-	Timestamp    time.Time `json:"timestamp"`
-	Requests     int64     `json:"requests"`
-	Errors       int64     `json:"errors"`
-	AvgDuration  float64   `json:"avg_duration_ms"`
-	AvgTTFB      *float64  `json:"avg_ttfb_ms,omitempty"`
+	Timestamp   time.Time `json:"timestamp"`
+	Requests    int64     `json:"requests"`
+	Errors      int64     `json:"errors"`
+	AvgDuration float64   `json:"avg_duration_ms"`
+	AvgTTFB     *float64  `json:"avg_ttfb_ms,omitempty"`
 }
 
 // UserStat holds per-user statistics
 type UserStat struct {
-	UserEmail   string    `json:"user_email"`
-	Requests    int64     `json:"requests"`
-	Errors      int64     `json:"errors"`
-	LastAccess  time.Time `json:"last_access"`
+	UserEmail  string    `json:"user_email"`
+	Requests   int64     `json:"requests"`
+	Errors     int64     `json:"errors"`
+	LastAccess time.Time `json:"last_access"`
 }
 
 // ErrorStat holds error statistics
 type ErrorStat struct {
-	ErrorType string `json:"error_type"`
-	Count     int64  `json:"count"`
+	ErrorType string    `json:"error_type"`
+	Count     int64     `json:"count"`
 	LastSeen  time.Time `json:"last_seen"`
 	LastMsg   string    `json:"last_msg,omitempty"`
 }
 
 // GlobalStats holds global metrics overview
 type GlobalStats struct {
-	TotalRequests int64        `json:"total_requests"`
-	SuccessCount  int64        `json:"success_count"`
-	ErrorCount    int64        `json:"error_count"`
-	ErrorRate     float64      `json:"error_rate"`
-	AvgDurationMs float64      `json:"avg_duration_ms"`
-	P95DurationMs float64      `json:"p95_duration_ms"`
-	UniqueUsers   int64        `json:"unique_users"`
-	ActiveAgents  int64        `json:"active_agents"`
-	TokenUsage    *TokenUsage  `json:"token_usage,omitempty"`
+	TotalRequests int64       `json:"total_requests"`
+	SuccessCount  int64       `json:"success_count"`
+	ErrorCount    int64       `json:"error_count"`
+	ErrorRate     float64     `json:"error_rate"`
+	AvgDurationMs float64     `json:"avg_duration_ms"`
+	P95DurationMs float64     `json:"p95_duration_ms"`
+	UniqueUsers   int64       `json:"unique_users"`
+	ActiveAgents  int64       `json:"active_agents"`
+	TokenUsage    *TokenUsage `json:"token_usage,omitempty"`
 }
 
 // UserDetailStats holds detailed stats for a specific user
 type UserDetailStats struct {
-	TotalRequests int64        `json:"total_requests"`
-	ErrorRate     float64      `json:"error_rate"`
-	AvgDurationMs float64      `json:"avg_duration_ms"`
-	P95DurationMs float64      `json:"p95_duration_ms"`
-	TokenUsage    *TokenUsage  `json:"token_usage,omitempty"`
-	ActiveAgents  int64        `json:"active_agents"`
+	TotalRequests int64       `json:"total_requests"`
+	ErrorRate     float64     `json:"error_rate"`
+	AvgDurationMs float64     `json:"avg_duration_ms"`
+	P95DurationMs float64     `json:"p95_duration_ms"`
+	TokenUsage    *TokenUsage `json:"token_usage,omitempty"`
+	ActiveAgents  int64       `json:"active_agents"`
 }
 
 // ErrorEvent holds a single error event with full details

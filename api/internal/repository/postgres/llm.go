@@ -63,9 +63,9 @@ func (r *LLMModelRepository) Create(ctx context.Context, model *models.LLMModel)
 	}
 
 	if _, err := tx.Exec(ctx,
-		`INSERT INTO llm_models (id, name, provider, model, api_key, role, enabled, is_default)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-		model.ID, model.Name, model.Provider, model.Model, encKey, model.Role, model.Enabled, model.IsDefault,
+		`INSERT INTO llm_models (id, name, provider, model, api_key, endpoint, role, enabled, is_default)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+		model.ID, model.Name, model.Provider, model.Model, encKey, model.Endpoint, model.Role, model.Enabled, model.IsDefault,
 	); err != nil {
 		return fmt.Errorf("insert llm model: %w", err)
 	}
@@ -76,9 +76,9 @@ func (r *LLMModelRepository) Create(ctx context.Context, model *models.LLMModel)
 func (r *LLMModelRepository) Get(ctx context.Context, id string) (*models.LLMModel, error) {
 	var m models.LLMModel
 	err := r.pool.QueryRow(ctx,
-		`SELECT id, name, provider, model, api_key, role, enabled, is_default, created_at, updated_at
+		`SELECT id, name, provider, model, api_key, endpoint, role, enabled, is_default, created_at, updated_at
 		 FROM llm_models WHERE id = $1`, id,
-	).Scan(&m.ID, &m.Name, &m.Provider, &m.Model, &m.APIKey, &m.Role, &m.Enabled, &m.IsDefault, &m.CreatedAt, &m.UpdatedAt)
+	).Scan(&m.ID, &m.Name, &m.Provider, &m.Model, &m.APIKey, &m.Endpoint, &m.Role, &m.Enabled, &m.IsDefault, &m.CreatedAt, &m.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("get llm model: %w", err)
 	}
@@ -93,7 +93,7 @@ func (r *LLMModelRepository) Get(ctx context.Context, id string) (*models.LLMMod
 
 func (r *LLMModelRepository) List(ctx context.Context) ([]*models.LLMModel, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, name, provider, model, api_key, role, enabled, is_default, created_at, updated_at
+		`SELECT id, name, provider, model, api_key, endpoint, role, enabled, is_default, created_at, updated_at
 		 FROM llm_models ORDER BY name`,
 	)
 	if err != nil {
@@ -104,7 +104,7 @@ func (r *LLMModelRepository) List(ctx context.Context) ([]*models.LLMModel, erro
 	var result []*models.LLMModel
 	for rows.Next() {
 		var m models.LLMModel
-		if err := rows.Scan(&m.ID, &m.Name, &m.Provider, &m.Model, &m.APIKey, &m.Role, &m.Enabled, &m.IsDefault, &m.CreatedAt, &m.UpdatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.Name, &m.Provider, &m.Model, &m.APIKey, &m.Endpoint, &m.Role, &m.Enabled, &m.IsDefault, &m.CreatedAt, &m.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan llm model: %w", err)
 		}
 		m.APIKey, err = r.decryptKey(m.APIKey)
@@ -118,7 +118,7 @@ func (r *LLMModelRepository) List(ctx context.Context) ([]*models.LLMModel, erro
 
 func (r *LLMModelRepository) ListByRole(ctx context.Context, role string) ([]*models.LLMModel, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, name, provider, model, api_key, role, enabled, is_default, created_at, updated_at
+		`SELECT id, name, provider, model, api_key, endpoint, role, enabled, is_default, created_at, updated_at
 		 FROM llm_models WHERE role = $1 AND enabled = true ORDER BY name`, role,
 	)
 	if err != nil {
@@ -129,7 +129,7 @@ func (r *LLMModelRepository) ListByRole(ctx context.Context, role string) ([]*mo
 	var result []*models.LLMModel
 	for rows.Next() {
 		var m models.LLMModel
-		if err := rows.Scan(&m.ID, &m.Name, &m.Provider, &m.Model, &m.APIKey, &m.Role, &m.Enabled, &m.IsDefault, &m.CreatedAt, &m.UpdatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.Name, &m.Provider, &m.Model, &m.APIKey, &m.Endpoint, &m.Role, &m.Enabled, &m.IsDefault, &m.CreatedAt, &m.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan llm model: %w", err)
 		}
 		m.APIKey, err = r.decryptKey(m.APIKey)
@@ -163,9 +163,9 @@ func (r *LLMModelRepository) Update(ctx context.Context, model *models.LLMModel)
 	}
 
 	tag, err := tx.Exec(ctx,
-		`UPDATE llm_models SET name=$2, provider=$3, model=$4, api_key=$5, role=$6, enabled=$7, is_default=$8, updated_at=NOW()
+		`UPDATE llm_models SET name=$2, provider=$3, model=$4, api_key=$5, endpoint=$6, role=$7, enabled=$8, is_default=$9, updated_at=NOW()
 		 WHERE id=$1`,
-		model.ID, model.Name, model.Provider, model.Model, encKey, model.Role, model.Enabled, model.IsDefault,
+		model.ID, model.Name, model.Provider, model.Model, encKey, model.Endpoint, model.Role, model.Enabled, model.IsDefault,
 	)
 	if err != nil {
 		return fmt.Errorf("update llm model: %w", err)

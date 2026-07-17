@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,31 +17,37 @@ import (
 	"github.com/dfradehubs/agentgram-api/internal/config"
 	"github.com/dfradehubs/agentgram-api/internal/identity"
 	lf "github.com/dfradehubs/agentgram-api/internal/langfuse"
+	"github.com/dfradehubs/agentgram-api/internal/llm"
 	"github.com/dfradehubs/agentgram-api/internal/mcp"
 	"github.com/dfradehubs/agentgram-api/internal/middleware"
 	"github.com/dfradehubs/agentgram-api/internal/models"
+	"github.com/dfradehubs/agentgram-api/internal/orchestrator"
 	"github.com/dfradehubs/agentgram-api/internal/proxy"
 	"github.com/dfradehubs/agentgram-api/internal/repository"
 	"github.com/dfradehubs/agentgram-api/internal/service"
+	appsettings "github.com/dfradehubs/agentgram-api/internal/settings"
 	"github.com/dfradehubs/agentgram-api/internal/store"
 	"go.uber.org/zap"
 )
 
 // Handler is the HTTP handler for MCP protocol requests
 type Handler struct {
-	server         *Server
-	registry       *agents.Registry
-	mcpRegistry    *mcp.Registry
-	proxy          *proxy.Proxy
-	sessionStore   store.SessionStore
-	userService    *service.UserService
-	groupRepo      repository.GroupRepository
-	oidcClient     *auth.OIDCClient
-	langfuseTracer *lf.Tracer
-	cfg            *config.Config
-	oauth2Mgr      *mcp.OAuth2Manager
-	mcpRepo        repository.MCPServerRepository
-	logger         *zap.Logger
+	server           *Server
+	registry         *agents.Registry
+	mcpRegistry      *mcp.Registry
+	proxy            *proxy.Proxy
+	sessionStore     store.SessionStore
+	userService      *service.UserService
+	groupRepo        repository.GroupRepository
+	oidcClient       *auth.OIDCClient
+	langfuseTracer   *lf.Tracer
+	cfg              *config.Config
+	oauth2Mgr        *mcp.OAuth2Manager
+	mcpRepo          repository.MCPServerRepository
+	moderator        *orchestrator.Moderator
+	moderatorLoadErr error
+	settings         *appsettings.Service
+	logger           *zap.Logger
 }
 
 // NewHandler creates a new MCP HTTP handler
@@ -56,21 +63,48 @@ func NewHandler(
 	lfTracer *lf.Tracer,
 	oauth2Mgr *mcp.OAuth2Manager,
 	mcpRepo repository.MCPServerRepository,
+	llmRepo repository.LLMModelRepository,
+	settingsService *appsettings.Service,
 ) *Handler {
+	// Moderator LLM for group debate tools (role "moderator"); nil when unconfigured
+	var moderator *orchestrator.Moderator
+	var moderatorLoadErr error
+	if llmRepo != nil {
+		if modModels, err := llmRepo.ListByRole(context.Background(), "moderator"); err != nil {
+			moderatorLoadErr = fmt.Errorf("load moderator model: %w", err)
+			logger.Error("failed to load MCP moderator model", zap.Error(err))
+		} else if len(modModels) > 0 {
+			model := modModels[0]
+			provider, provErr := llm.NewProvider(model)
+			if provErr != nil {
+				moderatorLoadErr = fmt.Errorf("create moderator provider: %w", provErr)
+				logger.Error("failed to create MCP moderator provider", zap.Error(provErr))
+			} else {
+				if lfTracer != nil && lfTracer.Enabled() {
+					provider = lf.WrapProvider(provider, "moderator", model.Model)
+				}
+				moderator = orchestrator.NewWithProvider(provider, logger)
+			}
+		}
+	}
+
 	return &Handler{
-		server:         NewServer(registry, mcpRegistry, userService, logger),
-		registry:       registry,
-		mcpRegistry:    mcpRegistry,
-		proxy:          proxy.NewProxy(logger),
-		sessionStore:   sessionStore,
-		userService:    userService,
-		groupRepo:      groupRepo,
-		oidcClient:     oidcClient,
-		langfuseTracer: lfTracer,
-		cfg:            cfg,
-		oauth2Mgr:      oauth2Mgr,
-		mcpRepo:        mcpRepo,
-		logger:         logger,
+		server:           NewServer(registry, mcpRegistry, userService, groupRepo, logger),
+		registry:         registry,
+		mcpRegistry:      mcpRegistry,
+		proxy:            proxy.NewProxy(logger),
+		sessionStore:     sessionStore,
+		userService:      userService,
+		groupRepo:        groupRepo,
+		oidcClient:       oidcClient,
+		langfuseTracer:   lfTracer,
+		cfg:              cfg,
+		oauth2Mgr:        oauth2Mgr,
+		mcpRepo:          mcpRepo,
+		moderator:        moderator,
+		moderatorLoadErr: moderatorLoadErr,
+		settings:         settingsService,
+		logger:           logger,
 	}
 }
 
@@ -404,6 +438,13 @@ func (h *Handler) handleToolsCall(w http.ResponseWriter, r *http.Request, req js
 		return
 	}
 
+	// Group tools have a namespace disjoint from ask_<agentID>, so routing does
+	// not depend on database existence or precedence tricks.
+	if groupID, ok := GetGroupIDFromToolName(params.Name); ok {
+		h.handleGroupToolCall(w, r, req, groupID, params.Arguments, userEmail, userGroups, mcpSessionID)
+		return
+	}
+
 	// Extract agent ID from tool name
 	agentID, ok := GetAgentIDFromToolName(params.Name)
 	if !ok {
@@ -547,7 +588,19 @@ func (h *Handler) handleToolsCall(w http.ResponseWriter, r *http.Request, req js
 		if lfTrace != nil {
 			lfTrace.End(false, cr.err.Error())
 		}
-		flushSSE(h.server.MarshalToolResult(req.ID, "Agent call failed. Please try again.", true))
+		responseText := cr.text
+		if responseText == "" {
+			responseText = "Agent call failed. Please try again."
+		} else {
+			responseText += "\n\n---\n_Error: the agent response could not be completed._"
+		}
+		if cr.sessionID != "" {
+			responseText += fmt.Sprintf("\n\n---\n[session_id: %s]", cr.sessionID)
+		}
+		if mcpSessionID != "" && cr.sessionID != "" {
+			h.server.sessions.SetAgentSession(mcpSessionID, agentID, cr.sessionID)
+		}
+		flushSSE(h.server.MarshalToolResult(req.ID, responseText, true))
 		return
 	}
 
@@ -728,7 +781,7 @@ func (h *Handler) handleMCPToolCall(w http.ResponseWriter, r *http.Request, req 
 		if lfTrace != nil {
 			lfTrace.End(false, cr.err.Error())
 		}
-		flushSSE(h.server.MarshalToolResult(req.ID, fmt.Sprintf("MCP tool call failed: %s", cr.err), true))
+		flushSSE(h.server.MarshalToolResult(req.ID, "MCP tool call failed. Please try again.", true))
 		return
 	}
 
@@ -774,6 +827,21 @@ func (h *Handler) callAgent(ctx context.Context, agent *models.Agent, question s
 		return "", "", fmt.Errorf("failed to create session: %w", err)
 	}
 	agentgramSessionID := session.SessionID
+	userSaveCtx, userSaveCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	err = h.sessionStore.AddMessage(userSaveCtx, agentgramSessionID, models.ChatMessage{
+		Role: "user", Content: question, UserEmail: userEmail,
+	})
+	userSaveCancel()
+	if err != nil {
+		h.logger.Error("failed to persist user message", zap.String("session_id", agentgramSessionID), zap.Error(err))
+		deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		deleteErr := h.sessionStore.DeleteSession(deleteCtx, agentgramSessionID, userEmail, agent.ID)
+		deleteCancel()
+		if deleteErr != nil {
+			h.logger.Warn("failed to clean up MCP session after persistence failure", zap.String("session_id", agentgramSessionID), zap.Error(deleteErr))
+		}
+		return "", agentgramSessionID, fmt.Errorf("persist user message: %w", err)
+	}
 
 	// Build chat request — don't pass sessionID so the agent creates its own session.
 	// The proxy handles agent-side session mapping via store.SetAgentSessionID.
@@ -801,48 +869,49 @@ func (h *Handler) callAgent(ctx context.Context, agent *models.Agent, question s
 	// UserEmail/UserGroups travel as explicit options (not via context):
 	// the proxy call below runs on a detached context.Background().
 	opts := proxy.HandleOptions{
-		ThreadID:   agentgramSessionID,
-		RequestID:  fmt.Sprintf("mcp-%s", reqIDSuffix),
-		UserEmail:  userEmail,
-		UserGroups: userGroups,
+		ThreadID:     agentgramSessionID,
+		RequestID:    fmt.Sprintf("mcp-%s", reqIDSuffix),
+		UserEmail:    userEmail,
+		UserGroups:   userGroups,
+		AgentTimeout: h.settings.Duration(appsettings.KeyMCPToolCallTimeout),
 	}
 
 	// Call the proxy with its own context, independent of the HTTP request.
 	// This prevents the proxy call from being canceled if the HTTP client
 	// disconnects or the gateway times out — we need the full response.
-	callCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	callCtx, cancel := context.WithTimeout(context.Background(), h.settings.Duration(appsettings.KeyMCPToolCallTimeout))
 	defer cancel()
-
-	proxyResult, err := h.proxy.Handle(callCtx, buf, agent, chatReq, authHeader, opts)
-	if err != nil {
-		return "", agentgramSessionID, err
+	// Preserve the GitHub token so require_github_token / forward-auth agents
+	// still receive X-GitHub-Token (the detached context would otherwise drop it).
+	if tok := middleware.GetGitHubTokenFromContext(ctx); tok != "" {
+		callCtx = context.WithValue(callCtx, middleware.GitHubTokenContextKey, tok)
+	}
+	// Carry the caller's identity claims so the proxy emits X-User-* downstream.
+	if claims := middleware.GetUserFromContext(ctx); claims != nil {
+		callCtx = context.WithValue(callCtx, middleware.UserContextKey, claims)
 	}
 
-	// Save the messages to the session store (use callCtx, not the HTTP ctx)
-	if proxyResult != nil && proxyResult.AssistantText != "" {
-		saveCtx, saveCancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer saveCancel()
-		// Save user message
-		if err := h.sessionStore.AddMessage(saveCtx, agentgramSessionID, models.ChatMessage{
-			Role:      "user",
-			Content:   question,
-			UserEmail: userEmail,
-		}); err != nil {
-			h.logger.Error("failed to persist user message", zap.String("session_id", agentgramSessionID), zap.Error(err))
+	proxyResult, proxyErr := h.proxy.Handle(callCtx, buf, agent, chatReq, authHeader, opts)
+
+	var persistenceErr error
+	if proxyResult.HasPersistableContent() {
+		rawResultErr := proxyErr
+		if proxyResult.Error != "" {
+			rawResultErr = errors.Join(rawResultErr, errors.New(proxyResult.Error))
 		}
-		// Save assistant message
-		if err := h.sessionStore.AddMessage(saveCtx, agentgramSessionID, models.ChatMessage{
-			Role:    "assistant",
-			Content: proxyResult.AssistantText,
-			AgentID: agent.ID,
-		}); err != nil {
+		assistantMsg := proxyResult.ToChatMessage(agent.ID, proxy.PublicErrorMessage(rawResultErr))
+		assistantSaveCtx, assistantSaveCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		err := h.sessionStore.AddMessage(assistantSaveCtx, agentgramSessionID, assistantMsg)
+		assistantSaveCancel()
+		if err != nil {
 			h.logger.Error("failed to persist assistant message", zap.String("session_id", agentgramSessionID), zap.Error(err))
+			persistenceErr = fmt.Errorf("persist assistant message: %w", err)
 		}
 	}
 
 	text := ""
 	if proxyResult != nil {
-		text = proxyResult.AssistantText
+		text = proxy.TranscriptText(proxyResult)
 		logLevel := h.logger.Info
 		if text == "" {
 			logLevel = h.logger.Warn
@@ -868,8 +937,11 @@ func (h *Handler) callAgent(ctx context.Context, agent *models.Agent, question s
 		h.logger.Warn("MCP callAgent: nil proxyResult", zap.String("agent_id", agent.ID))
 	}
 
-	if text == "" && proxyResult != nil && proxyResult.Error != "" {
-		return "", agentgramSessionID, fmt.Errorf("agent error: %s", proxyResult.Error)
+	if err := errors.Join(proxyErr, persistenceErr); err != nil {
+		return text, agentgramSessionID, err
+	}
+	if proxyResult != nil && proxyResult.Error != "" {
+		return text, agentgramSessionID, fmt.Errorf("agent error: %s", proxyResult.Error)
 	}
 
 	return text, agentgramSessionID, nil

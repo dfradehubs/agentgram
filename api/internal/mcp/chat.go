@@ -20,18 +20,27 @@ type ChatMessage = models.ChatMessage
 
 // ChatOrchestrator handles the LLM + tool calling loop for MCP chat
 type ChatOrchestrator struct {
-	llmRepo           repository.LLMModelRepository
-	maxToolCallRounds int
-	logger            *zap.Logger
+	llmRepo     repository.LLMModelRepository
+	maxRoundsFn func() int // resolves the max LLM ↔ tool rounds per request (runtime setting)
+	logger      *zap.Logger
+}
+
+// maxRounds resolves the current max tool-call rounds (0 if unset → default).
+func (o *ChatOrchestrator) maxRounds() int {
+	if o.maxRoundsFn == nil {
+		return 0
+	}
+	return o.maxRoundsFn()
 }
 
 // NewChatOrchestrator creates a new chat orchestrator.
-// maxToolCallRounds sets the limit for LLM ↔ tool iterations (0 uses default).
-func NewChatOrchestrator(llmRepo repository.LLMModelRepository, maxToolCallRounds int, logger *zap.Logger) *ChatOrchestrator {
+// maxRoundsFn resolves the LLM ↔ tool iteration limit per request; a nil fn or
+// a value <= 0 falls back to DefaultMaxToolCallRounds.
+func NewChatOrchestrator(llmRepo repository.LLMModelRepository, maxRoundsFn func() int, logger *zap.Logger) *ChatOrchestrator {
 	return &ChatOrchestrator{
-		llmRepo:           llmRepo,
-		maxToolCallRounds: maxToolCallRounds,
-		logger:            logger,
+		llmRepo:     llmRepo,
+		maxRoundsFn: maxRoundsFn,
+		logger:      logger,
 	}
 }
 
@@ -111,7 +120,7 @@ func (o *ChatOrchestrator) Chat(ctx context.Context, w http.ResponseWriter, serv
 		Messages:          ConvertToLLMMessages(req.Messages),
 		Handler:           handler,
 		Parallel:          false,
-		MaxToolCallRounds: o.maxToolCallRounds,
+		MaxToolCallRounds: o.maxRounds(),
 		Logger:            o.logger,
 	})
 }
@@ -226,7 +235,7 @@ func (o *ChatOrchestrator) ChatMulti(ctx context.Context, w http.ResponseWriter,
 		Messages:          ConvertToLLMMessages(req.Messages),
 		Handler:           handler,
 		Parallel:          false,
-		MaxToolCallRounds: o.maxToolCallRounds,
+		MaxToolCallRounds: o.maxRounds(),
 		Logger:            o.logger,
 		OnStart:           onStart,
 	})

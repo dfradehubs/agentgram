@@ -30,16 +30,16 @@ type StreamingWriter struct {
 	logger    *zap.Logger
 
 	mu              sync.Mutex
-	messageTS       string          // TS of the current message being edited
+	messageTS       string // TS of the current message being edited
 	toolCount       int
 	textBuf         strings.Builder // accumulated display text
 	headerBuf       bytes.Buffer    // raw SSE buffer for parsing
 	statusCode      int
 	debounceTimer   *time.Timer
 	lastError       string
-	overflowPending bool            // true when current message hit max length
-	msgStartOffset  int             // offset in textBuf where the current message's text starts
-	lastSentLen     int             // length of fullText last successfully sent
+	overflowPending bool // true when current message hit max length
+	msgStartOffset  int  // offset in textBuf where the current message's text starts
+	lastSentLen     int  // length of fullText last successfully sent
 }
 
 func NewStreamingWriter(client *slackapi.Client, channelID, threadTS, agentID string, formatter *Formatter, logger *zap.Logger) *StreamingWriter {
@@ -75,11 +75,19 @@ func (sw *StreamingWriter) PostInitialMessage() {
 	SlackAPICallsTotal.WithLabelValues(sw.agentID, "chat.postMessage").Inc()
 }
 
-func (sw *StreamingWriter) Header() http.Header       { return http.Header{} }
-func (sw *StreamingWriter) WriteHeader(code int)       { sw.statusCode = code }
-func (sw *StreamingWriter) Flush()                     {}
-func (sw *StreamingWriter) FullText() string           { sw.mu.Lock(); defer sw.mu.Unlock(); return sw.textBuf.String() }
-func (sw *StreamingWriter) LastError() string          { sw.mu.Lock(); defer sw.mu.Unlock(); return sw.lastError }
+func (sw *StreamingWriter) Header() http.Header  { return http.Header{} }
+func (sw *StreamingWriter) WriteHeader(code int) { sw.statusCode = code }
+func (sw *StreamingWriter) Flush()               {}
+func (sw *StreamingWriter) FullText() string {
+	sw.mu.Lock()
+	defer sw.mu.Unlock()
+	return sw.textBuf.String()
+}
+func (sw *StreamingWriter) LastError() string {
+	sw.mu.Lock()
+	defer sw.mu.Unlock()
+	return sw.lastError
+}
 
 // Write implements http.ResponseWriter.
 func (sw *StreamingWriter) Write(data []byte) (int, error) {
@@ -191,6 +199,7 @@ func (sw *StreamingWriter) sendUpdate(isFinal bool) {
 	fullText := sw.textBuf.String()
 	overflow := sw.overflowPending
 	offset := sw.msgStartOffset
+	lastError := sw.lastError
 	sw.mu.Unlock()
 
 	if ts == "" || fullText == "" {
@@ -199,6 +208,9 @@ func (sw *StreamingWriter) sendUpdate(isFinal bool) {
 
 	// Text for the CURRENT message only (from offset onwards)
 	currentText := fullText[offset:]
+	if isFinal {
+		currentText = finalDisplayText(currentText, lastError)
+	}
 	if currentText == "" {
 		return
 	}
@@ -256,6 +268,17 @@ func (sw *StreamingWriter) sendUpdate(isFinal bool) {
 		sw.mu.Unlock()
 	}
 	SlackAPICallsTotal.WithLabelValues(sw.agentID, "chat.update").Inc()
+}
+
+func finalDisplayText(text, rawError string) string {
+	if rawError == "" {
+		return text
+	}
+	notice := ":warning: Response incomplete. " + classifyError(fmt.Errorf("%s", rawError))
+	if text == "" {
+		return notice
+	}
+	return text + "\n\n" + notice
 }
 
 func (sw *StreamingWriter) postError(msg string) {

@@ -41,8 +41,8 @@ type ToolResultContent struct {
 type Client struct {
 	serverURL       string
 	headers         map[string]string
-	transport       string // "sse" or "http"
-	toolCallTimeout time.Duration
+	transport       string               // "sse" or "http"
+	toolCallTimeout func() time.Duration // read per call so a runtime settings change applies to this long-lived client
 	client          *http.Client
 	logger          *zap.Logger
 	sessionID       string // Mcp-Session-Id from server
@@ -52,9 +52,11 @@ type Client struct {
 }
 
 // NewClient creates a new MCP client.
-// toolCallTimeout controls the max duration for a single tool call request.
-// If zero, no per-call timeout is applied (context deadline from caller still applies).
-func NewClient(serverURL, transport string, headers map[string]string, toolCallTimeout time.Duration, logger *zap.Logger) *Client {
+// toolCallTimeout returns the max duration for a single tool call request, read
+// per call so a runtime settings change takes effect on this long-lived client.
+// A nil getter (or one returning <= 0) applies no per-call timeout (the caller's
+// context deadline still applies).
+func NewClient(serverURL, transport string, headers map[string]string, toolCallTimeout func() time.Duration, logger *zap.Logger) *Client {
 	c := &Client{
 		serverURL:       serverURL,
 		headers:         headers,
@@ -186,11 +188,14 @@ func (c *Client) CallToolWithHeaders(ctx context.Context, name string, arguments
 		return nil, fmt.Errorf("MCP client not initialized, call Initialize() first")
 	}
 
-	// Apply per-call timeout so long-running tool calls don't hang indefinitely
-	if c.toolCallTimeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, c.toolCallTimeout)
-		defer cancel()
+	// Apply per-call timeout so long-running tool calls don't hang indefinitely.
+	// Read via the getter so a runtime settings change applies without a restart.
+	if c.toolCallTimeout != nil {
+		if to := c.toolCallTimeout(); to > 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, to)
+			defer cancel()
+		}
 	}
 
 	params := map[string]interface{}{

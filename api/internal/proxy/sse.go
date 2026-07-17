@@ -12,15 +12,61 @@ import (
 
 // SSEWriter writes SSE events to the client using AG-UI protocol
 type SSEWriter struct {
-	w           http.ResponseWriter
-	flusher     http.Flusher
-	threadID    string
-	runID       string
-	messageID   string
-	sessionName string
-	mu          sync.Mutex
-	onEvent     func(event interface{}) // Optional callback for each event
-	clientGone  bool                    // true once writing to the client failed / it disconnected
+	w                 http.ResponseWriter
+	flusher           http.Flusher
+	threadID          string
+	runID             string
+	messageID         string
+	sessionName       string
+	agentID           string // When set, TEXT_MESSAGE_*, TOOL_CALL_*, and CUSTOM events are tagged with it (group debates)
+	suppressLifecycle bool   // When true, RUN_STARTED/RUN_FINISHED are no-ops (outer run owns the lifecycle)
+	deferLifecycle    bool   // When true, all RUN_* events are owned by the caller
+	mu                sync.Mutex
+	onEvent           func(event interface{}) // Optional callback for each event
+	clientGone        bool                    // true once writing to the client failed / it disconnected
+}
+
+// SSEConfig bundles the client-facing stream configuration shared by all
+// protocol handlers.
+type SSEConfig struct {
+	ThreadID          string
+	SessionName       string
+	AgentID           string
+	SuppressLifecycle bool
+	DeferLifecycle    bool
+	Writer            *SSEWriter
+	OnEvent           func(event interface{})
+}
+
+// Apply sets the configuration on the writer.
+func (s *SSEWriter) Apply(cfg SSEConfig) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if cfg.ThreadID != "" {
+		s.threadID = cfg.ThreadID
+	}
+	if cfg.SessionName != "" {
+		s.sessionName = cfg.SessionName
+	}
+	s.agentID = cfg.AgentID
+	s.suppressLifecycle = cfg.SuppressLifecycle
+	s.deferLifecycle = cfg.DeferLifecycle
+	if cfg.OnEvent != nil {
+		s.onEvent = cfg.OnEvent
+	}
+}
+
+func resolveSSEWriter(w http.ResponseWriter, cfg SSEConfig) (*SSEWriter, error) {
+	if cfg.Writer != nil {
+		cfg.Writer.Apply(cfg)
+		return cfg.Writer, nil
+	}
+	sse, err := NewSSEWriter(w)
+	if err != nil {
+		return nil, err
+	}
+	sse.Apply(cfg)
+	return sse, nil
 }
 
 // NewSSEWriter creates a new SSEWriter with AG-UI protocol support
@@ -110,29 +156,63 @@ func (s *SSEWriter) SendAGUIEvent(event interface{}) error {
 	return nil
 }
 
-// SendRunStarted sends the AG-UI RUN_STARTED event
+// SendRunStarted sends the AG-UI RUN_STARTED event.
+// No-op when lifecycle is suppressed or deferred (the surface handler or an
+// outer run owns RUN_STARTED/RUN_FINISHED).
 func (s *SSEWriter) SendRunStarted() error {
 	s.mu.Lock()
 	threadID := s.threadID
 	runID := s.runID
 	sessionName := s.sessionName
+	suppress := s.suppressLifecycle
+	deferred := s.deferLifecycle
 	s.mu.Unlock()
+	if suppress || deferred {
+		return nil
+	}
 	event := models.NewAGUIRunStartedEvent(threadID, runID)
 	event.SessionName = sessionName
 	return s.SendAGUIEvent(event)
 }
 
-// SendRunFinished sends the AG-UI RUN_FINISHED event
+// SendRunFinished sends the AG-UI RUN_FINISHED event.
+// No-op when lifecycle is suppressed or deferred (the surface handler or an
+// outer run owns RUN_STARTED/RUN_FINISHED).
 func (s *SSEWriter) SendRunFinished() error {
 	s.mu.Lock()
 	threadID := s.threadID
 	runID := s.runID
+	suppress := s.suppressLifecycle
+	deferred := s.deferLifecycle
 	s.mu.Unlock()
+	if suppress || deferred {
+		return nil
+	}
 	return s.SendAGUIEvent(models.NewAGUIRunFinishedEvent(threadID, runID))
 }
 
-// SendRunError sends the AG-UI RUN_ERROR event
+// SendRunError sends the AG-UI RUN_ERROR event.
+// When lifecycle is deferred, the surface handler owns the terminal event and
+// this is a no-op. When suppressed (a debate turn inside an outer run), a bare
+// RUN_ERROR would abort the whole run on the client even though the debate
+// continues — emit an agent-scoped CUSTOM event instead. Persistence is owned
+// by the surface handler and may independently fail.
 func (s *SSEWriter) SendRunError(message string) error {
+	s.mu.Lock()
+	suppress := s.suppressLifecycle
+	deferred := s.deferLifecycle
+	agentID := s.agentID
+	s.mu.Unlock()
+	if deferred {
+		return nil
+	}
+	message = PublicErrorMessage(fmt.Errorf("%s", message))
+	if suppress {
+		return s.SendCustomEvent("turn.error", map[string]interface{}{
+			"agentId": agentID,
+			"message": message,
+		})
+	}
 	return s.SendAGUIEvent(models.NewAGUIRunErrorEvent(message))
 }
 
@@ -141,8 +221,9 @@ func (s *SSEWriter) SendTextMessageStart() error {
 	messageID := uuid.New().String()
 	s.mu.Lock()
 	s.messageID = messageID
+	agentID := s.agentID
 	s.mu.Unlock()
-	return s.SendAGUIEvent(models.NewAGUITextMessageStartEvent(messageID))
+	return s.SendAGUIEvent(models.NewAGUITextMessageStartEventFull(messageID, agentID, false))
 }
 
 // SendTextMessageStartThinking sends a TEXT_MESSAGE_START marked as thinking
@@ -150,26 +231,27 @@ func (s *SSEWriter) SendTextMessageStartThinking() error {
 	messageID := uuid.New().String()
 	s.mu.Lock()
 	s.messageID = messageID
+	agentID := s.agentID
 	s.mu.Unlock()
-	event := models.NewAGUITextMessageStartEvent(messageID)
-	event.IsThinking = true
-	return s.SendAGUIEvent(event)
+	return s.SendAGUIEvent(models.NewAGUITextMessageStartEventFull(messageID, agentID, true))
 }
 
 // SendTextMessageContent sends the AG-UI TEXT_MESSAGE_CONTENT event
 func (s *SSEWriter) SendTextMessageContent(delta string) error {
 	s.mu.Lock()
 	messageID := s.messageID
+	agentID := s.agentID
 	s.mu.Unlock()
-	return s.SendAGUIEvent(models.NewAGUITextMessageContentEvent(messageID, delta))
+	return s.SendAGUIEvent(models.NewAGUITextMessageContentEventWithAgent(messageID, delta, agentID))
 }
 
 // SendTextMessageEnd sends the AG-UI TEXT_MESSAGE_END event
 func (s *SSEWriter) SendTextMessageEnd() error {
 	s.mu.Lock()
 	messageID := s.messageID
+	agentID := s.agentID
 	s.mu.Unlock()
-	return s.SendAGUIEvent(models.NewAGUITextMessageEndEvent(messageID))
+	return s.SendAGUIEvent(models.NewAGUITextMessageEndEventWithAgent(messageID, agentID))
 }
 
 // Flush forces pending data to be sent
@@ -194,36 +276,52 @@ func (s *SSEWriter) SendKeepAlive() error {
 
 // SendToolCallStart sends the AG-UI TOOL_CALL_START event
 func (s *SSEWriter) SendToolCallStart(toolCallID, toolName string) error {
+	s.mu.Lock()
+	agentID := s.agentID
+	s.mu.Unlock()
 	return s.SendAGUIEvent(&models.AGUIToolCallStartEvent{
 		Type:       models.AGUIEventToolCallStart,
 		ToolCallID: toolCallID,
 		ToolName:   toolName,
+		AgentID:    agentID,
 	})
 }
 
 // SendToolCallArgs sends the AG-UI TOOL_CALL_ARGS event
 func (s *SSEWriter) SendToolCallArgs(toolCallID, delta string) error {
+	s.mu.Lock()
+	agentID := s.agentID
+	s.mu.Unlock()
 	return s.SendAGUIEvent(&models.AGUIToolCallArgsEvent{
 		Type:       models.AGUIEventToolCallArgs,
 		ToolCallID: toolCallID,
 		Delta:      delta,
+		AgentID:    agentID,
 	})
 }
 
 // SendToolCallEnd sends the AG-UI TOOL_CALL_END event
 func (s *SSEWriter) SendToolCallEnd(toolCallID, result string) error {
+	s.mu.Lock()
+	agentID := s.agentID
+	s.mu.Unlock()
 	return s.SendAGUIEvent(&models.AGUIToolCallEndEvent{
 		Type:       models.AGUIEventToolCallEnd,
 		ToolCallID: toolCallID,
 		Result:     result,
+		AgentID:    agentID,
 	})
 }
 
 // SendCustomEvent sends an AG-UI CUSTOM event with the given subType and data
 func (s *SSEWriter) SendCustomEvent(subType string, data map[string]interface{}) error {
+	s.mu.Lock()
+	agentID := s.agentID
+	s.mu.Unlock()
 	return s.SendAGUIEvent(&models.AGUICustomEvent{
 		Type:    models.AGUIEventCustom,
 		SubType: subType,
 		Data:    data,
+		AgentID: agentID,
 	})
 }

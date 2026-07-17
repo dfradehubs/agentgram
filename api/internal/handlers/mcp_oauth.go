@@ -177,7 +177,12 @@ func (h *MCPOAuthHandler) Status(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"auth_type": "oauth2",
 		"connected": token != nil,
-		"scopes":    func() string { if token != nil { return token.Scopes }; return "" }(),
+		"scopes": func() string {
+			if token != nil {
+				return token.Scopes
+			}
+			return ""
+		}(),
 	})
 }
 

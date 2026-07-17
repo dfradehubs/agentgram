@@ -26,6 +26,7 @@ import (
 	"github.com/dfradehubs/agentgram-api/internal/pubsub"
 	"github.com/dfradehubs/agentgram-api/internal/repository"
 	"github.com/dfradehubs/agentgram-api/internal/service"
+	"github.com/dfradehubs/agentgram-api/internal/settings"
 	slackpkg "github.com/dfradehubs/agentgram-api/internal/slack"
 	"github.com/dfradehubs/agentgram-api/internal/store"
 	"go.uber.org/zap"
@@ -40,6 +41,8 @@ type AdminDeps struct {
 	AuditRepo       repository.AuditRepository
 	LLMRepo         repository.LLMModelRepository
 	GroupRepo       repository.GroupRepository
+	SettingsRepo    settings.Repository
+	SettingsService *settings.Service
 	MCPRegistry     *mcp.Registry
 	ChatEventRepo   repository.ChatEventRepository
 	BasicAuthRepo   repository.BasicAuthRepository
@@ -84,9 +87,9 @@ func SetupRoutes(cfg *config.Config, registry *agents.Registry, sessionStore sto
 	healthHandler := handlers.NewHealthHandler(registry)
 	configHandler := handlers.NewConfigHandler(llmRepo)
 	agentsHandler := handlers.NewAgentsHandler(registry, adminDeps.UserService, adminDeps.GroupRepo, logger)
-	proxyHandler := handlers.NewProxyHandler(llmRepo, registry, adminDeps.UserService, adminDeps.GroupRepo, sessionStore, adminDeps.PubSubHub, auditLogger, logger, adminDeps.LangfuseTracer, adminDeps.ChatEventRepo)
+	proxyHandler := handlers.NewProxyHandler(llmRepo, registry, adminDeps.UserService, adminDeps.GroupRepo, sessionStore, adminDeps.PubSubHub, auditLogger, logger, adminDeps.SettingsService, adminDeps.LangfuseTracer, adminDeps.ChatEventRepo)
 	sessionsHandler := handlers.NewSessionsHandler(registry, sessionStore, adminDeps.GroupRepo, adminDeps.UserService, auditLogger, logger)
-	mcpHandler := handlers.NewMCPHandler(llmRepo, mcpRegistry, sessionStore, cfg.MCPServer.MaxToolCallRounds, auditLogger, logger, adminDeps.LangfuseTracer, adminDeps.OAuth2Manager, adminDeps.MCPRepo, adminDeps.ChatEventRepo)
+	mcpHandler := handlers.NewMCPHandler(llmRepo, mcpRegistry, sessionStore, func() int { return adminDeps.SettingsService.Int(settings.KeyMCPMaxToolRounds) }, auditLogger, logger, adminDeps.LangfuseTracer, adminDeps.OAuth2Manager, adminDeps.MCPRepo, adminDeps.ChatEventRepo)
 	chartHandler := handlers.NewChartHandler(llmRepo, adminDeps.LangfuseTracer, logger)
 
 	// User handler
@@ -124,7 +127,7 @@ func SetupRoutes(cfg *config.Config, registry *agents.Registry, sessionStore sto
 
 	// MCP server endpoint (exposes agents as MCP tools for Claude Code and other MCP clients)
 	if cfg.MCPServer.Enabled {
-		mcpServerHandler := mcpserver.NewHandler(registry, mcpRegistry, sessionStore, adminDeps.UserService, adminDeps.GroupRepo, oidcClient, cfg, logger, adminDeps.LangfuseTracer, adminDeps.OAuth2Manager, adminDeps.MCPRepo)
+		mcpServerHandler := mcpserver.NewHandler(registry, mcpRegistry, sessionStore, adminDeps.UserService, adminDeps.GroupRepo, oidcClient, cfg, logger, adminDeps.LangfuseTracer, adminDeps.OAuth2Manager, adminDeps.MCPRepo, llmRepo, adminDeps.SettingsService)
 
 		// Public: OAuth2 Protected Resource Metadata (RFC 9728)
 		// Serve at both root and path-based locations per RFC 9728 Section 3.1:
@@ -153,6 +156,10 @@ func SetupRoutes(cfg *config.Config, registry *agents.Registry, sessionStore sto
 
 		// Protected: MCP protocol endpoint
 		r.Route("/mcp", func(r chi.Router) {
+			if !cfg.Auth.Enabled {
+				// Dev mode: inject the anonymous user, same as the /api router
+				r.Use(middleware.NoAuth(logger))
+			}
 			if cfg.Auth.Enabled {
 				mcpIssuer := cfg.MCPServer.Issuer
 				if mcpIssuer == "" {
@@ -351,18 +358,16 @@ func SetupRoutes(cfg *config.Config, registry *agents.Registry, sessionStore sto
 		r.Get("/sessions/{sessionId}/subscribe", subscribeHandler.Subscribe)
 
 		// Live reconnect to an in-flight run after a page reload (SSE replay + live)
-		runStreamHandler := handlers.NewRunStreamHandler(adminDeps.RedisClient, sessionStore, registry, adminDeps.GroupRepo, adminDeps.UserService, logger)
+		runStreamHandler := handlers.NewRunStreamHandler(adminDeps.RedisClient, sessionStore, registry, adminDeps.GroupRepo, adminDeps.UserService, adminDeps.SettingsService, logger)
 		r.Get("/agents/{agentId}/sessions/{sessionId}/stream", runStreamHandler.Stream)
 
-		// Agent groups (user-facing)
-		groupsHandler := handlers.NewGroupsHandler(adminDeps.GroupRepo, sessionStore, adminDeps.UserService, registry, logger)
+		// Agent groups (user-facing, read + use only — creation/editing is admin-only)
+		groupsHandler := handlers.NewGroupsHandler(adminDeps.GroupRepo, sessionStore, logger)
 		r.Get("/groups", groupsHandler.ListGroups)
-		r.Post("/groups", groupsHandler.CreateGroup)
-		r.Put("/groups/{groupId}", groupsHandler.UpdateGroup)
-		r.Delete("/groups/{groupId}", groupsHandler.DeleteGroup)
+		// Moderated group debate (SSE): the moderator LLM picks which agents respond
+		r.With(chatRateLimiter.ChatHandler).Post("/groups/{groupId}/chat", proxyHandler.GroupChat)
+		// Group sessions are personal: each user only ever sees their own.
 		r.Get("/groups/{groupId}/sessions", groupsHandler.ListGroupSessions)
-		r.Post("/groups/{groupId}/sessions", groupsHandler.AddGroupSession)
-		r.Delete("/groups/{groupId}/sessions/{sessionId}", groupsHandler.RemoveGroupSession)
 
 		// Multi-MCP endpoints
 		r.Post("/mcp/chat", mcpHandler.ChatMulti)
@@ -385,6 +390,13 @@ func SetupRoutes(cfg *config.Config, registry *agents.Registry, sessionStore sto
 				r.Put("/agents/{id}", adminAgentsHandler.UpdateAgent)
 				r.Delete("/agents/{id}", adminAgentsHandler.DeleteAgent)
 				r.Put("/agents/{id}/permissions", adminAgentsHandler.UpdatePermissions)
+
+				// Admin general configuration (runtime settings)
+				if adminDeps.SettingsService != nil && adminDeps.SettingsRepo != nil {
+					adminSettingsHandler := handlers.NewAdminSettingsHandler(adminDeps.SettingsService, adminDeps.SettingsRepo, adminDeps.AuditRepo, logger)
+					r.Get("/settings", adminSettingsHandler.ListSettings)
+					r.Put("/settings", adminSettingsHandler.UpdateSettings)
+				}
 
 				// Admin groups
 				adminGroupsHandler := handlers.NewAdminGroupsHandler(adminDeps.GroupRepo, adminDeps.AuditRepo, logger)

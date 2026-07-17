@@ -22,15 +22,10 @@ export function useSessions() {
     isLoadingMore,
     loadOlderMessages,
     pendingMultiAgentIds,
-    createMultiAgentSession,
-    clearMultiAgentSession,
+    newGroupConversation,
     multiAgentGroups,
     activeGroupId,
-    addMultiAgentGroup,
-    updateMultiAgentGroup,
-    removeMultiAgentGroup,
     selectGroup,
-    addSessionToGroup,
     markSessionActive,
   } = useSessionContext();
 
@@ -53,15 +48,10 @@ export function useSessions() {
     isLoadingMore,
     loadOlderMessages,
     pendingMultiAgentIds,
-    createMultiAgentSession,
-    clearMultiAgentSession,
+    newGroupConversation,
     multiAgentGroups,
     activeGroupId,
-    addMultiAgentGroup,
-    updateMultiAgentGroup,
-    removeMultiAgentGroup,
     selectGroup,
-    addSessionToGroup,
     markSessionActive,
   };
 }

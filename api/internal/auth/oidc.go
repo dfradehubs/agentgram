@@ -25,13 +25,13 @@ type TokenResponse struct {
 
 // OIDCClient handles communication with Keycloak OIDC endpoints
 type OIDCClient struct {
-	issuer       string
-	clientID     string
-	clientSecret string
-	redirectURI  string
+	issuer        string
+	clientID      string
+	clientSecret  string
+	redirectURI   string
 	postLogoutURI string
-	httpClient   *http.Client
-	keycloak     *KeycloakProvider
+	httpClient    *http.Client
+	keycloak      *KeycloakProvider
 }
 
 // NewOIDCClient creates a new OIDC client from config
@@ -286,7 +286,6 @@ func (c *OIDCClient) GetServiceToken(ctx context.Context) (*TokenResponse, error
 	}
 	return c.tokenRequest(ctx, data)
 }
-
 
 func (c *OIDCClient) tokenRequest(ctx context.Context, data url.Values) (*TokenResponse, error) {
 	endpoint := fmt.Sprintf("%s/protocol/openid-connect/token", c.issuer)

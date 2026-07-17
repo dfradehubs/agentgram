@@ -9,6 +9,7 @@ type LLMModel struct {
 	Provider  string    `json:"provider"`
 	Model     string    `json:"model"`
 	APIKey    string    `json:"api_key,omitempty"`
+	Endpoint  string    `json:"endpoint,omitempty"` // Optional custom API endpoint (OpenAI-compatible gateways, Ollama, mocks). Empty = provider default.
 	Role      string    `json:"role"`
 	Enabled   bool      `json:"enabled"`
 	IsDefault bool      `json:"is_default"`

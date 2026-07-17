@@ -1,8 +1,11 @@
 name: CI
 
 on:
+  # Only main on push: direct pushes/merges to main run once here. Feature
+  # branches are covered by pull_request below, so a branch with an open PR
+  # isn't validated twice.
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
     branches: [main]
   # Allow other workflows (e.g. Release) to run the full CI as a gate.
@@ -34,7 +37,7 @@ jobs:
         run: go vet ./...
 
       - name: Test
-        run: go test ./...
+        run: go test -race ./...
 
       - name: Lint
         uses: golangci/golangci-lint-action@v7

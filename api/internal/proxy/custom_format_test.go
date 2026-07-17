@@ -83,11 +83,11 @@ func TestValidateRequestTemplate(t *testing.T) {
 
 func TestExtractByPath(t *testing.T) {
 	tests := []struct {
-		name    string
-		obj     map[string]interface{}
-		path    string
-		want    string
-		wantOK  bool
+		name   string
+		obj    map[string]interface{}
+		path   string
+		want   string
+		wantOK bool
 	}{
 		{
 			name:   "simple field",

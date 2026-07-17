@@ -1,0 +1,1 @@
+ALTER TABLE llm_models DROP COLUMN IF EXISTS endpoint;

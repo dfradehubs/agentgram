@@ -9,9 +9,9 @@ import type { ContentSegment } from "./types";
 export function buildTimelineFromMessages(msgs: Message[]): TimelineItem[] {
   const items: TimelineItem[] = [];
   for (const msg of msgs) {
-    if (msg.role === "assistant" && msg.tool_calls?.length) {
+    if (msg.role === "assistant" && (msg.tool_calls?.length || msg.content_parts?.length)) {
       // Build ToolCall objects from stored data
-      const allToolCalls: ToolCall[] = msg.tool_calls.map((tc, i) => {
+      const allToolCalls: ToolCall[] = (msg.tool_calls ?? []).map((tc, i) => {
         const result = msg.tool_results?.[i];
         return {
           toolCallId: tc.id || `${tc.name}-${i}`,

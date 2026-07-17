@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/dfradehubs/agentgram-api/internal/metrics"
+	"github.com/go-chi/chi/v5"
 	"golang.org/x/time/rate"
 )
 
@@ -153,6 +153,9 @@ func (rl *RateLimiter) ChatHandler(next http.Handler) http.Handler {
 			agentID = chi.URLParam(r, "id")
 		}
 		if agentID == "" {
+			agentID = chi.URLParam(r, "groupId")
+		}
+		if agentID == "" {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -181,4 +184,3 @@ func (rl *RateLimiter) ChatHandler(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
-

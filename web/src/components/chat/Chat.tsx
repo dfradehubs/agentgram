@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAgents } from "@/hooks/useAgents";
 import { useUser } from "@/hooks/useUser";
 import { useSessions } from "@/hooks/useSessions";
@@ -19,6 +19,8 @@ import { ChatInput } from "./ChatInput";
 import { MCPToolsPanel } from "../mcp/MCPToolsPanel";
 import { Button } from "@/components/ui/button";
 import type { Attachment } from "@/lib/types";
+import { resolveMentions } from "@/lib/mentions";
+import { groupRequiresGitHubConnection } from "@/lib/groups";
 import { reconnectMCPServer, getSession as fetchSession, shareSession, getMCPOAuth2LoginURL, ApiError } from "@/lib/api";
 import { toast } from "sonner";
 import {
@@ -52,7 +54,7 @@ export function Chat() {
   const { agents, currentAgent } = useAgents();
   const { user, displayName } = useUser();
   const { focusKey } = useAgentContext();
-  const { sessions, currentSession, sessionResetKey, refreshSessions, pendingMultiAgentIds, activeGroupId, multiAgentGroups, createNewSession, wantsNewChat, createMultiAgentSession, selectGroup, markSessionActive, hasMoreMessages, isLoadingMore, loadOlderMessages } = useSessions();
+  const { sessions, currentSession, sessionResetKey, refreshSessions, pendingMultiAgentIds, activeGroupId, multiAgentGroups, createNewSession, wantsNewChat, newGroupConversation, markSessionActive, hasMoreMessages, isLoadingMore, loadOlderMessages } = useSessions();
   const {
     currentMCPServer,
     currentMCPSession,
@@ -82,38 +84,26 @@ export function Chat() {
   const isMCP = !!(currentMCPServer || isMCPMulti);
   const activeMCPSession = isMCPMulti ? currentMultiMCPSession : currentMCPSession;
 
+  // Group detection: explicit selection in the sidebar, or the open session's
+  // own group binding (e.g. a group session opened from an agent's session list).
+  const effectiveGroupId = activeGroupId || currentSession?.group_id || null;
+
   // Multi-agent detection: prefer group's agentIds, then session, then pending
-  const activeGroup = activeGroupId ? multiAgentGroups.find(g => g.id === activeGroupId) : null;
-  const multiAgentIds = activeGroup && activeGroup.agentIds.length > 0
-    ? activeGroup.agentIds
-    : currentSession?.is_multi_agent || currentSession?.source === "slack"
-      ? (currentSession?.agent_ids || [])
-      : pendingMultiAgentIds;
+  const activeGroup = effectiveGroupId ? multiAgentGroups.find(g => g.id === effectiveGroupId) : null;
+  const multiAgentIds = useMemo(() => (
+    activeGroup && activeGroup.agentIds.length > 0
+      ? activeGroup.agentIds
+      : currentSession?.is_multi_agent || currentSession?.source === "slack"
+        ? (currentSession?.agent_ids || [])
+        : pendingMultiAgentIds
+  ), [activeGroup, currentSession?.is_multi_agent, currentSession?.source, currentSession?.agent_ids, pendingMultiAgentIds]);
   const isSlackSession = currentSession?.source === "slack";
-  const isMultiAgent = !isMCP && (multiAgentIds.length >= 2 || isSlackSession);
-  const [selectedTargetAgentIds, setSelectedTargetAgentIds] = useState<string[]>([]);
-
-  // Auto-select all agents in multi-agent mode
-  useEffect(() => {
-    if (isMultiAgent && multiAgentIds.length > 0) {
-      setSelectedTargetAgentIds((prev) => {
-        // Keep current selection if all selected agents are still valid
-        const valid = prev.filter((id) => multiAgentIds.includes(id));
-        return valid.length > 0 ? valid : [multiAgentIds[0]];
-      });
-    }
-  }, [isMultiAgent, multiAgentIds]);
-
-  const toggleTargetAgent = useCallback((agentId: string) => {
-    setSelectedTargetAgentIds((prev) => {
-      if (prev.includes(agentId)) {
-        // Don't allow deselecting the last one
-        if (prev.length <= 1) return prev;
-        return prev.filter((id) => id !== agentId);
-      }
-      return [...prev, agentId];
-    });
-  }, []);
+  // A moderated group is the only multi-agent surface now: the moderator picks
+  // who answers (optionally steered by @mentions). Slack multi-agent threads
+  // are read-only from the web — respond from Slack.
+  const isGroup = !isMCP && !!effectiveGroupId;
+  const isMultiAgent = isGroup || (!isMCP && isSlackSession);
+  const isReadOnly = isSlackSession && !effectiveGroupId;
 
   // MCP model selection
   const defaultModel = config.available_models.find((m) => m.default) || config.available_models[0];
@@ -170,7 +160,6 @@ export function Chat() {
     input,
     setInput,
     sendMessage,
-    sendMultiple,
     activeStreamAgentIds,
     isLoading,
     error,
@@ -192,7 +181,8 @@ export function Chat() {
     mcpConfig: isMCP && mcpServerIds.length > 0
       ? { serverIds: mcpServerIds, modelId: selectedModelId }
       : undefined,
-    groupId: activeGroupId || undefined,
+    groupId: effectiveGroupId || undefined,
+    groupAgentIds: multiAgentIds,
     userName: displayName,
   });
 
@@ -200,18 +190,18 @@ export function Chat() {
   useEffect(() => {
     const handler = (e: MessageEvent) => {
       if (e.data?.type === "github_connected") {
-        retry(undefined, isMultiAgent && selectedTargetAgentIds.length > 0 ? selectedTargetAgentIds : undefined);
+        retry();
       }
     };
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
-  }, [retry, isMultiAgent, selectedTargetAgentIds]);
+  }, [retry]);
 
   // Real-time subscription for group sessions: reload messages + sessions on RUN_FINISHED
   useSessionSubscription({
     sessionId: chatSessionId,
-    groupId: activeGroupId || undefined,
-    enabled: !!activeGroupId && !!chatSessionId && !isLoading,
+    groupId: effectiveGroupId || undefined,
+    enabled: !!effectiveGroupId && !!chatSessionId && !isLoading,
     onEvent: useCallback((event: Record<string, unknown>) => {
       if (event.type === "RUN_FINISHED") {
         refreshSessions();
@@ -358,7 +348,9 @@ export function Chat() {
   // isLoading — so the reconnect (which itself toggles isLoading) is not aborted
   // by the recovery effect re-running. The gate ref ensures recovery starts at
   // most once per session load.
-  const agentIdForRecovery = currentAgent?.id;
+  // Recovery/reconnect requests are agent-scoped; in group mode the sidebar's
+  // currentAgent may be unrelated (or inaccessible) — prefer a roster agent.
+  const agentIdForRecovery = (effectiveGroupId && multiAgentIds[0]) || currentAgent?.id;
   const recoveryRef = useRef<{ sessionId: string | null; cancel: () => void }>({
     sessionId: null,
     cancel: () => {},
@@ -492,9 +484,20 @@ export function Chat() {
     pinnedRef.current = true;
     scrollToBottom();
     const atts = pendingAttachments.length > 0 ? pendingAttachments : undefined;
-    if (isMultiAgent && selectedTargetAgentIds.length > 0) {
-      // Parallel send to all selected agents with context propagation
-      sendMultiple(selectedTargetAgentIds, true, atts);
+    if (isGroup) {
+      // Moderated group debate. Any @<agent-id> mentions matching the roster
+      // steer the moderator (roster override); otherwise it picks freely.
+      // Tolerant match: case-insensitive, ignores trailing punctuation.
+      const mentionResolution = resolveMentions(input, multiAgentIds);
+      if (mentionResolution.error) {
+        toast.error(mentionResolution.error === "ambiguous"
+          ? "That @mention matches more than one agent. Use a unique agent ID."
+          : "One or more @mentions do not match an agent in this group.");
+        return;
+      }
+      sendMessage(undefined, undefined, atts, undefined, undefined, {
+        agentIds: mentionResolution.agentIds.length > 0 ? mentionResolution.agentIds : undefined,
+      });
     } else {
       sendMessage(undefined, undefined, atts);
     }
@@ -502,7 +505,7 @@ export function Chat() {
     if (inputRef.current) {
       inputRef.current.style.height = "auto";
     }
-  }, [pendingAttachments, isMultiAgent, selectedTargetAgentIds, sendMultiple, sendMessage, scrollToBottom]);
+  }, [pendingAttachments, isGroup, input, multiAgentIds, sendMessage, scrollToBottom]);
 
   const handleFileSelect = useCallback((files: FileList | null) => {
     if (!files) return;
@@ -581,10 +584,9 @@ export function Chat() {
   }, [createNewSession]);
 
   const handleNewGroupConversation = useCallback(() => {
-    if (!activeGroupId || !activeGroup) return;
-    createMultiAgentSession(activeGroup.agentIds); // sets wantsNewChat=true
-    selectGroup(activeGroupId); // re-selects group context
-  }, [createMultiAgentSession, selectGroup, activeGroupId, activeGroup]);
+    if (!activeGroupId) return;
+    newGroupConversation(); // fresh chat, keeps the group context
+  }, [newGroupConversation, activeGroupId]);
 
   // Empty state: no agent and not in MCP mode
   if (!isMCP && !currentAgent) {
@@ -616,14 +618,16 @@ export function Chat() {
     }
   }
 
-  const githubRequired = !isMCP && !user?.githubConnected && !!currentAgent?.require_github_token;
+  const githubRequired = !isMCP && !user?.githubConnected && (effectiveGroupId
+    ? groupRequiresGitHubConnection(activeGroup?.agentIds ?? [], agents, false)
+    : !!currentAgent?.require_github_token);
   const widthCls = chatWidthClass[preferences.chatWidth] || chatWidthClass.wide;
 
   const isInputDisabled = isMCP
     ? (isMCPMulti
       ? !selectedMCPServerIds.some((id) => mcpServers.find((s) => s.id === id)?.status === "connected")
       : currentMCPServer?.status !== "connected")
-    : !!githubRequired;
+    : (!!githubRequired || isReadOnly); // Slack threads are read-only from the web
 
   // Multi-MCP display info
   const multiServers = isMCPMulti
@@ -750,7 +754,6 @@ export function Chat() {
         currentMCPServer={currentMCPServer}
         mcpServers={mcpServers}
         multiMCPServerNames={multiMCPServerNames}
-        selectedTargetAgentIds={selectedTargetAgentIds}
         selectedModelId={selectedModelId}
         getAgentName={getAgentName}
         user={user}
@@ -818,7 +821,7 @@ export function Chat() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => retry(undefined, isMultiAgent && selectedTargetAgentIds.length > 0 ? selectedTargetAgentIds : undefined)}
+              onClick={() => retry(undefined)}
               className="h-7 gap-1.5 border-destructive/30 text-xs text-destructive hover:bg-destructive/10"
             >
               <RefreshCw className="h-3 w-3" />
@@ -831,7 +834,6 @@ export function Chat() {
       {/* Input area */}
       <ChatInput
         isMCP={isMCP}
-        isMultiAgent={isMultiAgent}
         isInputDisabled={isInputDisabled}
         isLoading={isLoading}
         input={input}
@@ -839,9 +841,6 @@ export function Chat() {
         pendingAttachments={pendingAttachments}
         onRemoveAttachment={handleRemoveAttachment}
         onFileSelect={handleFileSelect}
-        multiAgentIds={multiAgentIds}
-        selectedTargetAgentIds={selectedTargetAgentIds}
-        onToggleTargetAgent={toggleTargetAgent}
         onSend={handleSend}
         onStop={stop}
         widthCls={widthCls}

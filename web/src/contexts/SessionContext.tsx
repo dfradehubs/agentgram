@@ -14,11 +14,7 @@ import {
   getSession,
   getSessionPaginated,
   getGroups,
-  createGroup as apiCreateGroup,
-  updateGroup as apiUpdateGroup,
-  deleteGroup as apiDeleteGroup,
   getGroupSessions,
-  addGroupSession as apiAddGroupSession,
   renameSession as apiRenameSession,
   deleteSession as apiDeleteSession,
 } from "@/lib/api";
@@ -44,18 +40,12 @@ interface SessionContextType {
   hasMoreMessages: boolean;
   isLoadingMore: boolean;
   loadOlderMessages: () => Promise<Message[]>;
-  // Multi-agent group chat
+  // Multi-agent groups (created by admins; the sidebar lists the ones you can use)
   pendingMultiAgentIds: string[];
-  createMultiAgentSession: (agentIds: string[]) => void;
-  clearMultiAgentSession: () => void;
-  // Persistent groups (backed by API)
+  newGroupConversation: () => void;
   multiAgentGroups: MultiAgentGroup[];
   activeGroupId: string | null;
-  addMultiAgentGroup: (name: string, agentIds: string[], allowedUsers?: string[], allowedGroups?: string[]) => Promise<MultiAgentGroup>;
-  updateMultiAgentGroup: (groupId: string, data: { name?: string; agentIds?: string[]; allowed_users?: string[]; allowed_groups?: string[] }) => Promise<void>;
-  removeMultiAgentGroup: (id: string) => Promise<void>;
   selectGroup: (id: string) => void;
-  addSessionToGroup: (groupId: string, sessionId: string) => void;
   markSessionActive: (sessionId: string, sessionName?: string) => void;
 }
 
@@ -139,10 +129,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       // Clear MCP state so ChatArea switches to agent chat
       selectMCPServer(null);
 
-      // Clear group state for Slack sessions (they're not groups)
-      setActiveGroupId(null);
-
-      // Clear immediately to avoid stale data while fetching
+	  // Clear immediately to avoid stale data while fetching
       setCurrentSession(null);
       setWantsNewChat(false);
       setHasMoreMessages(false);
@@ -155,7 +142,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           ...resp.session,
           messages: resp.messages,
         };
-        setCurrentSession(session);
+		setCurrentSession(session);
+		setActiveGroupId(session.group_id ?? null);
         setHasMoreMessages(resp.has_more);
         setNextCursor(resp.next_cursor);
         try { sessionStorage.setItem("agentgram-current-session", sessionId); } catch {}
@@ -234,45 +222,15 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     try { sessionStorage.removeItem("agentgram-current-session"); } catch {}
   }, []);
 
-  const createMultiAgentSession = useCallback((agentIds: string[]) => {
-    setPendingMultiAgentIds(agentIds);
+  // Start a fresh conversation within the currently selected group (keeps the
+  // group context and its roster; the debate endpoint creates the session).
+  const newGroupConversation = useCallback(() => {
     setCurrentSession(null);
     setWantsNewChat(true);
     setSessionResetKey((k) => k + 1);
-    // Clear MCP state
     selectMCPServer(null);
     try { sessionStorage.removeItem("agentgram-current-session"); } catch {}
   }, [selectMCPServer]);
-
-  const clearMultiAgentSession = useCallback(() => {
-    setPendingMultiAgentIds([]);
-  }, []);
-
-  const addMultiAgentGroup = useCallback(async (name: string, agentIds: string[], allowedUsers?: string[], allowedGroups?: string[]): Promise<MultiAgentGroup> => {
-    const groupName = name || agentIds.map((id) => id.split("-")[0]).join(" + ");
-    const group = await apiCreateGroup(groupName, agentIds, allowedUsers, allowedGroups);
-    setMultiAgentGroups((prev) => [...prev, group]);
-    return group;
-  }, []);
-
-  const updateMultiAgentGroup = useCallback(async (groupId: string, data: { name?: string; agentIds?: string[]; allowed_users?: string[]; allowed_groups?: string[] }) => {
-    const updated = await apiUpdateGroup(groupId, data);
-    setMultiAgentGroups((prev) => prev.map((g) => g.id === groupId ? updated : g));
-  }, []);
-
-  const addSessionToGroup = useCallback((groupId: string, sessionId: string) => {
-    // Persist to API (fire-and-forget)
-    apiAddGroupSession(groupId, sessionId).catch(() => {});
-  }, []);
-
-  const removeMultiAgentGroup = useCallback(async (id: string) => {
-    await apiDeleteGroup(id);
-    setMultiAgentGroups((prev) => prev.filter((g) => g.id !== id));
-    if (activeGroupId === id) {
-      setActiveGroupId(null);
-      setPendingMultiAgentIds([]);
-    }
-  }, [activeGroupId]);
 
   const selectGroup = useCallback((id: string) => {
     const group = multiAgentGroups.find((g) => g.id === id);
@@ -439,15 +397,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         isLoadingMore,
         loadOlderMessages,
         pendingMultiAgentIds,
-        createMultiAgentSession,
-        clearMultiAgentSession,
+        newGroupConversation,
         multiAgentGroups,
         activeGroupId,
-        addMultiAgentGroup,
-        updateMultiAgentGroup,
-        removeMultiAgentGroup,
         selectGroup,
-        addSessionToGroup,
         markSessionActive,
       }}
     >

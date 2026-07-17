@@ -1,16 +1,18 @@
 package models
 
 // ChatRequest is the expected body for POST /api/agents/:agentId/chat
+// and POST /api/groups/:groupId/chat
 type ChatRequest struct {
 	Messages    []ChatMessage `json:"messages"`
 	SessionID   string        `json:"session_id,omitempty"`
 	SendContext *bool         `json:"send_context,omitempty"`
 	GroupID     string        `json:"group_id,omitempty"`
+	AgentIDs    []string      `json:"agent_ids,omitempty"` // Group chat only: restrict the debate roster to these agents (@mention)
 }
 
 // ChatMessage represents a message in the conversation
 type ChatMessage struct {
-	Role              string             `json:"role"`                          // "user" | "assistant" | "system"
+	Role              string             `json:"role"` // "user" | "assistant" | "system"
 	Content           string             `json:"content"`
 	AgentID           string             `json:"agent_id,omitempty"`            // Which agent sent/received this message (multi-agent sessions)
 	UserName          string             `json:"user_name,omitempty"`           // Display name of the user who sent this message
@@ -26,10 +28,10 @@ type ChatMessage struct {
 
 // ContentPart represents an ordered segment of an assistant message
 type ContentPart struct {
-	Type      string                 `json:"type"`                  // "text", "tool_use", or "chart"
-	Text      string                 `json:"text,omitempty"`        // Text content (for type="text")
-	ToolIndex *int                   `json:"tool_index,omitempty"`  // Index into ToolCalls (for type="tool_use"); pointer so 0 is not omitted
-	Chart     map[string]interface{} `json:"chart,omitempty"`       // Chart data (for type="chart")
+	Type      string                 `json:"type"`                 // "text", "tool_use", or "chart"
+	Text      string                 `json:"text,omitempty"`       // Text content (for type="text")
+	ToolIndex *int                   `json:"tool_index,omitempty"` // Index into ToolCalls (for type="tool_use"); pointer so 0 is not omitted
+	Chart     map[string]interface{} `json:"chart,omitempty"`      // Chart data (for type="chart")
 }
 
 // StoredToolCall represents a tool call stored in session history

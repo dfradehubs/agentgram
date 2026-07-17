@@ -45,8 +45,8 @@ type AGUIRunErrorEvent struct {
 type AGUITextMessageStartEvent struct {
 	Type       AGUIEventType `json:"type"`
 	MessageID  string        `json:"messageId"`
-	Role       string        `json:"role"`                // "assistant"
-	AgentID    string        `json:"agentId,omitempty"`   // Which agent is responding (broadcast)
+	Role       string        `json:"role"`                 // "assistant"
+	AgentID    string        `json:"agentId,omitempty"`    // Which agent is responding in a group debate
 	IsThinking bool          `json:"isThinking,omitempty"` // Marks intermediate thinking steps
 }
 
@@ -55,14 +55,14 @@ type AGUITextMessageContentEvent struct {
 	Type      AGUIEventType `json:"type"`
 	MessageID string        `json:"messageId"`
 	Delta     string        `json:"delta"`
-	AgentID   string        `json:"agentId,omitempty"`   // Which agent is responding (broadcast)
+	AgentID   string        `json:"agentId,omitempty"` // Which agent is responding in a group debate
 }
 
 // AGUITextMessageEndEvent signals the end of a text message
 type AGUITextMessageEndEvent struct {
 	Type      AGUIEventType `json:"type"`
 	MessageID string        `json:"messageId"`
-	AgentID   string        `json:"agentId,omitempty"`   // Which agent is responding (broadcast)
+	AgentID   string        `json:"agentId,omitempty"` // Which agent is responding in a group debate
 }
 
 // NewAGUIRunStartedEvent creates a new run started event
@@ -149,9 +149,10 @@ func NewAGUITextMessageEndEventWithAgent(messageID, agentID string) *AGUITextMes
 
 // AGUICustomEvent is a generic custom event
 type AGUICustomEvent struct {
-	Type       AGUIEventType          `json:"type"`
-	SubType    string                 `json:"subType"`
-	Data       map[string]interface{} `json:"data,omitempty"`
+	Type    AGUIEventType          `json:"type"`
+	SubType string                 `json:"subType"`
+	Data    map[string]interface{} `json:"data,omitempty"`
+	AgentID string                 `json:"agentId,omitempty"`
 }
 
 // NewAGUIConversationStepEvent creates a CUSTOM event for conversation step progress
@@ -174,6 +175,7 @@ type AGUIToolCallStartEvent struct {
 	ToolCallID string        `json:"toolCallId"`
 	ToolName   string        `json:"toolName"`
 	ServerID   string        `json:"serverId,omitempty"` // MCP server that owns this tool (multi-MCP)
+	AgentID    string        `json:"agentId,omitempty"`  // Which agent is calling the tool (group debates)
 }
 
 // AGUIToolCallArgsEvent contains the arguments for a tool call
@@ -181,6 +183,7 @@ type AGUIToolCallArgsEvent struct {
 	Type       AGUIEventType `json:"type"`
 	ToolCallID string        `json:"toolCallId"`
 	Delta      string        `json:"delta"`
+	AgentID    string        `json:"agentId,omitempty"` // Which agent is calling the tool (group debates)
 }
 
 // AGUIToolCallEndEvent signals the end of a tool call
@@ -188,4 +191,5 @@ type AGUIToolCallEndEvent struct {
 	Type       AGUIEventType `json:"type"`
 	ToolCallID string        `json:"toolCallId"`
 	Result     string        `json:"result,omitempty"`
+	AgentID    string        `json:"agentId,omitempty"` // Which agent is calling the tool (group debates)
 }

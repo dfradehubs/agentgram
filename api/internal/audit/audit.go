@@ -11,15 +11,15 @@ import (
 type ActionType string
 
 const (
-	ActionChat            ActionType = "chat"
-	ActionSessionDelete   ActionType = "session_delete"
-	ActionBroadcast       ActionType = "broadcast"
-	ActionMCPChat         ActionType = "mcp_chat"
-	ActionCreate          ActionType = "create"
-	ActionDelete          ActionType = "delete"
-	ActionShareSession    ActionType = "share_session"
-	ActionRevokeShare     ActionType = "revoke_share"
-	ActionCloneShare      ActionType = "clone_shared_session"
+	ActionChat          ActionType = "chat"
+	ActionSessionDelete ActionType = "session_delete"
+	ActionBroadcast     ActionType = "broadcast"
+	ActionMCPChat       ActionType = "mcp_chat"
+	ActionCreate        ActionType = "create"
+	ActionDelete        ActionType = "delete"
+	ActionShareSession  ActionType = "share_session"
+	ActionRevokeShare   ActionType = "revoke_share"
+	ActionCloneShare    ActionType = "clone_shared_session"
 )
 
 // Logger provides structured audit logging to stdout

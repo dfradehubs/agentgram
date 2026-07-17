@@ -44,8 +44,8 @@ src/
 ├── components/
 │   ├── layout/                 # Header, Sidebar, ChatArea
 │   ├── agents/                 # AgentList, AgentItem
-│   ├── sessions/               # SessionList, SessionItem, GroupItem, NewSessionButton, CreateMultiAgentDialog, EditGroupDialog
-│   ├── chat/                   # Chat, AgentSelector, MarkdownMessage, ToolCallBlock, ThinkingBubbles, EmptyState, AttachmentPreview
+│   ├── sessions/               # SessionList, SessionItem, GroupItem, NewSessionButton, SlackSessionsSection
+│   ├── chat/                   # Chat, ChatInput, ChatMessages, AgentInfoView, MarkdownMessage, ToolCallBlock, ThinkingBubbles
 │   ├── mcp/                    # MCPToolsPanel, MCPSessionList, MultiMCPItem, CreateMultiMCPDialog
 │   ├── admin/                  # AgentForm, LLMForm, MCPForm, TagInput, AdminNav, observability/
 │   ├── icons/                  # AgentgramLogo
@@ -124,7 +124,7 @@ The `useChat` hook parses AG-UI SSE events from the API:
 ### Chat Modes
 
 - **Single agent**: `POST /api/agents/{id}/chat` — standard chat with one agent
-- **Multi-agent group**: Same endpoint but with `send_context: true` to propagate context between agents (delta-based via `PrepareMessagesForMultiAgent`)
+- **Moderated group**: `POST /api/groups/{groupId}/chat` — the moderator selects speakers, streams each turn, and produces a final synthesis
 - **MCP**: `POST /api/mcp/{serverId}/chat` or `POST /api/mcp/multi/chat` — chat with MCP server tools
 
 ### Unified Chat Component
@@ -132,7 +132,7 @@ The `useChat` hook parses AG-UI SSE events from the API:
 `Chat.tsx` handles all modes (agent 1:1, MCP, multi-agent group) by detecting mode from context:
 - **Agent mode**: Shows agent header with protocol badge, status, PDF export
 - **MCP mode**: Shows server header with model selector, tools panel, reconnect
-- **Multi-agent mode**: Shows group header with agent avatars, `AgentSelector` pills in input area to choose target agent
+- **Moderated group mode**: Shows the group roster and accepts optional `@mentions` as moderator guidance; the moderator still controls turn selection
 
 ### Background Streams
 

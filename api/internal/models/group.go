@@ -10,6 +10,7 @@ type AgentGroup struct {
 	CreatedBy     string    `json:"created_by"`
 	AllowedUsers  []string  `json:"allowed_users,omitempty"`
 	AllowedGroups []string  `json:"allowed_groups,omitempty"`
+	MaxTurns      int       `json:"max_turns,omitempty"` // Cap on moderated-debate turns; 0 = surface default
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
 }

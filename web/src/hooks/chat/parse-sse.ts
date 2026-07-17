@@ -11,6 +11,7 @@ export interface AGUIEvent {
   toolCallId?: string;
   toolName?: string;
   serverId?: string;
+  agentId?: string; // Which agent is speaking (group debates: one stream, many agents)
   result?: string;
   isThinking?: boolean;
   [key: string]: unknown;

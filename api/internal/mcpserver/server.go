@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/dfradehubs/agentgram-api/internal/agents"
 	"github.com/dfradehubs/agentgram-api/internal/mcp"
 	"github.com/dfradehubs/agentgram-api/internal/models"
+	"github.com/dfradehubs/agentgram-api/internal/repository"
 	"github.com/dfradehubs/agentgram-api/internal/service"
 	"go.uber.org/zap"
 )
@@ -57,21 +59,28 @@ const (
 // mcpToolPrefix is used to namespace MCP server tools: mcp_{serverID}__{toolName}
 const mcpToolPrefix = "mcp_"
 
-// Server is the MCP protocol server that exposes agents and MCP server tools
+// groupToolPrefix is deliberately disjoint from ask_<agentID> and
+// mcp_<serverID>__<tool>. This makes collisions impossible regardless of
+// valid agent/group IDs.
+const groupToolPrefix = "group__"
+
+// Server is the MCP protocol server that exposes agents, agent groups and MCP server tools
 type Server struct {
 	registry    *agents.Registry
 	mcpRegistry *mcp.Registry
 	userService *service.UserService
+	groupRepo   repository.GroupRepository
 	sessions    *SessionStore
 	logger      *zap.Logger
 }
 
 // NewServer creates a new MCP server
-func NewServer(registry *agents.Registry, mcpRegistry *mcp.Registry, userService *service.UserService, logger *zap.Logger) *Server {
+func NewServer(registry *agents.Registry, mcpRegistry *mcp.Registry, userService *service.UserService, groupRepo repository.GroupRepository, logger *zap.Logger) *Server {
 	return &Server{
 		registry:    registry,
 		mcpRegistry: mcpRegistry,
 		userService: userService,
+		groupRepo:   groupRepo,
 		sessions:    NewSessionStore(),
 		logger:      logger,
 	}
@@ -159,6 +168,16 @@ func (s *Server) handleToolsList(req jsonRPCRequest, userEmail string, userGroup
 		}
 	}
 
+	// Add agent group tools (moderated multi-agent debates)
+	for _, group := range s.AccessibleGroups(userEmail, userGroups) {
+		toolName, err := groupToolName(group.ID)
+		if err != nil {
+			s.logger.Warn("skipping group with invalid MCP tool id", zap.String("group_id", group.ID), zap.Error(err))
+			continue
+		}
+		tools = append(tools, s.buildGroupTool(group, toolName))
+	}
+
 	// Add utility tools
 	tools = append(tools, buildListAgentsTool())
 
@@ -167,6 +186,63 @@ func (s *Server) handleToolsList(req jsonRPCRequest, userEmail string, userGroup
 	}
 
 	return s.marshalResult(req.ID, result), "", nil
+}
+
+// AccessibleGroups returns the agent groups the user can participate in.
+func (s *Server) AccessibleGroups(userEmail string, userGroups []string) []*models.AgentGroup {
+	return s.AccessibleGroupsContext(context.Background(), userEmail, userGroups)
+}
+
+// AccessibleGroupsContext is the deadline-aware variant used by tool calls.
+func (s *Server) AccessibleGroupsContext(ctx context.Context, userEmail string, userGroups []string) []*models.AgentGroup {
+	if s.groupRepo == nil {
+		return nil
+	}
+	groups, err := s.groupRepo.ListAccessible(ctx, userEmail, userGroups)
+	if err != nil {
+		s.logger.Warn("failed to list accessible groups for MCP tools", zap.Error(err))
+		return nil
+	}
+	return groups
+}
+
+// buildGroupTool creates an MCP tool definition from an agent group
+func (s *Server) buildGroupTool(group *models.AgentGroup, toolName string) map[string]interface{} {
+	// Resolve member names for a useful description
+	var members []string
+	for _, agentID := range group.AgentIDs {
+		if agent, err := s.registry.Get(agentID); err == nil {
+			members = append(members, agent.Name)
+		}
+	}
+
+	return map[string]interface{}{
+		"name": toolName,
+		"description": fmt.Sprintf(
+			"[Group: %s] Moderated multi-agent group (%s). A moderator picks the most relevant agent(s) to answer; they can build on each other's replies.",
+			group.Name, strings.Join(members, ", ")),
+		"inputSchema": map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"question": map[string]interface{}{
+					"type":        "string",
+					"description": "The question or task to send to the group",
+				},
+				"session_id": map[string]interface{}{
+					"type":        "string",
+					"description": "Optional session ID to continue a previous group conversation. Omit to start a new one.",
+				},
+			},
+			"required": []string{"question"},
+		},
+	}
+}
+
+func groupToolName(groupID string) (string, error) {
+	if err := models.ValidateGroupID(groupID); err != nil {
+		return "", err
+	}
+	return groupToolPrefix + groupID, nil
 }
 
 // buildAgentTool creates an MCP tool definition from an agent
@@ -239,6 +315,15 @@ func GetAgentIDFromToolName(toolName string) (string, bool) {
 	return "", false
 }
 
+// GetGroupIDFromToolName extracts the group ID from group__<group-id>.
+func GetGroupIDFromToolName(toolName string) (string, bool) {
+	if strings.HasPrefix(toolName, groupToolPrefix) && len(toolName) > len(groupToolPrefix) {
+		id := toolName[len(groupToolPrefix):]
+		return id, models.ValidateGroupID(id) == nil
+	}
+	return "", false
+}
+
 // GetMCPToolFromName extracts the server ID and tool name from an MCP tool name (mcp_{serverID}__{toolName})
 func GetMCPToolFromName(toolName string) (serverID, mcpToolName string, ok bool) {
 	if !strings.HasPrefix(toolName, mcpToolPrefix) {
@@ -251,7 +336,6 @@ func GetMCPToolFromName(toolName string) (serverID, mcpToolName string, ok bool)
 	}
 	return parts[0], parts[1], true
 }
-
 
 // marshalResult creates a JSON-RPC success response
 func (s *Server) marshalResult(id json.RawMessage, result interface{}) []byte {
@@ -318,4 +402,3 @@ func (s *Server) ListAccessibleAgents(userEmail string, userGroups []string) []m
 	}
 	return result
 }
-

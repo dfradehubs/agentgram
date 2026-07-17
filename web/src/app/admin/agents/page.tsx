@@ -11,13 +11,15 @@ import { AgentForm } from "@/components/admin/AgentForm";
 import { GroupForm } from "@/components/admin/GroupForm";
 import { Plus, Pencil, Trash2, ArrowLeft, Eye } from "lucide-react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { toast } from "sonner";
 import { AdminTableSkeleton } from "@/components/admin/AdminTableSkeleton";
 
-type Tab = "agents" | "groups";
-
+// Agents and Groups share this page; the active section is derived from the
+// route (/admin/agents vs /admin/groups) so each has its own nav entry.
 export default function AdminAgentsPage() {
-  const [tab, setTab] = useState<Tab>("agents");
+  const pathname = usePathname();
+  const tab: "agents" | "groups" = pathname.includes("/groups") ? "groups" : "agents";
 
   // Agents state
   const [agents, setAgents] = useState<AdminAgent[]>([]);
@@ -177,30 +179,6 @@ export default function AdminAgentsPage() {
 
   return (
     <div>
-      {/* Tabs */}
-      <div className="mb-6 flex items-center gap-4 border-b">
-        <button
-          onClick={() => setTab("agents")}
-          className={`pb-2 text-sm font-medium transition-colors ${
-            tab === "agents"
-              ? "border-b-2 border-foreground text-foreground"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          Agents
-        </button>
-        <button
-          onClick={() => setTab("groups")}
-          className={`pb-2 text-sm font-medium transition-colors ${
-            tab === "groups"
-              ? "border-b-2 border-foreground text-foreground"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          Groups
-        </button>
-      </div>
-
       {tab === "agents" && (
         <>
           <div className="mb-6 flex items-center justify-between">
@@ -321,7 +299,14 @@ export default function AdminAgentsPage() {
                       </td>
                       <td className="px-4 py-3 text-xs text-muted-foreground">{group.created_by}</td>
                       <td className="px-4 py-3 text-right">
-                        <span className="text-xs text-muted-foreground">Read only</span>
+                        <div className="flex items-center justify-end gap-1">
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditingGroup(group)}>
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleDeleteGroup(group.id)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))}

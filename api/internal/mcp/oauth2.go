@@ -23,12 +23,12 @@ import (
 
 // AuthServerMetadata holds discovered OAuth2 authorization server metadata (RFC 8414).
 type AuthServerMetadata struct {
-	Issuer                string   `json:"issuer"`
-	AuthorizationEndpoint string   `json:"authorization_endpoint"`
-	TokenEndpoint         string   `json:"token_endpoint"`
-	RegistrationEndpoint  string   `json:"registration_endpoint,omitempty"`
-	ScopesSupported       []string `json:"scopes_supported,omitempty"`
-	ResponseTypesSupported []string `json:"response_types_supported,omitempty"`
+	Issuer                        string   `json:"issuer"`
+	AuthorizationEndpoint         string   `json:"authorization_endpoint"`
+	TokenEndpoint                 string   `json:"token_endpoint"`
+	RegistrationEndpoint          string   `json:"registration_endpoint,omitempty"`
+	ScopesSupported               []string `json:"scopes_supported,omitempty"`
+	ResponseTypesSupported        []string `json:"response_types_supported,omitempty"`
 	CodeChallengeMethodsSupported []string `json:"code_challenge_methods_supported,omitempty"`
 }
 
@@ -507,10 +507,10 @@ type ResourceMetadata struct {
 
 // DiscoveryResult holds everything auto-discovered from an MCP server URL.
 type DiscoveryResult struct {
-	AuthServerURL  string
-	Scopes         string
-	ClientID       string
-	ClientSecret   string
+	AuthServerURL string
+	Scopes        string
+	ClientID      string
+	ClientSecret  string
 }
 
 // DiscoverFromMCP performs the full RFC 9728 + RFC 8414 + RFC 7591 discovery chain:
@@ -698,12 +698,12 @@ func (m *OAuth2Manager) RegisterClient(ctx context.Context, authServerURL string
 
 	regReq := map[string]interface{}{
 		"client_name":                clientName,
-		"redirect_uris":             []string{m.callbackURL},
-		"grant_types":               []string{"authorization_code", "refresh_token"},
-		"response_types":            []string{"code"},
+		"redirect_uris":              []string{m.callbackURL},
+		"grant_types":                []string{"authorization_code", "refresh_token"},
+		"response_types":             []string{"code"},
 		"token_endpoint_auth_method": "none",
-		"application_type":          "web",
-		"scope":                     strings.Join(metadata.ScopesSupported, " "),
+		"application_type":           "web",
+		"scope":                      strings.Join(metadata.ScopesSupported, " "),
 	}
 
 	body, err := json.Marshal(regReq)

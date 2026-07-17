@@ -17,6 +17,7 @@ export function LLMForm({ model, onSave, onCancel }: LLMFormProps) {
     provider: model?.provider || "anthropic",
     model_id: model?.model || "",
     api_key: model?.api_key || "",
+    endpoint: model?.endpoint || "",
     role: model?.role || "chat",
     enabled: model?.enabled ?? true,
     is_default: model?.is_default ?? false,
@@ -30,6 +31,7 @@ export function LLMForm({ model, onSave, onCancel }: LLMFormProps) {
       provider: form.provider,
       model: form.model_id,
       api_key: form.api_key,
+      endpoint: form.endpoint,
       role: form.role,
       enabled: form.enabled,
       is_default: form.is_default,
@@ -107,6 +109,16 @@ export function LLMForm({ model, onSave, onCancel }: LLMFormProps) {
         )}
       </div>
 
+      <div>
+        <label className="mb-1 block text-sm font-medium">Custom endpoint (optional)</label>
+        <input
+          className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+          value={form.endpoint}
+          onChange={e => update("endpoint", e.target.value)}
+          placeholder="https://my-gateway/v1/chat/completions (OpenAI-compatible; empty = provider default)"
+        />
+      </div>
+
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="mb-1 block text-sm font-medium">Role</label>
@@ -120,6 +132,7 @@ export function LLMForm({ model, onSave, onCancel }: LLMFormProps) {
             <option value="file_processor">File Processor</option>
             <option value="chart_extractor">Chart Extractor</option>
             <option value="session_namer">Session Namer</option>
+            <option value="moderator">Moderator</option>
           </select>
         </div>
         <div className="flex flex-col justify-end gap-3 pb-1">

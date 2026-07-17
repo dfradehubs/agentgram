@@ -304,6 +304,79 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/admin/settings": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns every known runtime setting with its definition and current effective value.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "List runtime settings",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Validates and atomically persists key→value overrides, then reloads the cache.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Update runtime settings",
+                "parameters": [
+                    {
+                        "description": "Key/value overrides",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/agents": {
             "get": {
                 "security": [
@@ -831,6 +904,86 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/agents/{agentId}/sessions/{sessionId}/charts": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "Persists extracted chart data as content_parts on the last assistant message in the session",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sessions"
+                ],
+                "summary": "Append charts to the last assistant message",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent ID",
+                        "name": "agentId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Session ID (UUID)",
+                        "name": "sessionId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Charts payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Charts appended"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/config": {
             "get": {
                 "security": [
@@ -854,6 +1007,91 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.PublicConfigResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/groups/{groupId}/chat": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "Sends a message to a group. An LLM moderator picks which agents respond,\nin sequence, each seeing the previous agents' replies. The response is a single\nSSE stream with one RUN_STARTED and one terminal RUN_FINISHED or RUN_ERROR.\nTEXT_MESSAGE_* events are tagged per agent via agentId; debate.incomplete reports partial outcomes.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "chat"
+                ],
+                "summary": "Chat with an agent group (moderated debate)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Group ID",
+                        "name": "groupId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Chat request with messages, optional session_id and optional agent_ids roster override",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ChatRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "SSE stream with AG-UI events",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse"
                         }
                     }
                 }
@@ -941,6 +1179,31 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "github_com_dfradehubs_agentgram-api_internal_models.AgentAPIKeyRule": {
+            "type": "object",
+            "properties": {
+                "agent_id": {
+                    "type": "string"
+                },
+                "api_key": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "priority": {
+                    "description": "Priority orders group rules: lower is evaluated first (ASC). A user-exact\nrule always wins over group rules regardless of priority.",
+                    "type": "integer"
+                },
+                "subject": {
+                    "type": "string"
+                },
+                "subject_type": {
+                    "description": "\"user\" | \"group\"",
+                    "type": "string"
+                }
+            }
+        },
         "github_com_dfradehubs_agentgram-api_internal_models.AgentListResponse": {
             "type": "object",
             "properties": {
@@ -1028,6 +1291,10 @@ const docTemplate = `{
                     "description": "Whether the user who sent this message is an admin",
                     "type": "boolean"
                 },
+                "is_error": {
+                    "description": "Whether this message represents an error response",
+                    "type": "boolean"
+                },
                 "role": {
                     "description": "\"user\" | \"assistant\" | \"system\"",
                     "type": "string"
@@ -1059,6 +1326,13 @@ const docTemplate = `{
         "github_com_dfradehubs_agentgram-api_internal_models.ChatRequest": {
             "type": "object",
             "properties": {
+                "agent_ids": {
+                    "description": "Group chat only: restrict the debate roster to these agents (@mention)",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "group_id": {
                     "type": "string"
                 },
@@ -1079,6 +1353,11 @@ const docTemplate = `{
         "github_com_dfradehubs_agentgram-api_internal_models.ContentPart": {
             "type": "object",
             "properties": {
+                "chart": {
+                    "description": "Chart data (for type=\"chart\")",
+                    "type": "object",
+                    "additionalProperties": true
+                },
                 "text": {
                     "description": "Text content (for type=\"text\")",
                     "type": "string"
@@ -1088,7 +1367,24 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "type": {
-                    "description": "\"text\" or \"tool_use\"",
+                    "description": "\"text\", \"tool_use\", or \"chart\"",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_dfradehubs_agentgram-api_internal_models.CustomFormatConfig": {
+            "type": "object",
+            "properties": {
+                "request_content_type": {
+                    "type": "string"
+                },
+                "request_method": {
+                    "type": "string"
+                },
+                "request_template": {
+                    "type": "string"
+                },
+                "response_content_path": {
                     "type": "string"
                 }
             }
@@ -1188,6 +1484,10 @@ const docTemplate = `{
         "github_com_dfradehubs_agentgram-api_internal_models.Session": {
             "type": "object",
             "properties": {
+                "active_run": {
+                    "description": "True when a run is in flight (ephemeral, resolved at read time)",
+                    "type": "boolean"
+                },
                 "agent_ids": {
                     "description": "Participating agents",
                     "type": "array",
@@ -1228,6 +1528,14 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "session_name": {
+                    "type": "string"
+                },
+                "slack_thread_id": {
+                    "description": "For syncing sibling sessions in same thread",
+                    "type": "string"
+                },
+                "source": {
+                    "description": "Origin: \"slack\" or \"\" (web)",
                     "type": "string"
                 },
                 "user_id": {
@@ -1329,8 +1637,27 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
+                "api_key_rules": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.AgentAPIKeyRule"
+                    }
+                },
+                "auth_header_name": {
+                    "type": "string"
+                },
+                "auth_type": {
+                    "description": "Outbound auth. AuthType: \"\" | \"none\" | \"forward\" | \"bearer\" (\"oauth2\"\nis reserved and rejected). Empty keeps the legacy ForwardAuthorization\nsemantics. APIKeyRules nil means \"leave existing rules untouched\" so\nolder API clients don't wipe them on update.",
+                    "type": "string"
+                },
+                "bearer_token": {
+                    "type": "string"
+                },
                 "category": {
                     "type": "string"
+                },
+                "custom_format": {
+                    "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.CustomFormatConfig"
                 },
                 "description": {
                     "type": "string"
@@ -1353,6 +1680,9 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "max_context_tokens": {
+                    "type": "integer"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -1370,6 +1700,9 @@ const docTemplate = `{
                 },
                 "require_github_token": {
                     "type": "boolean"
+                },
+                "summarize_threshold": {
+                    "type": "number"
                 }
             }
         },
@@ -1397,8 +1730,26 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
+                "api_key_rules": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.AgentAPIKeyRule"
+                    }
+                },
+                "auth_header_name": {
+                    "type": "string"
+                },
+                "auth_type": {
+                    "type": "string"
+                },
+                "bearer_token": {
+                    "type": "string"
+                },
                 "category": {
                     "type": "string"
+                },
+                "custom_format": {
+                    "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.CustomFormatConfig"
                 },
                 "description": {
                     "type": "string"
@@ -1424,6 +1775,9 @@ const docTemplate = `{
                 "inherited_permissions": {
                     "$ref": "#/definitions/github_com_dfradehubs_agentgram-api_internal_models.InheritedPerms"
                 },
+                "max_context_tokens": {
+                    "type": "integer"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -1444,6 +1798,9 @@ const docTemplate = `{
                 },
                 "status": {
                     "type": "string"
+                },
+                "summarize_threshold": {
+                    "type": "number"
                 }
             }
         },
