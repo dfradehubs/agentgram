@@ -62,17 +62,6 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.moderatorLoadErr != nil {
-		h.logger.Error("moderator is unavailable", zap.Error(h.moderatorLoadErr))
-		http.Error(w, `{"error":"moderator LLM is temporarily unavailable"}`, http.StatusServiceUnavailable)
-		return
-	}
-	if h.moderator == nil {
-		w.Header().Set("Content-Type", "application/json")
-		http.Error(w, `{"error":"no moderator LLM configured (admin: add an LLM model with role 'moderator')"}`, http.StatusServiceUnavailable)
-		return
-	}
-
 	// One absolute execution budget covers preflight and every moderator/agent
 	// turn. Final event/message persistence gets a separate short grace period.
 	ctx, debateCancel := context.WithTimeout(context.WithoutCancel(r.Context()), h.settings.Duration(appsettings.KeyGroupDebateTimeout))
@@ -88,6 +77,27 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		http.Error(w, `{"error":"group not found"}`, http.StatusNotFound)
+		return
+	}
+
+	// Resolve the moderator after authorization, on every request. Admin changes
+	// therefore take effect without restarting any API replica.
+	moderator := h.moderator
+	if h.moderatorResolver != nil {
+		resolvedModerator, resolveErr := h.moderatorResolver.Resolve(ctx)
+		if resolveErr != nil {
+			if errors.Is(resolveErr, orchestrator.ErrModeratorNotConfigured) {
+				http.Error(w, `{"error":"no moderator LLM configured (admin: add an enabled LLM model with role 'moderator')"}`, http.StatusServiceUnavailable)
+				return
+			}
+			h.logger.Error("moderator is unavailable", zap.Error(resolveErr))
+			http.Error(w, `{"error":"moderator LLM is temporarily unavailable"}`, http.StatusServiceUnavailable)
+			return
+		}
+		moderator = resolvedModerator
+	}
+	if moderator == nil {
+		http.Error(w, `{"error":"no moderator LLM configured (admin: add an enabled LLM model with role 'moderator')"}`, http.StatusServiceUnavailable)
 		return
 	}
 
@@ -336,7 +346,7 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 		maxTurns = group.MaxTurns
 	}
 	transcript := orchestrator.RenderTranscript(session.Messages)
-	results, debateErr := h.moderator.Debate(ctx, roster, transcript, run, maxTurns)
+	results, debateErr := moderator.Debate(ctx, roster, transcript, run, maxTurns)
 
 	if debateErr != nil && len(results) == 0 {
 		// Moderator failed before anyone spoke: surface as a run error.
@@ -415,7 +425,7 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 		}
 	case incompleteReason == "" && speakers >= 2 && ctx.Err() == nil:
 		// Optional synthesis when several agents contributed
-		synthesis, err := h.moderator.Synthesize(ctx, orchestrator.RenderTranscript(session.Messages))
+		synthesis, err := moderator.Synthesize(ctx, orchestrator.RenderTranscript(session.Messages))
 		if err != nil {
 			h.logger.Warn("group synthesis failed", zap.String("group_id", groupID), zap.Error(err))
 		} else if synthesis != "" {

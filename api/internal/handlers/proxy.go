@@ -38,22 +38,22 @@ import (
 
 // ProxyHandler handles chat requests to agents
 type ProxyHandler struct {
-	registry         *agents.Registry
-	userService      *service.UserService
-	groupRepo        repository.GroupRepository
-	proxy            *proxy.Proxy
-	store            store.SessionStore
-	hub              *pubsub.Hub
-	summarizer       *summarizer.Summarizer
-	sessionNamer     *sessionnamer.Namer
-	fileProcessor    *fileprocessor.Processor
-	moderator        *orchestrator.Moderator
-	moderatorLoadErr error
-	settings         *appsettings.Service
-	audit            *audit.Logger
-	chatEventRepo    repository.ChatEventRepository
-	langfuseTracer   *lf.Tracer
-	logger           *zap.Logger
+	registry          *agents.Registry
+	userService       *service.UserService
+	groupRepo         repository.GroupRepository
+	proxy             *proxy.Proxy
+	store             store.SessionStore
+	hub               *pubsub.Hub
+	summarizer        *summarizer.Summarizer
+	sessionNamer      *sessionnamer.Namer
+	fileProcessor     *fileprocessor.Processor
+	moderator         *orchestrator.Moderator
+	moderatorResolver *orchestrator.ModeratorResolver
+	settings          *appsettings.Service
+	audit             *audit.Logger
+	chatEventRepo     repository.ChatEventRepository
+	langfuseTracer    *lf.Tracer
+	logger            *zap.Logger
 }
 
 // NewProxyHandler creates a new proxy handler
@@ -99,41 +99,21 @@ func NewProxyHandler(llmRepo repository.LLMModelRepository, registry *agents.Reg
 			namer = sessionnamer.New(model, logger)
 		}
 	}
-	var moderator *orchestrator.Moderator
-	var moderatorLoadErr error
-	if modModels, err := llmRepo.ListByRole(ctx, "moderator"); err != nil {
-		moderatorLoadErr = fmt.Errorf("load moderator model: %w", err)
-		logger.Error("failed to load moderator model", zap.Error(err))
-	} else if len(modModels) > 0 {
-		model := modModels[0]
-		provider, provErr := llm.NewProvider(model)
-		if provErr != nil {
-			moderatorLoadErr = fmt.Errorf("create moderator provider: %w", provErr)
-			logger.Error("failed to create moderator provider", zap.Error(provErr))
-		} else {
-			if lfTracer != nil && lfTracer.Enabled() {
-				provider = lf.WrapProvider(provider, "moderator", model.Model)
-			}
-			moderator = orchestrator.NewWithProvider(provider, logger)
-		}
-	}
-
 	h := &ProxyHandler{
-		registry:         registry,
-		userService:      userService,
-		groupRepo:        groupRepo,
-		proxy:            proxy.NewProxy(logger),
-		store:            sessionStore,
-		hub:              hub,
-		summarizer:       sum,
-		sessionNamer:     namer,
-		fileProcessor:    fp,
-		moderator:        moderator,
-		moderatorLoadErr: moderatorLoadErr,
-		settings:         settingsService,
-		audit:            auditLogger,
-		langfuseTracer:   lfTracer,
-		logger:           logger,
+		registry:          registry,
+		userService:       userService,
+		groupRepo:         groupRepo,
+		proxy:             proxy.NewProxy(logger),
+		store:             sessionStore,
+		hub:               hub,
+		summarizer:        sum,
+		sessionNamer:      namer,
+		fileProcessor:     fp,
+		moderatorResolver: orchestrator.NewModeratorResolver(llmRepo, lfTracer, logger),
+		settings:          settingsService,
+		audit:             auditLogger,
+		langfuseTracer:    lfTracer,
+		logger:            logger,
 	}
 	if len(chatEventRepo) > 0 {
 		h.chatEventRepo = chatEventRepo[0]

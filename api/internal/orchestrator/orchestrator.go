@@ -168,9 +168,12 @@ Conversation so far:
 
 Rules:
 1. Pick the agent whose description best matches what is needed NOW (answer the user, or add to / verify another agent's reply).
-2. An agent should only speak if it genuinely adds value. Do not force turns.
-3. When the user's message is already well answered and no agent would add value, the conversation is over.
-4. Do not pick the same agent twice in a row unless strictly necessary.
+2. A response does NOT mean the request is resolved merely because an agent spoke. Judge whether the user's latest request was actually answered.
+3. If the latest agent says it lacks access, data, tools, capability, evidence, or certainty to verify the answer, or tells the user to check another system, treat the request as unresolved. Pick a different, untried agent whose description suggests it may verify or complete the answer.
+4. Do not respond FINISH while an unresolved part of the user's latest request could be addressed by an untried agent.
+5. An agent should only speak if it genuinely adds value. Do not force turns when no remaining agent can help.
+6. Respond FINISH only when the request is actually answered, or no remaining agent can help.
+7. Do not pick the same agent twice in a row unless strictly necessary.
 
 Respond with EXACTLY ONE of:
 - The id of the next agent to speak (one of: %s)
@@ -234,6 +237,7 @@ func (m *Moderator) NextSpeaker(ctx context.Context, roster []AgentBrief, transc
 // message.
 func (m *Moderator) Debate(ctx context.Context, roster []AgentBrief, transcript string, run TurnRunner, maxTurns int) ([]TurnResult, error) {
 	var results []TurnResult
+	attempted := make(map[string]bool)
 	for turn := 0; turn < maxTurns; turn++ {
 		// Stop when the caller's deadline expired: each turn's outbound agent
 		// call survives client disconnects but is clamped to the same absolute
@@ -245,9 +249,32 @@ func (m *Moderator) Debate(ctx context.Context, roster []AgentBrief, transcript 
 		if err != nil {
 			return results, err
 		}
+		if done && replyNeedsHandoff(results) {
+			remaining := make([]AgentBrief, 0, len(roster))
+			for _, agent := range roster {
+				if !attempted[agent.ID] {
+					remaining = append(remaining, agent)
+				}
+			}
+			if len(remaining) > 0 {
+				forcedTranscript := transcript + "\nModerator routing safeguard: the latest agent could not access or verify the requested information. The request is unresolved; select the best remaining agent."
+				agentID, done, err = m.NextSpeaker(ctx, remaining, forcedTranscript)
+				if err != nil {
+					return results, err
+				}
+				if done {
+					// A limitation response must not silently end while another
+					// agent remains. The reduced roster is already ordered by the
+					// group's configured priority, so it is the safe fallback.
+					agentID = remaining[0].ID
+					done = false
+				}
+			}
+		}
 		if done {
 			return results, nil
 		}
+		attempted[agentID] = true
 
 		text, err := run(ctx, agentID)
 		if err != nil {
@@ -267,6 +294,36 @@ func (m *Moderator) Debate(ctx context.Context, roster []AgentBrief, transcript 
 		results = append(results, TurnResult{AgentID: agentID, Text: text})
 	}
 	return results, ErrMaxTurnsReached
+}
+
+var handoffMarkers = []string{
+	"no tengo acceso",
+	"no dispongo de acceso",
+	"no puedo acceder",
+	"no puedo confirmar",
+	"no puedo verificar",
+	"no puedo comprobar",
+	"i do not have access",
+	"i don't have access",
+	"i cannot access",
+	"i can't access",
+	"i cannot confirm",
+	"i can't confirm",
+	"i cannot verify",
+	"i can't verify",
+}
+
+func replyNeedsHandoff(results []TurnResult) bool {
+	if len(results) == 0 {
+		return false
+	}
+	text := strings.ToLower(results[len(results)-1].Text)
+	for _, marker := range handoffMarkers {
+		if strings.Contains(text, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // Synthesize produces an optional final consolidation when several agents

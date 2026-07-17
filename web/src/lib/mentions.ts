@@ -7,6 +7,61 @@ export interface MentionResolution {
   error?: MentionResolutionError;
 }
 
+export interface MentionOption {
+  id: string;
+  label: string;
+  description?: string;
+}
+
+export interface ActiveMention {
+  start: number;
+  end: number;
+  query: string;
+}
+
+export interface AppliedMention {
+  value: string;
+  caret: number;
+}
+
+const MENTION_ID_CHAR_RE = /[\w.-]/;
+
+// Finds the @token being edited at the caret. Mentions must start at the
+// beginning of the message or after whitespace, so email addresses never open
+// the autocomplete. The returned range covers the complete token, including
+// any characters after the caret, so selecting a suggestion replaces it once.
+export function findActiveMention(text: string, caret: number): ActiveMention | null {
+  const safeCaret = Math.max(0, Math.min(caret, text.length));
+  const prefix = text.slice(0, safeCaret);
+  const match = prefix.match(/(?:^|\s)@([\w.-]*)$/);
+  if (!match) return null;
+
+  const query = match[1];
+  const start = safeCaret - query.length - 1;
+  let end = safeCaret;
+  while (end < text.length && MENTION_ID_CHAR_RE.test(text[end])) end++;
+  return { start, end, query };
+}
+
+export function filterMentionOptions(options: MentionOption[], query: string): MentionOption[] {
+  const normalized = query.toLocaleLowerCase();
+  if (!normalized) return options;
+  return options.filter((option) =>
+    option.id.toLocaleLowerCase().includes(normalized)
+      || option.label.toLocaleLowerCase().includes(normalized)
+  );
+}
+
+export function applyMention(text: string, mention: ActiveMention, agentId: string): AppliedMention {
+  const suffix = text.slice(mention.end);
+  const needsSpace = suffix.length === 0 || /^[\w@]/.test(suffix);
+  const replacement = `@${agentId}${needsSpace ? " " : ""}`;
+  return {
+    value: text.slice(0, mention.start) + replacement + suffix,
+    caret: mention.start + replacement.length,
+  };
+}
+
 /**
  * Returns the roster agent IDs @mentioned in the text. Each roster ID is
  * matched literally (so IDs containing "." like "logs.prod" work) as a whole
