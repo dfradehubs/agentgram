@@ -343,6 +343,28 @@ export function useChat({
                   agentId: currentAgentId,
                 }];
                 flushUpdate();
+              } else if (event.subType === "moderator.select") {
+                // Group debate: the moderator picked the next speaker — drive
+                // the "who is thinking" indicator during the pre-content gap.
+                const data = event.data as { agentId?: string } | undefined;
+                if (data?.agentId && !isStale()) setActiveStreamAgentIds([data.agentId]);
+              } else if (event.subType === "turn.error") {
+                // Group debate: one agent's turn failed but the debate goes on.
+                // Surface it as an error bubble for that agent — otherwise an
+                // all-failed debate would end in total silence.
+                const data = event.data as { agentId?: string; message?: string } | undefined;
+                if (data?.agentId) maybeSwitchAgent(data.agentId);
+                finalizeCurrentAgent();
+                const errMsg: Message = {
+                  role: "assistant" as const,
+                  content: `⚠️ ${data?.message || "Agent error"}`,
+                  agent_id: data?.agentId || currentAgentId,
+                };
+                completedMessages = [...completedMessages, errMsg];
+                streamItems = [...streamItems, { type: "message" as const, message: errMsg }];
+                agentStartIdx = streamItems.length;
+                setMessages([...allMessages, ...completedMessages]);
+                flushUpdate();
               }
               break;
             }

@@ -63,6 +63,12 @@ func NewWithProvider(provider llm.Provider, logger *zap.Logger) *Moderator {
 }
 
 // ponytail: the prompt is the single tuning point for moderator behavior.
+//
+// Security note: agent replies and user text are interpolated verbatim into
+// the transcript, so a malicious participant can try to steer turn selection
+// (prompt injection). Blast radius is bounded by design: NextSpeaker output is
+// validated against the roster (anything else means FINISH), turns are capped,
+// and agents can already emit arbitrary text to the user directly.
 const nextSpeakerPrompt = `You are the moderator of a group conversation between a user and several specialized AI agents, like a Telegram group. Your only job is to decide who speaks next.
 
 Available agents:
@@ -178,12 +184,26 @@ func (m *Moderator) Synthesize(ctx context.Context, transcript string) (string, 
 	return strings.TrimSpace(resp.Text), nil
 }
 
+// Transcript bounds: the moderator only needs recent context to route, and an
+// unbounded transcript would eventually blow the moderator model's context
+// window (breaking the group for that session) and grow cost quadratically.
+const (
+	transcriptMaxMessages = 30
+	transcriptMaxMsgChars = 2000
+)
+
 // RenderTranscript renders session messages into the plain-text transcript
 // format the moderator prompts expect (same shape the agents see via the
-// multi-agent context builder).
+// multi-agent context builder). Bounded to the most recent messages with
+// per-message truncation.
 func RenderTranscript(messages []models.ChatMessage) string {
+	start := 0
+	if len(messages) > transcriptMaxMessages {
+		start = len(messages) - transcriptMaxMessages
+	}
+
 	var sb strings.Builder
-	for _, msg := range messages {
+	for _, msg := range messages[start:] {
 		if msg.Role == "system" || msg.IsError {
 			continue
 		}
@@ -193,7 +213,11 @@ func RenderTranscript(messages []models.ChatMessage) string {
 		} else if msg.UserName != "" {
 			prefix = fmt.Sprintf("User[%s]", msg.UserName)
 		}
-		fmt.Fprintf(&sb, "%s: %s\n", prefix, msg.Content)
+		content := msg.Content
+		if len(content) > transcriptMaxMsgChars {
+			content = content[:transcriptMaxMsgChars] + "…"
+		}
+		fmt.Fprintf(&sb, "%s: %s\n", prefix, content)
 	}
 	return sb.String()
 }

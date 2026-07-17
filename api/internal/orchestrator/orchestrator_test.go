@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/dfradehubs/agentgram-api/internal/llm"
+	"github.com/dfradehubs/agentgram-api/internal/models"
 	"go.uber.org/zap"
 )
 
@@ -177,6 +178,28 @@ func TestNextSpeakerParsing(t *testing.T) {
 				t.Errorf("got (%q, %v), want (%q, %v)", id, done, tt.wantID, tt.wantDone)
 			}
 		})
+	}
+}
+
+func TestRenderTranscriptBounded(t *testing.T) {
+	// Build a session far beyond the caps: 100 messages, one of them huge
+	msgs := make([]models.ChatMessage, 0, 100)
+	for i := 0; i < 100; i++ {
+		msgs = append(msgs, models.ChatMessage{Role: "user", Content: fmt.Sprintf("message-%d", i)})
+	}
+	msgs[99].Content = strings.Repeat("x", 10*transcriptMaxMsgChars)
+
+	out := RenderTranscript(msgs)
+
+	if strings.Contains(out, "message-0") || strings.Contains(out, "message-69") {
+		t.Error("transcript includes messages beyond the recency cap")
+	}
+	if !strings.Contains(out, "message-98") {
+		t.Error("transcript missing recent messages")
+	}
+	// The huge message must be truncated, keeping the whole transcript bounded
+	if len(out) > transcriptMaxMessages*(transcriptMaxMsgChars+64) {
+		t.Errorf("transcript not bounded: %d bytes", len(out))
 	}
 }
 

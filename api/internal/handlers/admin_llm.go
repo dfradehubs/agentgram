@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"net/url"
 
 	"github.com/go-chi/chi/v5"
 
@@ -11,6 +13,19 @@ import (
 	"github.com/dfradehubs/agentgram-api/internal/repository"
 	"go.uber.org/zap"
 )
+
+// validateLLMEndpoint validates the optional custom endpoint of an LLM model.
+// Empty means "provider default". Returns an error message, or "" when valid.
+func validateLLMEndpoint(endpoint string) string {
+	if endpoint == "" {
+		return ""
+	}
+	u, err := url.Parse(endpoint)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return "endpoint must be a valid http(s) URL"
+	}
+	return ""
+}
 
 // AdminLLMHandler handles admin CRUD for LLM models
 type AdminLLMHandler struct {
@@ -122,6 +137,10 @@ func (h *AdminLLMHandler) CreateLLMModel(w http.ResponseWriter, r *http.Request)
 	if req.Role == "" {
 		req.Role = "chat"
 	}
+	if errMsg := validateLLMEndpoint(req.Endpoint); errMsg != "" {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, errMsg), http.StatusBadRequest)
+		return
+	}
 
 	model := &models.LLMModel{
 		ID:        req.ID,
@@ -179,6 +198,10 @@ func (h *AdminLLMHandler) UpdateLLMModel(w http.ResponseWriter, r *http.Request)
 
 	if req.Role == "" {
 		req.Role = "chat"
+	}
+	if errMsg := validateLLMEndpoint(req.Endpoint); errMsg != "" {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, errMsg), http.StatusBadRequest)
+		return
 	}
 
 	model := &models.LLMModel{

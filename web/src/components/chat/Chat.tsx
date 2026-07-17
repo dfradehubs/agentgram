@@ -218,7 +218,7 @@ export function Chat() {
   useSessionSubscription({
     sessionId: chatSessionId,
     groupId: effectiveGroupId || undefined,
-    enabled: !!activeGroupId && !!chatSessionId && !isLoading,
+    enabled: !!effectiveGroupId && !!chatSessionId && !isLoading,
     onEvent: useCallback((event: Record<string, unknown>) => {
       if (event.type === "RUN_FINISHED") {
         refreshSessions();
@@ -365,7 +365,9 @@ export function Chat() {
   // isLoading — so the reconnect (which itself toggles isLoading) is not aborted
   // by the recovery effect re-running. The gate ref ensures recovery starts at
   // most once per session load.
-  const agentIdForRecovery = currentAgent?.id;
+  // Recovery/reconnect requests are agent-scoped; in group mode the sidebar's
+  // currentAgent may be unrelated (or inaccessible) — prefer a roster agent.
+  const agentIdForRecovery = (effectiveGroupId && multiAgentIds[0]) || currentAgent?.id;
   const recoveryRef = useRef<{ sessionId: string | null; cancel: () => void }>({
     sessionId: null,
     cancel: () => {},

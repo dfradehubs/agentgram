@@ -182,16 +182,20 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 		SessionName: session.SessionName,
 		OnEvent:     onEvent,
 	})
-	if err := sse.SendRunStarted(); err != nil {
-		return
-	}
 
+	// Mark the run in-flight BEFORE the first buffered event: SetActiveRun
+	// resets the run-event stream, so emitting RUN_STARTED first would wipe it
+	// from the reconnect replay (same ordering as the single-agent handler).
 	_ = h.store.SetActiveRun(ctx, session.SessionID, requestID)
 	defer func() {
 		clearCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = h.store.ClearActiveRun(clearCtx, session.SessionID, requestID)
 	}()
+
+	if err := sse.SendRunStarted(); err != nil {
+		return
+	}
 
 	// Streaming TurnRunner: one agent turn = context prep → proxied SSE
 	// (lifecycle suppressed, events tagged with agentId) → persistence.
