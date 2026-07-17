@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -31,10 +32,10 @@ func TestGetGroupIDFromToolName(t *testing.T) {
 		wantID string
 		wantOK bool
 	}{
-		{"group tool", "ask_group_group-123-abc", "group-123-abc", true},
+		{"group tool", "group__group-123-abc", "group-123-abc", true},
 		{"plain agent tool", "ask_logs-agent", "", false},
-		{"agent id starting with group_", "ask_group_x", "x", true}, // routing guard handled by groupExists
-		{"bare prefix", "ask_group_", "", false},
+		{"agent id starting with group_", "ask_group_x", "", false},
+		{"bare prefix", "group__", "", false},
 		{"unrelated", "list_agents", "", false},
 	}
 	for _, tt := range tests {
@@ -286,7 +287,8 @@ func TestCallGroupNoAgentApplies(t *testing.T) {
 	}
 }
 
-// Use case: tools/list exposes accessible groups as ask_group_* tools.
+// Use case: tools/list exposes accessible groups in a namespace disjoint from
+// ask_<agent-id>, so an agent ID can never shadow a group tool.
 func TestToolsListIncludesGroups(t *testing.T) {
 	h, _ := newGroupTestHandler(t, http.StatusOK)
 
@@ -295,11 +297,98 @@ func TestToolsListIncludesGroups(t *testing.T) {
 		t.Fatalf("HandleMessage: %v", err)
 	}
 	body := string(resp)
-	if !strings.Contains(body, "ask_group_g1") {
+	if !strings.Contains(body, "group__g1") {
 		t.Errorf("tools/list missing group tool:\n%s", body)
 	}
 	if !strings.Contains(body, "Test Group") || !strings.Contains(body, "Agent A, Agent B") {
 		t.Errorf("group tool description missing name/members:\n%s", body)
+	}
+}
+
+func TestToolsListGroupAndAgentNamesCannotCollide(t *testing.T) {
+	h, group := newGroupTestHandler(t, http.StatusOK)
+	if err := h.registry.LoadAgents([]models.Agent{
+		{ID: "group_" + group.ID, Name: "Collision Agent", Protocol: "custom", AllowedUsers: []string{"*"}},
+	}); err != nil {
+		t.Fatalf("LoadAgents: %v", err)
+	}
+
+	resp, _, err := h.server.HandleMessage([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`), "user@example.com", nil, "")
+	if err != nil {
+		t.Fatalf("HandleMessage: %v", err)
+	}
+	var envelope struct {
+		Result struct {
+			Tools []struct {
+				Name string `json:"name"`
+			} `json:"tools"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(resp, &envelope); err != nil {
+		t.Fatalf("decode tools/list: %v", err)
+	}
+	counts := map[string]int{}
+	for _, tool := range envelope.Result.Tools {
+		counts[tool.Name]++
+	}
+	if counts["ask_group_g1"] != 1 || counts["group__g1"] != 1 {
+		t.Fatalf("agent/group tools were not uniquely namespaced: %#v", counts)
+	}
+	for name, count := range counts {
+		if count > 1 {
+			t.Fatalf("duplicate tool name %q appears %d times", name, count)
+		}
+	}
+}
+
+func mcpA2AFrame(w http.ResponseWriter, state, message string) {
+	part := ""
+	if message != "" {
+		part = fmt.Sprintf(`,"message":{"messageId":"m","role":"agent","parts":[{"kind":"text","text":%q}]}`, message)
+	}
+	fmt.Fprintf(w, "data: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"kind\":\"status-update\",\"contextId\":\"ctx-partial\",\"status\":{\"state\":%q%s}}}\n\n", state, part)
+	w.(http.Flusher).Flush()
+}
+
+func TestHandleToolsCallReturnsAndPersistsPartialA2AError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		mcpA2AFrame(w, "working", "partial answer from A2A")
+		// EOF without status-update:completed.
+	}))
+	t.Cleanup(srv.Close)
+
+	h, _ := newGroupTestHandler(t, http.StatusOK)
+	if err := h.registry.LoadAgents([]models.Agent{
+		{ID: "partial-agent", Name: "Partial", Protocol: "a2a", Endpoint: srv.URL, AllowedUsers: []string{"*"}},
+	}); err != nil {
+		t.Fatalf("LoadAgents: %v", err)
+	}
+	req := jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      json.RawMessage(`1`),
+		Method:  "tools/call",
+		Params:  json.RawMessage(`{"name":"ask_partial-agent","arguments":{"question":"hi"}}`),
+	}
+	recorder := httptest.NewRecorder()
+	h.handleToolsCall(recorder, httptest.NewRequest(http.MethodPost, "/mcp", nil), req, "user@example.com", nil, "")
+
+	body := recorder.Body.String()
+	if !strings.Contains(body, "partial answer from A2A") || !strings.Contains(body, `"isError":true`) {
+		t.Fatalf("partial A2A error was hidden from MCP client: %s", body)
+	}
+	store := h.sessionStore.(*mcpFakeSessionStore)
+	found := false
+	for _, session := range store.sessions {
+		for _, msg := range session.Messages {
+			if msg.Role == "assistant" && strings.Contains(msg.Content, "partial answer from A2A") && msg.IsError {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatal("partial A2A error was not persisted in the Agentgram session")
 	}
 }
 

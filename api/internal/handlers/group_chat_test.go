@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -39,6 +40,34 @@ type scriptedProvider struct {
 	lastMaxTokens int
 }
 
+// deadlineAwareProvider makes the second routing decision slow enough that a
+// shared debate deadline must expire between two otherwise-fast agent turns.
+type deadlineAwareProvider struct {
+	mu    sync.Mutex
+	calls int
+}
+
+func (f *deadlineAwareProvider) GenerateContent(ctx context.Context, _ *llm.Request) (*llm.Response, error) {
+	f.mu.Lock()
+	call := f.calls
+	f.calls++
+	f.mu.Unlock()
+
+	switch call {
+	case 0:
+		return &llm.Response{Text: "agent-a"}, nil
+	case 1:
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(150 * time.Millisecond):
+			return &llm.Response{Text: "agent-b"}, nil
+		}
+	default:
+		return &llm.Response{Text: "FINISH"}, nil
+	}
+}
+
 func (f *scriptedProvider) GenerateContent(_ context.Context, req *llm.Request) (*llm.Response, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -64,6 +93,8 @@ type fakeSessionStore struct {
 	agentSessions map[string]string
 	order         []string
 	counter       int
+	failReplyAdd  bool
+	failSetAgent  bool
 }
 
 func newFakeSessionStore() *fakeSessionStore {
@@ -125,6 +156,9 @@ func (f *fakeSessionStore) SaveSession(_ context.Context, session *models.Sessio
 func (f *fakeSessionStore) AddMessage(_ context.Context, sessionID string, msg models.ChatMessage) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if msg.Role == "assistant" && f.failReplyAdd {
+		return fmt.Errorf("simulated reply persistence failure")
+	}
 	s, ok := f.sessions[sessionID]
 	if !ok {
 		return fmt.Errorf("not found")
@@ -142,6 +176,9 @@ func (f *fakeSessionStore) GetAgentSessionID(_ context.Context, sessionID, agent
 func (f *fakeSessionStore) SetAgentSessionID(_ context.Context, sessionID, agentID, agentSessionID string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.failSetAgent {
+		return fmt.Errorf("simulated mapping persistence failure")
+	}
 	f.agentSessions[sessionID+"|"+agentID] = agentSessionID
 	return nil
 }
@@ -318,6 +355,18 @@ func contentByAgent(events []map[string]interface{}) map[string]string {
 	return out
 }
 
+func incompleteReasonFromEvents(events []map[string]interface{}) string {
+	for _, ev := range events {
+		if ev["type"] != "CUSTOM" || ev["subType"] != "debate.incomplete" {
+			continue
+		}
+		data, _ := ev["data"].(map[string]interface{})
+		reason, _ := data["reason"].(string)
+		return reason
+	}
+	return ""
+}
+
 // --- use-case tests ---------------------------------------------------------
 
 // Use case: the user sends a message and the moderator picks two agents in
@@ -485,6 +534,57 @@ func TestDebateIncompleteReasonHasSinglePrecedence(t *testing.T) {
 	}
 	if got := debateIncompleteReason(nil, 1, 2); got != "" {
 		t.Fatalf("successful debate reason = %q, want empty", got)
+	}
+}
+
+type groupSettingsRepo struct{ vals map[string]string }
+
+func (r groupSettingsRepo) GetAll(context.Context) (map[string]string, error) { return r.vals, nil }
+func (r groupSettingsRepo) SetMany(context.Context, map[string]string) error  { return nil }
+
+func TestGroupChatDeadlineBoundsAllTurns(t *testing.T) {
+	fx := newGroupChatFixture(t, http.StatusOK, http.StatusOK)
+	fx.handler.moderator = orchestrator.NewWithProvider(&deadlineAwareProvider{}, zap.NewNop())
+	fx.handler.settings = appsettings.New(groupSettingsRepo{vals: map[string]string{
+		"group_debate_timeout_api": "30ms",
+	}}, zap.NewNop())
+
+	rec := fx.post(t, "g1", `{"messages":[{"role":"user","content":"check both agents"}]}`)
+	events := parseSSEEvents(t, rec.Body.String())
+	byAgent := contentByAgent(events)
+	if !strings.Contains(byAgent["agent-a"], "reply from agent-a") {
+		t.Fatalf("first turn did not complete before the shared deadline: %v", byAgent)
+	}
+	if byAgent["agent-b"] != "" {
+		t.Fatalf("second turn restarted the timeout and completed: %v", byAgent)
+	}
+	if got := incompleteReasonFromEvents(events); got != "timeout" {
+		t.Fatalf("incomplete reason = %q, want timeout", got)
+	}
+}
+
+func TestGroupChatPersistenceFailuresAreIncomplete(t *testing.T) {
+	tests := []struct {
+		name      string
+		configure func(*fakeSessionStore)
+	}{
+		{"reply", func(s *fakeSessionStore) { s.failReplyAdd = true }},
+		{"mapping", func(s *fakeSessionStore) { s.failSetAgent = true }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fx := newGroupChatFixture(t, http.StatusOK, http.StatusOK, "agent-a", "FINISH")
+			tt.configure(fx.store)
+
+			rec := fx.post(t, "g1", `{"messages":[{"role":"user","content":"status"}]}`)
+			events := parseSSEEvents(t, rec.Body.String())
+			if got := incompleteReasonFromEvents(events); got != "all_agents_failed" {
+				t.Fatalf("persistence failure ended as clean success; reason = %q", got)
+			}
+			if !strings.Contains(contentByAgent(events)["agent-a"], "reply from agent-a") {
+				t.Fatal("partial reply was not preserved in the stream")
+			}
+		})
 	}
 }
 

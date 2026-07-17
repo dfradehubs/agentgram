@@ -53,6 +53,9 @@ func TestDurationFallsBackToDefault(t *testing.T) {
 	if got := s.Duration(KeyMCPToolCallTimeout); got != 10*time.Minute {
 		t.Errorf("default timeout = %v, want 10m", got)
 	}
+	if got := s.Duration("group_debate_timeout_api"); got != 10*time.Minute {
+		t.Errorf("group debate default timeout = %v, want 10m", got)
+	}
 }
 
 func TestValidate(t *testing.T) {
@@ -67,6 +70,8 @@ func TestValidate(t *testing.T) {
 		{KeyMCPToolCallTimeout, "10m", false},
 		{KeyMCPToolCallTimeout, "0s", true}, // non-positive duration
 		{KeyMCPToolCallTimeout, "nope", true},
+		{"group_debate_timeout_api", "10m", false},
+		{"group_debate_timeout_api", "0s", true},
 		{"unknown_key", "1", true},
 	}
 	for _, c := range cases {
