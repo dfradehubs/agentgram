@@ -2,15 +2,16 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bot, Server, Users, ArrowLeft, Brain, BarChart3 } from "lucide-react";
+import { Bot, Server, Users, UsersRound, ArrowLeft, Brain, BarChart3 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/admin/agents", label: "Agents", icon: Bot },
+  { href: "/admin/groups", label: "Groups", icon: UsersRound },
   { href: "/admin/mcp", label: "MCP Servers", icon: Server },
   { href: "/admin/llm", label: "LLM Models", icon: Brain },
   { href: "/admin/users", label: "Users", icon: Users },
-{ href: "/admin/observability", label: "Observability", icon: BarChart3 },
+  { href: "/admin/observability", label: "Observability", icon: BarChart3 },
 ];
 
 export function AdminNav() {

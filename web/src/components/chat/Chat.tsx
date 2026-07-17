@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAgents } from "@/hooks/useAgents";
 import { useUser } from "@/hooks/useUser";
 import { useSessions } from "@/hooks/useSessions";
@@ -52,7 +52,7 @@ export function Chat() {
   const { agents, currentAgent } = useAgents();
   const { user, displayName } = useUser();
   const { focusKey } = useAgentContext();
-  const { sessions, currentSession, sessionResetKey, refreshSessions, pendingMultiAgentIds, activeGroupId, multiAgentGroups, createNewSession, wantsNewChat, createMultiAgentSession, selectGroup, markSessionActive, hasMoreMessages, isLoadingMore, loadOlderMessages } = useSessions();
+  const { sessions, currentSession, sessionResetKey, refreshSessions, pendingMultiAgentIds, activeGroupId, multiAgentGroups, createNewSession, wantsNewChat, newGroupConversation, markSessionActive, hasMoreMessages, isLoadingMore, loadOlderMessages } = useSessions();
   const {
     currentMCPServer,
     currentMCPSession,
@@ -88,39 +88,20 @@ export function Chat() {
 
   // Multi-agent detection: prefer group's agentIds, then session, then pending
   const activeGroup = effectiveGroupId ? multiAgentGroups.find(g => g.id === effectiveGroupId) : null;
-  const multiAgentIds = activeGroup && activeGroup.agentIds.length > 0
-    ? activeGroup.agentIds
-    : currentSession?.is_multi_agent || currentSession?.source === "slack"
-      ? (currentSession?.agent_ids || [])
-      : pendingMultiAgentIds;
+  const multiAgentIds = useMemo(() => (
+    activeGroup && activeGroup.agentIds.length > 0
+      ? activeGroup.agentIds
+      : currentSession?.is_multi_agent || currentSession?.source === "slack"
+        ? (currentSession?.agent_ids || [])
+        : pendingMultiAgentIds
+  ), [activeGroup, currentSession?.is_multi_agent, currentSession?.source, currentSession?.agent_ids, pendingMultiAgentIds]);
   const isSlackSession = currentSession?.source === "slack";
-  const isMultiAgent = !isMCP && (multiAgentIds.length >= 2 || isSlackSession);
-  const [selectedTargetAgentIds, setSelectedTargetAgentIds] = useState<string[]>([]);
-
-  // Auto-select agents in multi-agent mode. Moderated groups default to no
-  // selection (the moderator picks); other multi-agent sessions keep the first.
-  useEffect(() => {
-    if (isMultiAgent && multiAgentIds.length > 0) {
-      setSelectedTargetAgentIds((prev) => {
-        // Keep current selection if all selected agents are still valid
-        const valid = prev.filter((id) => multiAgentIds.includes(id));
-        if (valid.length > 0) return valid;
-        return effectiveGroupId ? [] : [multiAgentIds[0]];
-      });
-    }
-  }, [isMultiAgent, multiAgentIds, effectiveGroupId]);
-
-  const toggleTargetAgent = useCallback((agentId: string) => {
-    setSelectedTargetAgentIds((prev) => {
-      if (prev.includes(agentId)) {
-        // Moderated groups allow empty selection (= moderator decides);
-        // other multi-agent sessions keep at least one target.
-        if (prev.length <= 1 && !effectiveGroupId) return prev;
-        return prev.filter((id) => id !== agentId);
-      }
-      return [...prev, agentId];
-    });
-  }, [effectiveGroupId]);
+  // A moderated group is the only multi-agent surface now: the moderator picks
+  // who answers (optionally steered by @mentions). Slack multi-agent threads
+  // are read-only from the web — respond from Slack.
+  const isGroup = !isMCP && !!effectiveGroupId && multiAgentIds.length >= 2;
+  const isMultiAgent = isGroup || (!isMCP && isSlackSession);
+  const isReadOnly = isSlackSession && !effectiveGroupId;
 
   // MCP model selection
   const defaultModel = config.available_models.find((m) => m.default) || config.available_models[0];
@@ -207,12 +188,12 @@ export function Chat() {
   useEffect(() => {
     const handler = (e: MessageEvent) => {
       if (e.data?.type === "github_connected") {
-        retry(undefined, isMultiAgent && selectedTargetAgentIds.length > 0 ? selectedTargetAgentIds : undefined);
+        retry();
       }
     };
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
-  }, [retry, isMultiAgent, selectedTargetAgentIds]);
+  }, [retry]);
 
   // Real-time subscription for group sessions: reload messages + sessions on RUN_FINISHED
   useSessionSubscription({
@@ -501,16 +482,14 @@ export function Chat() {
     pinnedRef.current = true;
     scrollToBottom();
     const atts = pendingAttachments.length > 0 ? pendingAttachments : undefined;
-    if (isMultiAgent && effectiveGroupId && selectedTargetAgentIds.length !== 1) {
-      // Moderated group debate: the moderator picks who answers. Selected
-      // pills (2+) restrict the roster; none selected = fully automatic.
+    if (isGroup) {
+      // Moderated group debate. Any @<agent-id> mentions matching the roster
+      // steer the moderator (roster override); otherwise it picks freely.
+      const tokens = input.split(/\s+/);
+      const mentioned = multiAgentIds.filter((id) => tokens.includes(`@${id}`));
       sendMessage(undefined, undefined, atts, undefined, undefined, {
-        agentIds: selectedTargetAgentIds.length > 0 ? selectedTargetAgentIds : undefined,
+        agentIds: mentioned.length > 0 ? mentioned : undefined,
       });
-    } else if (isMultiAgent && selectedTargetAgentIds.length > 0) {
-      // Direct send: exactly one pill in a group (skip the moderator), or a
-      // non-group multi-agent session (parallel broadcast with context).
-      sendMultiple(selectedTargetAgentIds, true, atts);
     } else {
       sendMessage(undefined, undefined, atts);
     }
@@ -518,7 +497,7 @@ export function Chat() {
     if (inputRef.current) {
       inputRef.current.style.height = "auto";
     }
-  }, [pendingAttachments, isMultiAgent, effectiveGroupId, selectedTargetAgentIds, sendMultiple, sendMessage, scrollToBottom]);
+  }, [pendingAttachments, isGroup, input, multiAgentIds, sendMessage, scrollToBottom]);
 
   const handleFileSelect = useCallback((files: FileList | null) => {
     if (!files) return;
@@ -597,10 +576,9 @@ export function Chat() {
   }, [createNewSession]);
 
   const handleNewGroupConversation = useCallback(() => {
-    if (!activeGroupId || !activeGroup) return;
-    createMultiAgentSession(activeGroup.agentIds); // sets wantsNewChat=true
-    selectGroup(activeGroupId); // re-selects group context
-  }, [createMultiAgentSession, selectGroup, activeGroupId, activeGroup]);
+    if (!activeGroupId) return;
+    newGroupConversation(); // fresh chat, keeps the group context
+  }, [newGroupConversation, activeGroupId]);
 
   // Empty state: no agent and not in MCP mode
   if (!isMCP && !currentAgent) {
@@ -639,7 +617,7 @@ export function Chat() {
     ? (isMCPMulti
       ? !selectedMCPServerIds.some((id) => mcpServers.find((s) => s.id === id)?.status === "connected")
       : currentMCPServer?.status !== "connected")
-    : !!githubRequired;
+    : (!!githubRequired || isReadOnly); // Slack threads are read-only from the web
 
   // Multi-MCP display info
   const multiServers = isMCPMulti
@@ -766,7 +744,6 @@ export function Chat() {
         currentMCPServer={currentMCPServer}
         mcpServers={mcpServers}
         multiMCPServerNames={multiMCPServerNames}
-        selectedTargetAgentIds={selectedTargetAgentIds}
         selectedModelId={selectedModelId}
         getAgentName={getAgentName}
         user={user}
@@ -834,7 +811,7 @@ export function Chat() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => retry(undefined, isMultiAgent && selectedTargetAgentIds.length > 0 ? selectedTargetAgentIds : undefined)}
+              onClick={() => retry(undefined)}
               className="h-7 gap-1.5 border-destructive/30 text-xs text-destructive hover:bg-destructive/10"
             >
               <RefreshCw className="h-3 w-3" />
@@ -847,7 +824,6 @@ export function Chat() {
       {/* Input area */}
       <ChatInput
         isMCP={isMCP}
-        isMultiAgent={isMultiAgent}
         isInputDisabled={isInputDisabled}
         isLoading={isLoading}
         input={input}
@@ -855,9 +831,6 @@ export function Chat() {
         pendingAttachments={pendingAttachments}
         onRemoveAttachment={handleRemoveAttachment}
         onFileSelect={handleFileSelect}
-        multiAgentIds={multiAgentIds}
-        selectedTargetAgentIds={selectedTargetAgentIds}
-        onToggleTargetAgent={toggleTargetAgent}
         onSend={handleSend}
         onStop={stop}
         widthCls={widthCls}

@@ -14,7 +14,6 @@ import { SlackSessionsSection } from "../sessions/SlackSessionsSection";
 import { MultiMCPItem } from "../mcp/MultiMCPItem";
 import { MCPSessionList } from "../mcp/MCPSessionList";
 import { CreateMultiMCPDialog } from "../mcp/CreateMultiMCPDialog";
-import { CreateMultiAgentDialog } from "../sessions/CreateMultiAgentDialog";
 import { Badge } from "@/components/ui/badge";
 import {
   Collapsible,
@@ -42,7 +41,6 @@ export function AgentList() {
   } = useMCPContext();
   const { selectAgent } = useAgentContext();
   const [showMultiMCPDialog, setShowMultiMCPDialog] = useState(false);
-  const [showMultiAgentDialog, setShowMultiAgentDialog] = useState(false);
   const [isMCPExpanded, setIsMCPExpanded] = useState(false);
   const [isMultiMCPExpanded, setIsMultiMCPExpanded] = useState(false);
   const [expandedMCPServer, setExpandedMCPServer] = useState<string | null>(null);
@@ -92,37 +90,18 @@ export function AgentList() {
       {/* Slack Sessions (independent concept — not a group) */}
       <SlackSessionsSection />
 
-      {/* Multi-agent groups */}
-      {agents.length >= 2 && (
+      {/* Agent groups (created by admins; listed here when you can use them) */}
+      {multiAgentGroups.length > 0 && (
         <>
           <div className="mx-2.5 my-2 border-t" />
-          <div className="flex items-center justify-between px-2.5 py-1">
+          <div className="flex items-center px-2.5 py-1">
             <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
               {t("multiAgent.groups")}
             </span>
-            <button
-              onClick={() => setShowMultiAgentDialog(true)}
-              className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
-              aria-label={t("multiAgent.newGroup")}
-            >
-              <Plus className="h-3.5 w-3.5" />
-            </button>
           </div>
           {multiAgentGroups.map((group) => (
             <GroupItem key={group.id} group={group} />
           ))}
-          {multiAgentGroups.length === 0 && (
-            <button
-              className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-all active:scale-[0.98] hover:bg-accent/50"
-              onClick={() => setShowMultiAgentDialog(true)}
-            >
-              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-violet-500/20 to-fuchsia-500/20">
-                <Users className="h-3.5 w-3.5 text-violet-600 dark:text-violet-400" />
-              </div>
-              <span className="flex-1 truncate text-sm text-muted-foreground">{t("multiAgent.newGroup")}</span>
-              <Plus className="h-3.5 w-3.5 text-muted-foreground" />
-            </button>
-          )}
         </>
       )}
 
@@ -293,11 +272,6 @@ export function AgentList() {
       <CreateMultiMCPDialog
         isOpen={showMultiMCPDialog}
         onClose={() => setShowMultiMCPDialog(false)}
-      />
-
-      <CreateMultiAgentDialog
-        isOpen={showMultiAgentDialog}
-        onClose={() => setShowMultiAgentDialog(false)}
       />
     </div>
   );

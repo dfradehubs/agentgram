@@ -9,25 +9,6 @@ import (
 	"github.com/dfradehubs/agentgram-api/internal/service"
 )
 
-// IsGroupOwner checks if the user is the group owner (creator) or an admin.
-// Use this for destructive/sensitive operations (delete, update permissions).
-func IsGroupOwner(ctx context.Context, claims *auth.Claims, groupID string, groupRepo repository.GroupRepository, userService *service.UserService) bool {
-	email := claims.GetEmail()
-	userGroups := claims.GetGroups()
-
-	isAdmin, _ := userService.IsAdmin(ctx, email, userGroups)
-	if isAdmin {
-		return true
-	}
-
-	group, err := groupRepo.Get(ctx, groupID)
-	if err != nil {
-		return false
-	}
-
-	return strings.EqualFold(group.CreatedBy, email)
-}
-
 // CanAccessGroup checks if the user (identified by claims) has access to the given group.
 // Access is granted if the user is an admin, the group creator, listed in allowed users
 // (including wildcard "*"), or belongs to an allowed group.

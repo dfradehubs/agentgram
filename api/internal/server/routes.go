@@ -358,17 +358,13 @@ func SetupRoutes(cfg *config.Config, registry *agents.Registry, sessionStore sto
 		runStreamHandler := handlers.NewRunStreamHandler(adminDeps.RedisClient, sessionStore, registry, adminDeps.GroupRepo, adminDeps.UserService, logger)
 		r.Get("/agents/{agentId}/sessions/{sessionId}/stream", runStreamHandler.Stream)
 
-		// Agent groups (user-facing)
+		// Agent groups (user-facing, read + use only — creation/editing is admin-only)
 		groupsHandler := handlers.NewGroupsHandler(adminDeps.GroupRepo, sessionStore, adminDeps.UserService, registry, logger)
 		r.Get("/groups", groupsHandler.ListGroups)
-		r.Post("/groups", groupsHandler.CreateGroup)
 		// Moderated group debate (SSE): the moderator LLM picks which agents respond
 		r.With(chatRateLimiter.ChatHandler).Post("/groups/{groupId}/chat", proxyHandler.GroupChat)
-		r.Put("/groups/{groupId}", groupsHandler.UpdateGroup)
-		r.Delete("/groups/{groupId}", groupsHandler.DeleteGroup)
+		// Group sessions are personal: each user only ever sees their own.
 		r.Get("/groups/{groupId}/sessions", groupsHandler.ListGroupSessions)
-		r.Post("/groups/{groupId}/sessions", groupsHandler.AddGroupSession)
-		r.Delete("/groups/{groupId}/sessions/{sessionId}", groupsHandler.RemoveGroupSession)
 
 		// Multi-MCP endpoints
 		r.Post("/mcp/chat", mcpHandler.ChatMulti)

@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/dfradehubs/agentgram-api/internal/metrics"
 	"github.com/dfradehubs/agentgram-api/internal/middleware"
 	"github.com/dfradehubs/agentgram-api/internal/models"
 	"github.com/dfradehubs/agentgram-api/internal/repository"
@@ -122,6 +123,10 @@ func (h *AdminGroupsHandler) CreateGroup(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	if metrics.IsEnabled() {
+		metrics.GroupsCreatedTotal.Inc()
+	}
+
 	h.auditRepo.Log(r.Context(), &models.AuditEntry{
 		UserEmail:    claims.GetEmail(),
 		Action:       "create",
@@ -194,6 +199,10 @@ func (h *AdminGroupsHandler) DeleteGroup(w http.ResponseWriter, r *http.Request)
 	if err := h.groupRepo.Delete(r.Context(), id); err != nil {
 		http.Error(w, `{"error":"group not found"}`, http.StatusNotFound)
 		return
+	}
+
+	if metrics.IsEnabled() {
+		metrics.GroupsDeletedTotal.Inc()
 	}
 
 	claims := middleware.GetUserFromContext(r.Context())

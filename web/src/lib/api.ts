@@ -442,48 +442,12 @@ export async function getGroups(): Promise<MultiAgentGroup[]> {
   return (data.groups || []).map(mapGroupResponse);
 }
 
-export async function createGroup(name: string, agentIds: string[], allowedUsers?: string[], allowedGroups?: string[]): Promise<MultiAgentGroup> {
-  const body: Record<string, unknown> = { name, agentIds };
-  if (allowedUsers && allowedUsers.length > 0) {
-    body.allowed_users = allowedUsers;
-  }
-  if (allowedGroups && allowedGroups.length > 0) {
-    body.allowed_groups = allowedGroups;
-  }
-  const data = await fetchApi<GroupApiResponse>("/api/groups", {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
-  return mapGroupResponse(data);
-}
+// Group creation/editing is admin-only — see the admin API (createAdminGroup etc.).
 
-export async function updateGroup(groupId: string, updates: { name?: string; agentIds?: string[]; allowed_users?: string[]; allowed_groups?: string[] }): Promise<MultiAgentGroup> {
-  const data = await fetchApi<GroupApiResponse>(`/api/groups/${groupId}`, {
-    method: "PUT",
-    body: JSON.stringify(updates),
-  });
-  return mapGroupResponse(data);
-}
-
-export async function deleteGroup(groupId: string): Promise<void> {
-  await fetchApi(`/api/groups/${groupId}`, { method: "DELETE" });
-}
-
-// Group Sessions API
+// Group Sessions API (personal: returns only the caller's own sessions)
 export async function getGroupSessions(groupId: string): Promise<Session[]> {
   const data = await fetchApi<SessionListResponse>(`/api/groups/${groupId}/sessions`, { cache: "no-store" });
   return data.sessions || [];
-}
-
-export async function addGroupSession(groupId: string, sessionId: string): Promise<void> {
-  await fetchApi(`/api/groups/${groupId}/sessions`, {
-    method: "POST",
-    body: JSON.stringify({ session_id: sessionId }),
-  });
-}
-
-export async function removeGroupSession(groupId: string, sessionId: string): Promise<void> {
-  await fetchApi(`/api/groups/${groupId}/sessions/${sessionId}`, { method: "DELETE" });
 }
 
 // Read State API (unread tracking)
