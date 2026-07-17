@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -467,6 +468,22 @@ func TestGroupChatAllAgentsFailed(t *testing.T) {
 	}
 	if !strings.Contains(allText, "All selected agents failed") {
 		t.Errorf("missing all-failed notice, got: %q", allText)
+	}
+}
+
+func TestDebateIncompleteReasonHasSinglePrecedence(t *testing.T) {
+	wrappedTimeout := fmt.Errorf("moderator failed: %w", context.DeadlineExceeded)
+	if got := debateIncompleteReason(wrappedTimeout, 0, 2); got != "timeout" {
+		t.Fatalf("wrapped timeout reason = %q, want timeout", got)
+	}
+	if got := debateIncompleteReason(errors.New("provider down"), 0, 2); got != "moderator_error" {
+		t.Fatalf("moderator failure reason = %q, want moderator_error", got)
+	}
+	if got := debateIncompleteReason(nil, 0, 2); got != "all_agents_failed" {
+		t.Fatalf("all-failed reason = %q, want all_agents_failed", got)
+	}
+	if got := debateIncompleteReason(nil, 1, 2); got != "" {
+		t.Fatalf("successful debate reason = %q, want empty", got)
 	}
 }
 

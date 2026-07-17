@@ -71,6 +71,9 @@ type mcpFakeSessionStore struct {
 	sessions      map[string]*models.Session
 	agentSessions map[string]string
 	failSave      bool     // when true, SaveSession returns an error
+	failUserAdd   bool
+	failReplyAdd  bool
+	failSetAgent  bool
 	deleted       []string // session IDs passed to DeleteSession
 }
 
@@ -111,6 +114,9 @@ func (f *mcpFakeSessionStore) SaveSession(_ context.Context, session *models.Ses
 func (f *mcpFakeSessionStore) AddMessage(_ context.Context, sessionID string, msg models.ChatMessage) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if (msg.Role == "user" && f.failUserAdd) || (msg.Role == "assistant" && f.failReplyAdd) {
+		return fmt.Errorf("simulated message persistence failure")
+	}
 	s, ok := f.sessions[sessionID]
 	if !ok {
 		return fmt.Errorf("not found")
@@ -128,6 +134,9 @@ func (f *mcpFakeSessionStore) GetAgentSessionID(_ context.Context, sessionID, ag
 func (f *mcpFakeSessionStore) SetAgentSessionID(_ context.Context, sessionID, agentID, agentSessionID string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.failSetAgent {
+		return fmt.Errorf("simulated mapping failure")
+	}
 	f.agentSessions[sessionID+"|"+agentID] = agentSessionID
 	return nil
 }
@@ -373,6 +382,57 @@ func TestCallGroupDeadlineBoundsWholeCall(t *testing.T) {
 	}
 	if strings.Contains(text, "reply from agent-a") || strings.Contains(text, "reply from agent-b") {
 		t.Errorf("an agent replied despite the exhausted deadline: %s", text)
+	}
+}
+
+func TestCallGroupRespectsExistingDeadline(t *testing.T) {
+	h, group := newGroupTestHandler(t, http.StatusOK, "agent-a", "FINISH")
+	roster, agentsByID := h.buildGroupRoster(context.Background(), group, "user@example.com", nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	text, _, isError, _ := h.callGroup(ctx, group, roster, agentsByID, "hi", "", "user@example.com", nil, nil)
+	if !isError || strings.Contains(text, "reply from agent-a") {
+		t.Fatalf("expired parent deadline was restarted: isError=%v text=%q", isError, text)
+	}
+}
+
+func TestCallGroupUserPersistenceFailureAborts(t *testing.T) {
+	h, group := newGroupTestHandler(t, http.StatusOK, "agent-a", "FINISH")
+	h.sessionStore.(*mcpFakeSessionStore).failUserAdd = true
+	roster, agentsByID := h.buildGroupRoster(context.Background(), group, "user@example.com", nil)
+
+	text, _, isError, err := h.callGroup(context.Background(), group, roster, agentsByID, "hi", "", "user@example.com", nil, nil)
+	if err == nil || !isError || text != "" {
+		t.Fatalf("user persistence failure continued: text=%q isError=%v err=%v", text, isError, err)
+	}
+}
+
+func TestCallGroupReplyPersistenceFailureIsIncomplete(t *testing.T) {
+	h, group := newGroupTestHandler(t, http.StatusOK, "agent-a", "FINISH")
+	h.sessionStore.(*mcpFakeSessionStore).failReplyAdd = true
+	roster, agentsByID := h.buildGroupRoster(context.Background(), group, "user@example.com", nil)
+
+	text, _, isError, err := h.callGroup(context.Background(), group, roster, agentsByID, "hi", "", "user@example.com", nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected transport error: %v", err)
+	}
+	if !isError || !strings.Contains(text, "reply from agent-a") || !strings.Contains(text, "persistence") {
+		t.Fatalf("reply persistence failure was not surfaced with partial text: isError=%v text=%q", isError, text)
+	}
+}
+
+func TestCallGroupMappingFailureIsIncomplete(t *testing.T) {
+	h, group := newGroupTestHandler(t, http.StatusOK, "agent-a", "FINISH")
+	h.sessionStore.(*mcpFakeSessionStore).failSetAgent = true
+	roster, agentsByID := h.buildGroupRoster(context.Background(), group, "user@example.com", nil)
+
+	text, _, isError, err := h.callGroup(context.Background(), group, roster, agentsByID, "hi", "", "user@example.com", nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected transport error: %v", err)
+	}
+	if !isError || !strings.Contains(text, "reply from agent-a") || !strings.Contains(text, "session mapping") {
+		t.Fatalf("mapping failure was not surfaced with partial text: isError=%v text=%q", isError, text)
 	}
 }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { extractMentions } from "../mentions";
+import { extractMentions, resolveMentions } from "../mentions";
 
 const roster = ["logs-agent", "metrics-agent", "logs", "logs.prod"];
 
@@ -45,5 +45,19 @@ describe("extractMentions", () => {
     const got = extractMentions("@logs-agent and @metrics-agent", roster);
     expect(got).toContain("logs-agent");
     expect(got).toContain("metrics-agent");
+  });
+
+  it("rejects a case-insensitive collision instead of widening the roster", () => {
+    const got = resolveMentions("@logs check this", ["logs", "Logs"]);
+    expect(got).toEqual({ agentIds: [], error: "ambiguous" });
+  });
+
+  it("rejects an unrecognized explicit mention instead of using the whole roster", () => {
+    const got = resolveMentions("ask @log-agent please", roster);
+    expect(got).toEqual({ agentIds: [], error: "unrecognized" });
+  });
+
+  it("distinguishes plain text from an unresolved mention", () => {
+    expect(resolveMentions("check the cluster", roster)).toEqual({ agentIds: [] });
   });
 });

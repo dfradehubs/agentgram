@@ -152,6 +152,19 @@ func TestDebateTranscriptGrows(t *testing.T) {
 	}
 }
 
+func TestDebatePreservesPartialTextOnError(t *testing.T) {
+	mod, _ := newTestModerator("logs-agent", "FINISH")
+	results, err := mod.Debate(context.Background(), testRoster, "User: hello", func(_ context.Context, _ string) (string, error) {
+		return "partial answer", errors.New("stream interrupted")
+	}, 2)
+	if err != nil {
+		t.Fatalf("Debate returned transport error: %v", err)
+	}
+	if len(results) != 1 || results[0].Text != "partial answer" || results[0].Err == nil {
+		t.Fatalf("partial failed turn was not preserved: %#v", results)
+	}
+}
+
 func TestNextSpeakerParsing(t *testing.T) {
 	tests := []struct {
 		name     string

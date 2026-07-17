@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -47,8 +48,8 @@ func TestA2ACanceledIsError(t *testing.T) {
 	if err == nil {
 		t.Fatal("canceled task returned nil error (treated as success)")
 	}
-	if res != nil && res.Error == "" {
-		t.Error("ProxyResult.Error empty on canceled task")
+	if res == nil || res.Error == "" || !strings.Contains(res.AssistantText, "partial answer") {
+		t.Errorf("canceled task did not preserve its partial result: %#v", res)
 	}
 }
 
@@ -77,7 +78,37 @@ func TestA2ATimeoutMidStreamIsError(t *testing.T) {
 	if err == nil {
 		t.Fatal("mid-stream timeout returned nil error (truncated reply treated as success)")
 	}
-	if res != nil && res.Error == "" {
-		t.Error("ProxyResult.Error empty on mid-stream timeout")
+	if res == nil || res.Error == "" || !strings.Contains(res.AssistantText, "partial before timeout") {
+		t.Errorf("timeout did not preserve its partial result: %#v", res)
+	}
+}
+
+// Regression: a transport EOF/reset before the protocol's explicit completed
+// state is an interrupted response, even if the agent emitted partial content.
+func TestA2AEOFBeforeCompletedIsError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fl := w.(http.Flusher)
+		w.WriteHeader(http.StatusOK)
+		a2aFrame(w, fl, "working", "partial before disconnect")
+		// Return without a terminal status-update:completed frame.
+	}))
+	defer srv.Close()
+
+	p := NewA2AProxy(zap.NewNop())
+	agent := &models.Agent{ID: "a", Protocol: "a2a", Endpoint: srv.URL}
+	rec := httptest.NewRecorder()
+	res, err := p.Handle(context.Background(), rec, agent,
+		&models.ChatRequest{Messages: []models.ChatMessage{{Role: "user", Content: "hi"}}},
+		agents.OutboundAuth{}, "req-1", SSEConfig{}, time.Minute)
+
+	if err == nil {
+		t.Fatal("EOF before completed returned nil error")
+	}
+	if res == nil || res.Error == "" || !strings.Contains(res.AssistantText, "partial before disconnect") {
+		t.Errorf("EOF did not return a partial error result: %#v", res)
+	}
+	if strings.Contains(rec.Body.String(), `"type":"RUN_FINISHED"`) {
+		t.Error("EOF before completed emitted RUN_FINISHED")
 	}
 }
