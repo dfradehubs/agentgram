@@ -38,6 +38,7 @@ type Def struct {
 const (
 	KeyMCPToolCallTimeout = "mcp_tool_call_timeout"
 	KeyMCPMaxToolRounds   = "mcp_max_tool_call_rounds"
+	KeyGroupDebateTimeout = "group_debate_timeout_api"
 	KeyGroupMaxTurnsAPI   = "group_max_turns_api"
 	KeyGroupMaxTurnsMCP   = "group_max_turns_mcp"
 )
@@ -46,9 +47,11 @@ const (
 // value here (plus a consumer that reads it) is all it takes to expose it.
 var Defs = []Def{
 	{Key: KeyMCPToolCallTimeout, Section: "MCP", Label: "Tool-call timeout", Type: TypeDuration, Default: "10m",
-		Description: "How long an MCP tool call (ask_agent / ask_group) waits for the agent or debate before aborting. Progress pings keep the client alive meanwhile."},
+		Description: "How long an MCP agent or group tool waits before aborting. Progress pings keep the client alive meanwhile."},
 	{Key: KeyMCPMaxToolRounds, Section: "MCP Chat", Label: "Max tool-call rounds", Type: TypeInt, Default: "10",
 		Description: "Max LLM ↔ tool iterations per MCP chat request before stopping.", Min: 1, Max: 50},
+	{Key: KeyGroupDebateTimeout, Section: "Group debates", Label: "Debate timeout (API / web)", Type: TypeDuration, Default: "10m",
+		Description: "Absolute time budget for an entire moderated debate over the streaming API, shared by moderator calls, agent turns and persistence."},
 	{Key: KeyGroupMaxTurnsAPI, Section: "Group debates", Label: "Max turns (API / web)", Type: TypeInt, Default: "6",
 		Description: "Default cap on moderated-debate turns over the streaming API. A group's own max_turns overrides this.", Min: 1, Max: 50},
 	{Key: KeyGroupMaxTurnsMCP, Section: "Group debates", Label: "Max turns (MCP)", Type: TypeInt, Default: "3",

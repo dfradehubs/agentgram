@@ -19,17 +19,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// groupExists reports whether an agent group with the given ID exists,
-// regardless of the caller's access (authorization happens in the handler).
-func (h *Handler) groupExists(ctx context.Context, groupID string) bool {
-	if h.groupRepo == nil {
-		return false
-	}
-	group, err := h.groupRepo.Get(ctx, groupID)
-	return err == nil && group != nil
-}
-
-// handleGroupToolCall handles a tools/call for an agent group (ask_group_{groupID}).
+// handleGroupToolCall handles a tools/call for an agent group (group__<groupID>).
 // It runs a moderated debate over the group's agents and returns the collected
 // replies as a single text result, with progress notifications to keep the MCP
 // client's timeout alive.

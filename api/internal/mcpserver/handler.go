@@ -430,11 +430,9 @@ func (h *Handler) handleToolsCall(w http.ResponseWriter, r *http.Request, req js
 		return
 	}
 
-	// Handle agent group debate calls (ask_group_{groupID}) — must be checked
-	// before the plain ask_ agent prefix, which also matches these names.
-	// Only route to the group handler when the group actually exists, so an
-	// agent whose ID starts with "group_" still resolves via the agent path.
-	if groupID, ok := GetGroupIDFromToolName(params.Name); ok && h.groupExists(r.Context(), groupID) {
+	// Group tools have a namespace disjoint from ask_<agentID>, so routing does
+	// not depend on database existence or precedence tricks.
+	if groupID, ok := GetGroupIDFromToolName(params.Name); ok {
 		h.handleGroupToolCall(w, r, req, groupID, params.Arguments, userEmail, userGroups, mcpSessionID)
 		return
 	}
@@ -582,7 +580,19 @@ func (h *Handler) handleToolsCall(w http.ResponseWriter, r *http.Request, req js
 		if lfTrace != nil {
 			lfTrace.End(false, cr.err.Error())
 		}
-		flushSSE(h.server.MarshalToolResult(req.ID, "Agent call failed. Please try again.", true))
+		responseText := cr.text
+		if responseText == "" {
+			responseText = "Agent call failed. Please try again."
+		} else {
+			responseText += fmt.Sprintf("\n\n---\n_Error: %s_", cr.err)
+		}
+		if cr.sessionID != "" {
+			responseText += fmt.Sprintf("\n\n---\n[session_id: %s]", cr.sessionID)
+		}
+		if mcpSessionID != "" && cr.sessionID != "" {
+			h.server.sessions.SetAgentSession(mcpSessionID, agentID, cr.sessionID)
+		}
+		flushSSE(h.server.MarshalToolResult(req.ID, responseText, true))
 		return
 	}
 
@@ -858,13 +868,10 @@ func (h *Handler) callAgent(ctx context.Context, agent *models.Agent, question s
 		callCtx = context.WithValue(callCtx, middleware.UserContextKey, claims)
 	}
 
-	proxyResult, err := h.proxy.Handle(callCtx, buf, agent, chatReq, authHeader, opts)
-	if err != nil {
-		return "", agentgramSessionID, err
-	}
+	proxyResult, proxyErr := h.proxy.Handle(callCtx, buf, agent, chatReq, authHeader, opts)
 
 	// Save the messages to the session store (use callCtx, not the HTTP ctx)
-	if proxyResult != nil && proxyResult.AssistantText != "" {
+	if proxyResult != nil && (proxyResult.AssistantText != "" || len(proxyResult.ToolCalls) > 0 || proxyResult.Error != "") {
 		saveCtx, saveCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer saveCancel()
 		// Save user message
@@ -876,11 +883,45 @@ func (h *Handler) callAgent(ctx context.Context, agent *models.Agent, question s
 			h.logger.Error("failed to persist user message", zap.String("session_id", agentgramSessionID), zap.Error(err))
 		}
 		// Save assistant message
-		if err := h.sessionStore.AddMessage(saveCtx, agentgramSessionID, models.ChatMessage{
+		assistantContent := proxyResult.AssistantText
+		errorText := proxyResult.Error
+		if errorText == "" && proxyErr != nil {
+			errorText = proxyErr.Error()
+		}
+		if errorText != "" {
+			if assistantContent != "" {
+				assistantContent += "\n\n"
+			}
+			assistantContent += fmt.Sprintf("---\n**Error**: %s", errorText)
+		}
+		assistantMsg := models.ChatMessage{
 			Role:    "assistant",
-			Content: proxyResult.AssistantText,
+			Content: assistantContent,
 			AgentID: agent.ID,
-		}); err != nil {
+			IsError: errorText != "",
+		}
+		for _, cp := range proxyResult.ContentParts {
+			assistantMsg.ContentParts = append(assistantMsg.ContentParts, models.ContentPart{
+				Type: cp.Type, Text: cp.Text, ToolIndex: models.IntPtr(cp.ToolIndex), Chart: cp.Chart,
+			})
+		}
+		for _, tc := range proxyResult.ToolCalls {
+			var args map[string]interface{}
+			if tc.Args != "" {
+				if json.Unmarshal([]byte(tc.Args), &args) != nil {
+					args = map[string]interface{}{"raw": tc.Args}
+				}
+			}
+			assistantMsg.ToolCalls = append(assistantMsg.ToolCalls, models.StoredToolCall{ID: tc.ID, Name: tc.Name, Args: args})
+			var response map[string]interface{}
+			if tc.Result != "" {
+				if json.Unmarshal([]byte(tc.Result), &response) != nil {
+					response = map[string]interface{}{"text": tc.Result}
+				}
+			}
+			assistantMsg.ToolResults = append(assistantMsg.ToolResults, models.StoredToolResult{ID: tc.ID, Name: tc.Name, Response: response})
+		}
+		if err := h.sessionStore.AddMessage(saveCtx, agentgramSessionID, assistantMsg); err != nil {
 			h.logger.Error("failed to persist assistant message", zap.String("session_id", agentgramSessionID), zap.Error(err))
 		}
 	}
@@ -913,8 +954,11 @@ func (h *Handler) callAgent(ctx context.Context, agent *models.Agent, question s
 		h.logger.Warn("MCP callAgent: nil proxyResult", zap.String("agent_id", agent.ID))
 	}
 
-	if text == "" && proxyResult != nil && proxyResult.Error != "" {
-		return "", agentgramSessionID, fmt.Errorf("agent error: %s", proxyResult.Error)
+	if proxyErr != nil {
+		return text, agentgramSessionID, proxyErr
+	}
+	if proxyResult != nil && proxyResult.Error != "" {
+		return text, agentgramSessionID, fmt.Errorf("agent error: %s", proxyResult.Error)
 	}
 
 	return text, agentgramSessionID, nil

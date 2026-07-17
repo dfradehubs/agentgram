@@ -92,7 +92,7 @@ POST /api/groups/{groupId}/chat
 
 **Setup:** the moderator is an LLM model with the role `moderator` (Admin → LLM Models). Any
 provider works; the routing quality comes from your agents' **descriptions**, so keep them accurate.
-The same debate is exposed on the [MCP endpoint]({{< relref "mcp" >}}) as one `ask_group_<groupId>`
+The same debate is exposed on the [MCP endpoint]({{< relref "mcp" >}}) as one `group__<groupId>`
 tool per group you can access.
 
 ---

@@ -392,19 +392,6 @@ func TestHandleToolsCallReturnsAndPersistsPartialA2AError(t *testing.T) {
 	}
 }
 
-// Guard: a tool name matching the group prefix but with no such group must
-// fall through to the agent path (agent IDs starting with "group_").
-func TestGroupExistsGuard(t *testing.T) {
-	h, _ := newGroupTestHandler(t, http.StatusOK)
-
-	if !h.groupExists(context.Background(), "g1") {
-		t.Error("g1 should exist")
-	}
-	if h.groupExists(context.Background(), "x") {
-		t.Error("nonexistent group reported as existing")
-	}
-}
-
 // Use case (CRITICAL): callGroup rejects resuming a session owned by another
 // user, even within an accessible group.
 func TestCallGroupCrossUserSessionDenied(t *testing.T) {

@@ -59,9 +59,10 @@ const (
 // mcpToolPrefix is used to namespace MCP server tools: mcp_{serverID}__{toolName}
 const mcpToolPrefix = "mcp_"
 
-// groupToolPrefix namespaces agent group tools: ask_group_{groupID}.
-// Must be parsed BEFORE the plain ask_ agent prefix.
-const groupToolPrefix = "ask_group_"
+// groupToolPrefix is deliberately disjoint from ask_<agentID> and
+// mcp_<serverID>__<tool>. This makes collisions impossible regardless of
+// valid agent/group IDs.
+const groupToolPrefix = "group__"
 
 // Server is the MCP protocol server that exposes agents, agent groups and MCP server tools
 type Server struct {
@@ -302,9 +303,7 @@ func GetAgentIDFromToolName(toolName string) (string, bool) {
 	return "", false
 }
 
-// GetGroupIDFromToolName extracts the group ID from a tool name (ask_group_<group-id>).
-// Callers must check this BEFORE GetAgentIDFromToolName — the plain ask_ prefix
-// also matches group tool names.
+// GetGroupIDFromToolName extracts the group ID from group__<group-id>.
 func GetGroupIDFromToolName(toolName string) (string, bool) {
 	if strings.HasPrefix(toolName, groupToolPrefix) && len(toolName) > len(groupToolPrefix) {
 		return toolName[len(groupToolPrefix):], true

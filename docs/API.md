@@ -569,7 +569,7 @@ Sends a message to the group; the moderator decides who answers.
 
 Lists the caller's own sessions in the group (personal — never other members').
 
-> The same moderated debate is exposed over MCP as one `ask_group_<groupId>` tool per accessible group.
+> The same moderated debate is exposed over MCP as one `group__<groupId>` tool per accessible group.
 
 ## MCP Server Endpoints
 

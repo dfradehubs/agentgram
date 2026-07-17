@@ -49,7 +49,7 @@ registers itself via DCR). In Claude Code, run `/mcp`, select `agentgram`, and s
 The exposed toolset is generated dynamically from what **you** are allowed to use:
 
 - **One `ask_<agent-id>` tool per agent** you have access to.
-- **One `ask_group_<group-id>` tool per [agent group]({{< relref "collaboration" >}}#moderated-group-debates)**
+- **One `group__<group-id>` tool per [agent group]({{< relref "collaboration" >}}#moderated-group-debates)**
   you can participate in: the question triggers a **moderated debate** where an LLM moderator picks
   the most relevant agents to answer in sequence, and you get their combined replies (plus a
   synthesis) as one result.

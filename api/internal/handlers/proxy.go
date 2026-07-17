@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -578,7 +579,9 @@ func (h *ProxyHandler) Chat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 5. Post-proxy: save assistant response and agent session mapping
-	h.persistTurnResult(session, agent, result, agentSessionID, hasAgentSession, locale)
+	if _, err := h.persistTurnResult(context.Background(), session, agent, result, agentSessionID, hasAgentSession, locale); err != nil {
+		h.logger.Error("failed to persist turn result", zap.Error(err))
+	}
 
 	// Async: generate a short LLM-based session name for new sessions
 	if isNewSession && h.sessionNamer != nil && result != nil && result.AssistantText != "" {
@@ -602,19 +605,19 @@ func (h *ProxyHandler) Chat(w http.ResponseWriter, r *http.Request) {
 
 // persistTurnResult saves the assistant response of one agent turn: the
 // optional session-rotation info message, the assistant message (content
-// parts, tool calls) and the agent session mapping. Uses a background context
-// so persistence survives client disconnects — the request ctx may already be
-// cancelled. Saves even partial responses from errors so users can see what
-// arrived before the failure. Returns the persisted assistant message, or nil
-// when there was nothing to save.
-func (h *ProxyHandler) persistTurnResult(session *models.Session, agent *models.Agent, result *proxy.ProxyResult, agentSessionID string, hasAgentSession bool, locale string) *models.ChatMessage {
+// parts, tool calls) and the agent session mapping. The caller chooses the
+// parent context: single-agent chat passes Background so persistence survives
+// disconnects; group chat passes its absolute debate context. Returns the
+// persisted assistant message plus any persistence/mapping error.
+func (h *ProxyHandler) persistTurnResult(ctx context.Context, session *models.Session, agent *models.Agent, result *proxy.ProxyResult, agentSessionID string, hasAgentSession bool, locale string) (*models.ChatMessage, error) {
 	if result == nil || (result.AssistantText == "" && len(result.ToolCalls) == 0 && result.Error == "") {
-		return nil
+		return nil, nil
 	}
 	agentID := agent.ID
 	{
-		saveCtx, saveCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		saveCtx, saveCancel := context.WithTimeout(ctx, 5*time.Second)
 		defer saveCancel()
+		var persistErr error
 
 		// Persist session rotation info message so it survives page refresh
 		if result.SessionRotated {
@@ -637,6 +640,7 @@ func (h *ProxyHandler) persistTurnResult(session *models.Session, agent *models.
 			}
 			if err := h.store.AddMessage(saveCtx, session.SessionID, infoMsg); err != nil {
 				h.logger.Error("failed to save session rotation info message", zap.Error(err))
+				persistErr = errors.Join(persistErr, fmt.Errorf("rotation message persistence failed: %w", err))
 			}
 		}
 
@@ -700,26 +704,34 @@ func (h *ProxyHandler) persistTurnResult(session *models.Session, agent *models.
 				})
 			}
 		}
+		assistantPersisted := true
 		if err := h.store.AddMessage(saveCtx, session.SessionID, assistantMsg); err != nil {
 			h.logger.Error("failed to save assistant message", zap.Error(err))
+			persistErr = errors.Join(persistErr, fmt.Errorf("reply persistence failed: %w", err))
+			assistantPersisted = false
 		}
 
 		// Save agent session mapping only on success — don't map sessions for
 		// failed requests so retries start fresh without a stale session ID.
-		if result.Error == "" {
+		if result.Error == "" && assistantPersisted {
 			if result.AgentSessionID != "" && result.AgentSessionID != agentSessionID {
 				if err := h.store.SetAgentSessionID(saveCtx, session.SessionID, agentID, result.AgentSessionID); err != nil {
 					h.logger.Error("failed to save agent session mapping", zap.Error(err))
+					persistErr = errors.Join(persistErr, fmt.Errorf("session mapping persistence failed: %w", err))
 				}
 			} else if !hasAgentSession {
 				// No agent session ID returned - map our session ID
 				if err := h.store.SetAgentSessionID(saveCtx, session.SessionID, agentID, session.SessionID); err != nil {
 					h.logger.Error("failed to save agent session mapping", zap.Error(err))
+					persistErr = errors.Join(persistErr, fmt.Errorf("session mapping persistence failed: %w", err))
 				}
 			}
 		}
 
-		return &assistantMsg
+		if !assistantPersisted {
+			return nil, persistErr
+		}
+		return &assistantMsg, persistErr
 	}
 }
 

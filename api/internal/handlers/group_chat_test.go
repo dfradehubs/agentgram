@@ -60,7 +60,7 @@ func (f *deadlineAwareProvider) GenerateContent(ctx context.Context, _ *llm.Requ
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
-		case <-time.After(150 * time.Millisecond):
+		case <-time.After(2 * time.Second):
 			return &llm.Response{Text: "agent-b"}, nil
 		}
 	default:
@@ -546,7 +546,7 @@ func TestGroupChatDeadlineBoundsAllTurns(t *testing.T) {
 	fx := newGroupChatFixture(t, http.StatusOK, http.StatusOK)
 	fx.handler.moderator = orchestrator.NewWithProvider(&deadlineAwareProvider{}, zap.NewNop())
 	fx.handler.settings = appsettings.New(groupSettingsRepo{vals: map[string]string{
-		"group_debate_timeout_api": "30ms",
+		appsettings.KeyGroupDebateTimeout: "250ms",
 	}}, zap.NewNop())
 
 	rec := fx.post(t, "g1", `{"messages":[{"role":"user","content":"check both agents"}]}`)

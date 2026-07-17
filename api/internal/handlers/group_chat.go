@@ -67,7 +67,11 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := r.Context()
+	// One absolute budget covers preflight, every moderator/agent turn and
+	// persistence. Individual turns may use less, but never restart this clock.
+	ctx, debateCancel := context.WithTimeout(r.Context(), h.settings.Duration(appsettings.KeyGroupDebateTimeout))
+	defer debateCancel()
+	debateDeadline, _ := ctx.Deadline()
 	if !CanAccessGroup(ctx, claims, groupID, h.groupRepo, h.userService) {
 		w.Header().Set("Content-Type", "application/json")
 		http.Error(w, `{"error":"access denied to group"}`, http.StatusForbidden)
@@ -177,11 +181,13 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return
 		}
-		if err := h.store.AppendRunEvent(context.Background(), sessionID, data); err != nil {
+		eventCtx, eventCancel := context.WithTimeout(ctx, 5*time.Second)
+		defer eventCancel()
+		if err := h.store.AppendRunEvent(eventCtx, sessionID, data); err != nil {
 			h.logger.Debug("failed to buffer run event", zap.String("session_id", sessionID), zap.Error(err))
 		}
 		if h.hub != nil {
-			if err := h.hub.Publish(context.Background(), sessionID, event); err != nil {
+			if err := h.hub.Publish(eventCtx, sessionID, event); err != nil {
 				h.logger.Debug("failed to publish event to pub/sub", zap.String("session_id", sessionID), zap.Error(err))
 			}
 		}
@@ -219,6 +225,10 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 	run := func(turnCtx context.Context, agentID string) (string, error) {
 		agent := agentsByID[agentID]
 		_ = sse.SendCustomEvent("moderator.select", map[string]interface{}{"agentId": agentID})
+		remaining := time.Until(debateDeadline)
+		if remaining <= 0 {
+			return "", context.DeadlineExceeded
+		}
 
 		agentSessionID, _ := h.store.GetAgentSessionID(turnCtx, session.SessionID, agentID)
 		hasAgentSession := agentSessionID != ""
@@ -267,6 +277,7 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 			OnEvent:           onEvent,
 			AgentID:           agentID,
 			SuppressLifecycle: true,
+			AgentTimeout:      remaining,
 		})
 
 		if metrics.IsEnabled() {
@@ -292,20 +303,19 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 
 		// Persist and grow the in-memory session so the next turn's context
 		// delta (and the moderator transcript) includes this reply.
-		if msg := h.persistTurnResult(session, agent, result, agentSessionID, hasAgentSession, locale); msg != nil {
+		msg, persistErr := h.persistTurnResult(turnCtx, session, agent, result, agentSessionID, hasAgentSession, locale)
+		if msg != nil {
 			session.Messages = append(session.Messages, *msg)
 		}
 
-		if err != nil {
-			return "", err
-		}
-		if result != nil && result.Error != "" {
-			return "", fmt.Errorf("%s", result.Error)
-		}
+		turnErr := errors.Join(err, persistErr)
 		if result == nil {
-			return "", nil
+			return "", turnErr
 		}
-		return result.AssistantText, nil
+		if result.Error != "" && turnErr == nil {
+			turnErr = errors.New(result.Error)
+		}
+		return result.AssistantText, turnErr
 	}
 
 	maxTurns := h.settings.Int(appsettings.KeyGroupMaxTurnsAPI)
@@ -337,7 +347,7 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 				note = "⚠️ The debate hit the time limit before finishing; the replies above may be incomplete."
 			}
 			h.streamModeratorMessage(sse, "moderator", note)
-			h.persistModeratorMessage(session.SessionID, "moderator", note)
+			h.persistModeratorMessage(ctx, session.SessionID, "moderator", note)
 		}
 	}
 
@@ -349,7 +359,7 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 			noAgentMsg = "Ningún agente de este grupo puede ayudar con esa petición."
 		}
 		h.streamModeratorMessage(sse, "moderator", noAgentMsg)
-		h.persistModeratorMessage(session.SessionID, "moderator", noAgentMsg)
+		h.persistModeratorMessage(ctx, session.SessionID, "moderator", noAgentMsg)
 	case speakers == 0:
 		// Agents were selected but every turn failed (each already emitted a
 		// scoped turn.error). Emit a programmatic signal (the moderator may have
@@ -360,15 +370,15 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 			failMsg = "Todos los agentes seleccionados fallaron al responder. Inténtalo de nuevo."
 		}
 		h.streamModeratorMessage(sse, "moderator", failMsg)
-		h.persistModeratorMessage(session.SessionID, "moderator", failMsg)
-	case speakers >= 2:
+		h.persistModeratorMessage(ctx, session.SessionID, "moderator", failMsg)
+	case speakers >= 2 && ctx.Err() == nil:
 		// Optional synthesis when several agents contributed
 		synthesis, err := h.moderator.Synthesize(ctx, orchestrator.RenderTranscript(session.Messages))
 		if err != nil {
 			h.logger.Warn("group synthesis failed", zap.String("group_id", groupID), zap.Error(err))
 		} else if synthesis != "" {
 			h.streamModeratorMessage(sse, "moderator", synthesis)
-			h.persistModeratorMessage(session.SessionID, "moderator", synthesis)
+			h.persistModeratorMessage(ctx, session.SessionID, "moderator", synthesis)
 		}
 	}
 
@@ -531,8 +541,8 @@ func (h *ProxyHandler) streamModeratorMessage(sse *proxy.SSEWriter, agentID, tex
 }
 
 // persistModeratorMessage saves a synthetic assistant message to the session.
-func (h *ProxyHandler) persistModeratorMessage(sessionID, agentID, text string) {
-	saveCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+func (h *ProxyHandler) persistModeratorMessage(ctx context.Context, sessionID, agentID, text string) {
+	saveCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	msg := models.ChatMessage{Role: "assistant", Content: text, AgentID: agentID}
 	if err := h.store.AddMessage(saveCtx, sessionID, msg); err != nil {

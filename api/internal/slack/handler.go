@@ -348,6 +348,12 @@ func (h *MessageHandler) HandleMessage(ctx context.Context, client *slackapi.Cli
 			agentSpan.End(nil)
 		}
 	}
+	// A2A can return useful partial content together with a transport/protocol
+	// error. Persist that result before propagating the failure so a reload does
+	// not erase what the user already saw in Slack.
+	if persistErr := h.persistAssistantResult(ctx, sessionID, agentID, result, err); persistErr != nil {
+		logger.Warn("failed to save assistant message to session", zap.Error(persistErr))
+	}
 
 	if err != nil {
 		logger.Error("proxy call failed", zap.Error(err))
@@ -374,63 +380,19 @@ func (h *MessageHandler) HandleMessage(ctx context.Context, client *slackapi.Cli
 		return
 	}
 
-	// Save per-user agent session mapping (each user gets their own agent session)
-	if result != nil && result.Error == "" && result.AgentSessionID != "" && result.AgentSessionID != agentSessionID {
-		if err := h.sessionStore.SetUserAgentSessionID(ctx, sessionID, agentID, email, result.AgentSessionID); err != nil {
-			logger.Warn("failed to save agent session mapping", zap.Error(err))
+	// Save per-user agent session mapping only for a complete result. A partial
+	// error must not poison the next retry with an unfinished upstream session.
+	if result != nil && result.Error == "" {
+		mappingID := ""
+		if result.AgentSessionID != "" && result.AgentSessionID != agentSessionID {
+			mappingID = result.AgentSessionID
+		} else if agentSessionID == "" {
+			mappingID = sessionID
 		}
-	} else if agentSessionID == "" {
-		// No agent session ID returned — map our session ID so next call has one
-		h.sessionStore.SetUserAgentSessionID(ctx, sessionID, agentID, email, sessionID)
-	}
-
-	// 10. Save assistant response with real tool calls (same as proxy handler)
-	if result != nil && (result.AssistantText != "" || len(result.ToolCalls) > 0) {
-		assistantMsg := models.ChatMessage{
-			Role:    "assistant",
-			Content: result.AssistantText,
-			AgentID: agentID, // Tag with responding agent (for multi-agent UI)
-		}
-
-		// Convert ContentParts from proxy result
-		if len(result.ContentParts) > 0 {
-			for _, cp := range result.ContentParts {
-				assistantMsg.ContentParts = append(assistantMsg.ContentParts, models.ContentPart{
-					Type:      cp.Type,
-					Text:      cp.Text,
-					ToolIndex: models.IntPtr(cp.ToolIndex),
-				})
+		if mappingID != "" {
+			if err := h.sessionStore.SetUserAgentSessionID(ctx, sessionID, agentID, email, mappingID); err != nil {
+				logger.Warn("failed to save agent session mapping", zap.Error(err))
 			}
-		}
-
-		// Persist real tool calls
-		if len(result.ToolCalls) > 0 {
-			for _, tc := range result.ToolCalls {
-				var args map[string]interface{}
-				if tc.Args != "" {
-					json.Unmarshal([]byte(tc.Args), &args)
-				}
-				assistantMsg.ToolCalls = append(assistantMsg.ToolCalls, models.StoredToolCall{
-					ID:   tc.ID,
-					Name: tc.Name,
-					Args: args,
-				})
-				var resp map[string]interface{}
-				if tc.Result != "" {
-					if json.Unmarshal([]byte(tc.Result), &resp) != nil {
-						resp = map[string]interface{}{"text": tc.Result}
-					}
-				}
-				assistantMsg.ToolResults = append(assistantMsg.ToolResults, models.StoredToolResult{
-					ID:       tc.ID,
-					Name:     tc.Name,
-					Response: resp,
-				})
-			}
-		}
-
-		if err := h.sessionStore.AddMessage(ctx, sessionID, assistantMsg); err != nil {
-			logger.Warn("failed to save assistant message to session", zap.Error(err))
 		}
 	}
 
@@ -494,6 +456,60 @@ func (h *MessageHandler) HandleMessage(ctx context.Context, client *slackapi.Cli
 		responseLen = len(result.AssistantText)
 	}
 	logger.Info("slack message processed", zap.Int("response_len", responseLen))
+}
+
+// persistAssistantResult stores both complete and partial proxy outcomes. A
+// non-nil proxyErr does not discard result content; it marks the stored message
+// as an error and appends the diagnostic for continuity after a reload.
+func (h *MessageHandler) persistAssistantResult(ctx context.Context, sessionID, agentID string, result *proxy.ProxyResult, proxyErr error) error {
+	if result == nil || (result.AssistantText == "" && len(result.ToolCalls) == 0 && result.Error == "") {
+		return nil
+	}
+
+	errorText := result.Error
+	if errorText == "" && proxyErr != nil {
+		errorText = proxyErr.Error()
+	}
+	content := result.AssistantText
+	if errorText != "" {
+		if content != "" {
+			content += "\n\n"
+		}
+		content += fmt.Sprintf("---\n**Error**: %s", errorText)
+	}
+	assistantMsg := models.ChatMessage{
+		Role:    "assistant",
+		Content: content,
+		AgentID: agentID,
+		IsError: errorText != "",
+	}
+
+	for _, cp := range result.ContentParts {
+		assistantMsg.ContentParts = append(assistantMsg.ContentParts, models.ContentPart{
+			Type:      cp.Type,
+			Text:      cp.Text,
+			ToolIndex: models.IntPtr(cp.ToolIndex),
+			Chart:     cp.Chart,
+		})
+	}
+	for _, tc := range result.ToolCalls {
+		var args map[string]interface{}
+		if tc.Args != "" {
+			if err := json.Unmarshal([]byte(tc.Args), &args); err != nil {
+				h.logger.Warn("invalid Slack tool args JSON", zap.String("tool", tc.Name), zap.Error(err))
+			}
+		}
+		assistantMsg.ToolCalls = append(assistantMsg.ToolCalls, models.StoredToolCall{ID: tc.ID, Name: tc.Name, Args: args})
+		var response map[string]interface{}
+		if tc.Result != "" {
+			if json.Unmarshal([]byte(tc.Result), &response) != nil {
+				response = map[string]interface{}{"text": tc.Result}
+			}
+		}
+		assistantMsg.ToolResults = append(assistantMsg.ToolResults, models.StoredToolResult{ID: tc.ID, Name: tc.Name, Response: response})
+	}
+
+	return h.sessionStore.AddMessage(ctx, sessionID, assistantMsg)
 }
 
 // buildUserMessage constructs the message to send to the agent.

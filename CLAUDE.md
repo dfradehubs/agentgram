@@ -98,8 +98,8 @@ POST /api/groups/{groupId}/chat
 
 An LLM moderator (admin: LLM model with role `moderator`) decides which agents of
 the group respond, in sequence — each sees the previous agents' replies. Single
-SSE stream: one `RUN_STARTED`/`RUN_FINISHED` pair, `TEXT_MESSAGE_*` events tagged
-per agent via `agentId`. Also exposed via MCP as the `ask_group_<groupId>` tool.
+SSE stream: one `RUN_STARTED` and one terminal `RUN_FINISHED` or `RUN_ERROR`, `TEXT_MESSAGE_*` events tagged
+per agent via `agentId`. Also exposed via MCP as the `group__<groupId>` tool.
 
 ### Sessions API (Stored in Redis)
 

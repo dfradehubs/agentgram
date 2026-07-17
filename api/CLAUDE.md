@@ -127,7 +127,7 @@ multi-agent context delta (`proxy.PrepareMessagesForMultiAgent`). Key pieces:
   per-turn lifecycle suppressed via `HandleOptions.SuppressLifecycle`; all
   `TEXT_MESSAGE_*`/`TOOL_CALL_START` events tagged with `agentId` via
   `HandleOptions.AgentID`. Optional `agent_ids` in the body restricts the roster.
-- **MCP surface** (`mcpserver/group.go`): tool `ask_group_<groupId>` (synchronous,
+- **MCP surface** (`mcpserver/group.go`): tool `group__<groupId>` (synchronous,
   lower cap, progress notifications), collected replies as one markdown result.
 
 ## Sessions API
