@@ -42,32 +42,6 @@ type scriptedProvider struct {
 
 // deadlineAwareProvider makes the second routing decision slow enough that a
 // shared debate deadline must expire between two otherwise-fast agent turns.
-type deadlineAwareProvider struct {
-	mu    sync.Mutex
-	calls int
-}
-
-func (f *deadlineAwareProvider) GenerateContent(ctx context.Context, _ *llm.Request) (*llm.Response, error) {
-	f.mu.Lock()
-	call := f.calls
-	f.calls++
-	f.mu.Unlock()
-
-	switch call {
-	case 0:
-		return &llm.Response{Text: "agent-a"}, nil
-	case 1:
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(2 * time.Second):
-			return &llm.Response{Text: "agent-b"}, nil
-		}
-	default:
-		return &llm.Response{Text: "FINISH"}, nil
-	}
-}
-
 func (f *scriptedProvider) GenerateContent(_ context.Context, req *llm.Request) (*llm.Response, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -94,7 +68,10 @@ type fakeSessionStore struct {
 	order         []string
 	counter       int
 	failReplyAdd  bool
+	failReplyAdds int
 	failSetAgent  bool
+	rejectCanceled bool
+	runEvents      int
 }
 
 func newFakeSessionStore() *fakeSessionStore {
@@ -153,11 +130,18 @@ func (f *fakeSessionStore) SaveSession(_ context.Context, session *models.Sessio
 	return nil
 }
 
-func (f *fakeSessionStore) AddMessage(_ context.Context, sessionID string, msg models.ChatMessage) error {
+func (f *fakeSessionStore) AddMessage(ctx context.Context, sessionID string, msg models.ChatMessage) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.rejectCanceled && ctx.Err() != nil {
+		return fmt.Errorf("canceled persistence context: %w", ctx.Err())
+	}
 	if msg.Role == "assistant" && f.failReplyAdd {
 		return fmt.Errorf("simulated reply persistence failure")
+	}
+	if msg.Role == "assistant" && f.failReplyAdds > 0 {
+		f.failReplyAdds--
+		return fmt.Errorf("simulated one-shot reply persistence failure")
 	}
 	s, ok := f.sessions[sessionID]
 	if !ok {
@@ -183,7 +167,15 @@ func (f *fakeSessionStore) SetAgentSessionID(_ context.Context, sessionID, agent
 	return nil
 }
 
-func (f *fakeSessionStore) AppendRunEvent(_ context.Context, _ string, _ []byte) error { return nil }
+func (f *fakeSessionStore) AppendRunEvent(ctx context.Context, _ string, _ []byte) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.rejectCanceled && ctx.Err() != nil {
+		return fmt.Errorf("canceled event persistence context: %w", ctx.Err())
+	}
+	f.runEvents++
+	return nil
+}
 func (f *fakeSessionStore) SetActiveRun(_ context.Context, _, _ string) error          { return nil }
 func (f *fakeSessionStore) ClearActiveRun(_ context.Context, _, _ string) error        { return nil }
 
@@ -543,8 +535,23 @@ func (r groupSettingsRepo) GetAll(context.Context) (map[string]string, error) { 
 func (r groupSettingsRepo) SetMany(context.Context, map[string]string) error  { return nil }
 
 func TestGroupChatDeadlineBoundsAllTurns(t *testing.T) {
-	fx := newGroupChatFixture(t, http.StatusOK, http.StatusOK)
-	fx.handler.moderator = orchestrator.NewWithProvider(&deadlineAwareProvider{}, zap.NewNop())
+	fx := newGroupChatFixture(t, http.StatusOK, http.StatusOK, "agent-a", "agent-b", "FINISH")
+	fast := mockAgentServer(t, "reply from agent-a", http.StatusOK)
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-time.After(2 * time.Second):
+			fmt.Fprint(w, "reply from agent-b")
+		}
+	}))
+	t.Cleanup(slow.Close)
+	if err := fx.handler.registry.LoadAgents([]models.Agent{
+		{ID: "agent-a", Name: "Agent A", Protocol: "custom", Endpoint: fast.URL, AllowedUsers: []string{"*"}},
+		{ID: "agent-b", Name: "Agent B", Protocol: "custom", Endpoint: slow.URL, AllowedUsers: []string{"*"}},
+	}); err != nil {
+		t.Fatalf("LoadAgents: %v", err)
+	}
 	fx.handler.settings = appsettings.New(groupSettingsRepo{vals: map[string]string{
 		appsettings.KeyGroupDebateTimeout: "250ms",
 	}}, zap.NewNop())
@@ -578,13 +585,74 @@ func TestGroupChatPersistenceFailuresAreIncomplete(t *testing.T) {
 
 			rec := fx.post(t, "g1", `{"messages":[{"role":"user","content":"status"}]}`)
 			events := parseSSEEvents(t, rec.Body.String())
-			if got := incompleteReasonFromEvents(events); got != "all_agents_failed" {
+			if got := incompleteReasonFromEvents(events); got != "persistence_error" {
 				t.Fatalf("persistence failure ended as clean success; reason = %q", got)
 			}
 			if !strings.Contains(contentByAgent(events)["agent-a"], "reply from agent-a") {
 				t.Fatal("partial reply was not preserved in the stream")
 			}
 		})
+	}
+}
+
+func TestGroupChatPersistenceFailureStaysIncompleteAfterLaterSuccess(t *testing.T) {
+	fx := newGroupChatFixture(t, http.StatusOK, http.StatusOK, "agent-a", "agent-b", "FINISH")
+	fx.store.failReplyAdds = 1
+
+	rec := fx.post(t, "g1", `{"messages":[{"role":"user","content":"status"}]}`)
+	events := parseSSEEvents(t, rec.Body.String())
+	if got := incompleteReasonFromEvents(events); got != "persistence_error" {
+		t.Fatalf("mixed persistence/success result reason = %q, want persistence_error", got)
+	}
+	if !strings.Contains(contentByAgent(events)["agent-b"], "reply from agent-b") {
+		t.Fatal("later successful turn was lost")
+	}
+}
+
+func TestGroupChatClientCancellationDoesNotCancelFinalization(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		close(started)
+		<-release
+		fmt.Fprint(w, "reply after disconnect")
+	}))
+	t.Cleanup(slow.Close)
+
+	fx := newGroupChatFixture(t, http.StatusOK, http.StatusOK, "agent-a", "FINISH")
+	if err := fx.handler.registry.LoadAgents([]models.Agent{
+		{ID: "agent-a", Name: "Agent A", Protocol: "custom", Endpoint: slow.URL, AllowedUsers: []string{"*"}},
+		{ID: "agent-b", Name: "Agent B", Protocol: "custom", Endpoint: slow.URL, AllowedUsers: []string{"*"}},
+	}); err != nil {
+		t.Fatalf("LoadAgents: %v", err)
+	}
+	fx.store.rejectCanceled = true
+
+	ctx, cancel := context.WithCancel(context.Background())
+	req := httptest.NewRequest("POST", "/api/groups/g1/chat", strings.NewReader(`{"messages":[{"role":"user","content":"status"}]}`)).WithContext(ctx)
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(context.WithValue(req.Context(), middleware.UserContextKey, &auth.Claims{Email: testUserEmail}))
+	rec := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		fx.router.ServeHTTP(rec, req)
+		close(done)
+	}()
+	<-started
+	cancel()
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("group request did not finalize after client cancellation")
+	}
+
+	msgs := fx.store.messages(fx.store.sessionID(0))
+	if len(msgs) < 2 || !strings.Contains(msgs[len(msgs)-1].Content, "reply after disconnect") {
+		t.Fatalf("assistant reply was not finalized after disconnect: %#v", msgs)
+	}
+	if fx.store.runEvents == 0 {
+		t.Fatal("run events were not buffered after disconnect")
 	}
 }
 

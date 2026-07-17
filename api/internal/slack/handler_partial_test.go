@@ -41,3 +41,13 @@ func TestPersistAssistantResultPreservesPartialProxyError(t *testing.T) {
 		t.Fatalf("partial error message not preserved: %#v", msg)
 	}
 }
+
+func TestFinalDisplayTextKeepsPartialAnswerAndError(t *testing.T) {
+	got := finalDisplayText("partial answer", "POST http://internal-agent:8080 leaked")
+	if !strings.Contains(got, "partial answer") || !strings.Contains(got, ":warning:") {
+		t.Fatalf("final display lost the partial/error state: %q", got)
+	}
+	if strings.Contains(got, "internal-agent") || strings.Contains(got, "leaked") {
+		t.Fatalf("final display exposed an internal error: %q", got)
+	}
+}

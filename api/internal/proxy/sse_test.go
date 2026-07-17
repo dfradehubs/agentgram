@@ -81,3 +81,25 @@ func TestSSEWriterDefaultBehaviorUnchanged(t *testing.T) {
 		t.Errorf("unexpected agentId tag in default-mode output:\n%s", body)
 	}
 }
+
+func TestSSEWriterDeferredLifecycleIsOwnedByHandler(t *testing.T) {
+	rec := httptest.NewRecorder()
+	sse, err := NewSSEWriter(rec)
+	if err != nil {
+		t.Fatalf("NewSSEWriter: %v", err)
+	}
+	sse.Apply(SSEConfig{DeferLifecycle: true})
+	_ = sse.SendRunStarted()
+	_ = sse.SendRunError("raw upstream failure")
+	_ = sse.SendRunFinished()
+	if strings.Contains(rec.Body.String(), "RUN_") {
+		t.Fatalf("proxy emitted a terminal lifecycle event while deferred: %s", rec.Body.String())
+	}
+
+	sse.Apply(SSEConfig{DeferLifecycle: false})
+	_ = sse.SendRunStarted()
+	_ = sse.SendRunError("The agent response could not be completed.")
+	if got := strings.Count(rec.Body.String(), "RUN_ERROR"); got != 1 {
+		t.Fatalf("handler terminal RUN_ERROR count = %d, want 1: %s", got, rec.Body.String())
+	}
+}

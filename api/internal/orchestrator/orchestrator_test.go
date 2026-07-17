@@ -52,6 +52,7 @@ func TestDebate(t *testing.T) {
 		runErr        map[string]error // agentID -> error to return
 		wantTurns     []string         // expected agent IDs run, in order
 		wantErrTurns  int              // how many TurnResults carry an error
+		wantDebateErr error
 	}{
 		{
 			name:          "sequence then FINISH",
@@ -64,6 +65,7 @@ func TestDebate(t *testing.T) {
 			moderatorSays: []string{"logs-agent", "logs-agent", "logs-agent", "logs-agent"},
 			maxTurns:      2,
 			wantTurns:     []string{"logs-agent", "logs-agent"},
+			wantDebateErr: ErrMaxTurnsReached,
 		},
 		{
 			name:          "unknown agent id treated as FINISH",
@@ -101,8 +103,8 @@ func TestDebate(t *testing.T) {
 			}
 
 			results, err := mod.Debate(context.Background(), testRoster, "User: hello", run, tt.maxTurns)
-			if err != nil {
-				t.Fatalf("Debate returned error: %v", err)
+			if !errors.Is(err, tt.wantDebateErr) {
+				t.Fatalf("Debate error = %v, want %v", err, tt.wantDebateErr)
 			}
 
 			if len(ran) != len(tt.wantTurns) {

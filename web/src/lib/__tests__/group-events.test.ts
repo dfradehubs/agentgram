@@ -14,4 +14,12 @@ describe("debateIncompleteReason", () => {
     expect(debateIncompleteReason({ type: "RUN_FINISHED" })).toBeNull();
     expect(debateIncompleteReason({ type: "CUSTOM", subType: "debate.incomplete", data: {} })).toBeNull();
   });
+
+  it.each(["persistence_error", "max_turns"])("recognizes %s", (reason) => {
+    expect(debateIncompleteReason({
+      type: "CUSTOM",
+      subType: "debate.incomplete",
+      data: { reason },
+    })).toBe(reason);
+  });
 });

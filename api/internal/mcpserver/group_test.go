@@ -75,6 +75,7 @@ type mcpFakeSessionStore struct {
 	failSave      bool // when true, SaveSession returns an error
 	failUserAdd   bool
 	failReplyAdd  bool
+	failReplyAdds int
 	failSetAgent  bool
 	deleted       []string // session IDs passed to DeleteSession
 }
@@ -118,6 +119,10 @@ func (f *mcpFakeSessionStore) AddMessage(_ context.Context, sessionID string, ms
 	defer f.mu.Unlock()
 	if (msg.Role == "user" && f.failUserAdd) || (msg.Role == "assistant" && f.failReplyAdd) {
 		return fmt.Errorf("simulated message persistence failure")
+	}
+	if msg.Role == "assistant" && f.failReplyAdds > 0 {
+		f.failReplyAdds--
+		return fmt.Errorf("simulated one-shot message persistence failure")
 	}
 	s, ok := f.sessions[sessionID]
 	if !ok {
@@ -497,6 +502,33 @@ func TestCallGroupReplyPersistenceFailureIsIncomplete(t *testing.T) {
 	}
 	if !isError || !strings.Contains(text, "reply from agent-a") || !strings.Contains(text, "persistence") {
 		t.Fatalf("reply persistence failure was not surfaced with partial text: isError=%v text=%q", isError, text)
+	}
+}
+
+func TestCallGroupPersistenceFailureStaysIncompleteAfterLaterSuccess(t *testing.T) {
+	h, group := newGroupTestHandler(t, http.StatusOK, "agent-a", "agent-b", "FINISH")
+	h.sessionStore.(*mcpFakeSessionStore).failReplyAdds = 1
+	roster, agentsByID := h.buildGroupRoster(context.Background(), group, "user@example.com", nil)
+
+	text, _, isError, err := h.callGroup(context.Background(), group, roster, agentsByID, "status", "", "user@example.com", nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected transport error: %v", err)
+	}
+	if !isError || !strings.Contains(text, "reply from agent-b") {
+		t.Fatalf("mixed persistence/success result looked clean: isError=%v text=%q", isError, text)
+	}
+}
+
+func TestCallAgentReplyPersistenceFailureReturnsError(t *testing.T) {
+	h, _ := newGroupTestHandler(t, http.StatusOK, "FINISH")
+	h.sessionStore.(*mcpFakeSessionStore).failReplyAdd = true
+	agent, err := h.registry.Get("agent-a")
+	if err != nil {
+		t.Fatalf("Get agent: %v", err)
+	}
+	text, sessionID, err := h.callAgent(context.Background(), agent, "status", "", "user@example.com", nil)
+	if err == nil || text == "" || sessionID == "" {
+		t.Fatalf("persistence failure was hidden: text=%q session=%q err=%v", text, sessionID, err)
 	}
 }
 
