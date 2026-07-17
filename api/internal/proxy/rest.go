@@ -81,7 +81,12 @@ func (p *RESTProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *mo
 				zap.String("agent_id", agent.ID),
 				zap.Int("attempt", attempt+1),
 				zap.Duration("delay", delay))
-			time.Sleep(delay)
+			// Cancelable backoff: don't sleep past the agent timeout / cancellation.
+			select {
+			case <-time.After(delay):
+			case <-agentCtx.Done():
+				return nil, agentCtx.Err()
+			}
 		}
 		resp, lastErr = p.client.Request(agentCtx, agent, bytes.NewReader(bodyBytes), auth, requestID)
 		if lastErr == nil {

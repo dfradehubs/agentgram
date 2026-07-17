@@ -848,6 +848,11 @@ func (h *Handler) callAgent(ctx context.Context, agent *models.Agent, question s
 	// disconnects or the gateway times out — we need the full response.
 	callCtx, cancel := context.WithTimeout(context.Background(), h.settings.Duration(appsettings.KeyMCPToolCallTimeout))
 	defer cancel()
+	// Preserve the GitHub token so require_github_token / forward-auth agents
+	// still receive X-GitHub-Token (the detached context would otherwise drop it).
+	if tok := middleware.GetGitHubTokenFromContext(ctx); tok != "" {
+		callCtx = context.WithValue(callCtx, middleware.GitHubTokenContextKey, tok)
+	}
 
 	proxyResult, err := h.proxy.Handle(callCtx, buf, agent, chatReq, authHeader, opts)
 	if err != nil {

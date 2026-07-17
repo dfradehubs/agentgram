@@ -1106,9 +1106,15 @@ export function useChat({
 
     // Moderated group retry: always go through the debate endpoint (never a
     // direct single-agent send), so moderation + synthesis + session semantics
-    // match the original send. The moderator re-decides who answers.
+    // match the original send. Re-derive the @mention roster override from the
+    // original text so "@agent-a ..." stays targeted (the backend validates the
+    // ids against the real group roster); no mentions = moderator decides.
     if (groupId) {
-      sendMessage(undefined, undefined, targetMsg.attachments, targetMsg.content, messagesBeforeRetry, {});
+      const mentions = (targetMsg.content.match(/(?:^|\s)@([\w.-]+)/g) || [])
+        .map((m) => m.trim().slice(1));
+      sendMessage(undefined, undefined, targetMsg.attachments, targetMsg.content, messagesBeforeRetry, {
+        agentIds: mentions.length > 0 ? mentions : undefined,
+      });
       return;
     }
 

@@ -89,7 +89,7 @@ func (f *mcpFakeSessionStore) GetSession(_ context.Context, sessionID string) (*
 	defer f.mu.Unlock()
 	s, ok := f.sessions[sessionID]
 	if !ok {
-		return nil, fmt.Errorf("not found")
+		return nil, nil // absence, not error — mirrors the Redis store contract
 	}
 	cp := *s
 	cp.Messages = append([]models.ChatMessage(nil), s.Messages...)
@@ -216,7 +216,7 @@ func TestCallGroupCollectsDebate(t *testing.T) {
 		t.Fatalf("roster size = %d, want 2", len(roster))
 	}
 
-	text, sessionID, err := h.callGroup(context.Background(), group, roster, agentsByID, "is prod healthy?", "", "user@example.com", nil, nil)
+	text, sessionID, _, err := h.callGroup(context.Background(), group, roster, agentsByID, "is prod healthy?", "", "user@example.com", nil, nil)
 	if err != nil {
 		t.Fatalf("callGroup: %v", err)
 	}
@@ -236,7 +236,7 @@ func TestCallGroupFailedTurnContinues(t *testing.T) {
 		"agent-a", "agent-b", "FINISH")
 
 	roster, agentsByID := h.buildGroupRoster(context.Background(), group, "user@example.com", nil)
-	text, _, err := h.callGroup(context.Background(), group, roster, agentsByID, "check cluster", "", "user@example.com", nil, nil)
+	text, _, _, err := h.callGroup(context.Background(), group, roster, agentsByID, "check cluster", "", "user@example.com", nil, nil)
 	if err != nil {
 		t.Fatalf("callGroup: %v", err)
 	}
@@ -253,7 +253,7 @@ func TestCallGroupNoAgentApplies(t *testing.T) {
 	h, group := newGroupTestHandler(t, http.StatusOK, "FINISH")
 
 	roster, agentsByID := h.buildGroupRoster(context.Background(), group, "user@example.com", nil)
-	text, _, err := h.callGroup(context.Background(), group, roster, agentsByID, "write a poem", "", "user@example.com", nil, nil)
+	text, _, _, err := h.callGroup(context.Background(), group, roster, agentsByID, "write a poem", "", "user@example.com", nil, nil)
 	if err != nil {
 		t.Fatalf("callGroup: %v", err)
 	}
@@ -303,7 +303,7 @@ func TestCallGroupCrossUserSessionDenied(t *testing.T) {
 	other.GroupID = group.ID
 	_ = h.sessionStore.SaveSession(context.Background(), other)
 
-	_, _, err := h.callGroup(context.Background(), group, roster, agentsByID, "leak?", other.SessionID, "user@example.com", nil, nil)
+	_, _, _, err := h.callGroup(context.Background(), group, roster, agentsByID, "leak?", other.SessionID, "user@example.com", nil, nil)
 	if err == nil {
 		t.Fatal("expected access denied resuming another user's session")
 	}
@@ -314,8 +314,27 @@ func TestCallGroupUnknownSession(t *testing.T) {
 	h, group := newGroupTestHandler(t, http.StatusOK, "agent-a", "FINISH")
 	roster, agentsByID := h.buildGroupRoster(context.Background(), group, "user@example.com", nil)
 
-	_, _, err := h.callGroup(context.Background(), group, roster, agentsByID, "hi", "does-not-exist", "user@example.com", nil, nil)
+	_, _, _, err := h.callGroup(context.Background(), group, roster, agentsByID, "hi", "does-not-exist", "user@example.com", nil, nil)
 	if err == nil {
 		t.Fatal("expected error for unknown session_id")
+	}
+}
+
+// Use case (HIGH): when every agent turn fails, callGroup signals isError so
+// MCP clients don't treat the debate as a success.
+func TestCallGroupAllFailedIsError(t *testing.T) {
+	// agent-a errors (500); the mock moderator only ever picks agent-a here.
+	h, group := newGroupTestHandler(t, http.StatusInternalServerError, "agent-a", "FINISH")
+	roster, agentsByID := h.buildGroupRoster(context.Background(), group, "user@example.com", nil)
+
+	text, _, isError, err := h.callGroup(context.Background(), group, roster, agentsByID, "status", "", "user@example.com", nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected transport error: %v", err)
+	}
+	if !isError {
+		t.Error("expected isError=true when no agent replied successfully")
+	}
+	if !strings.Contains(text, "_error:") {
+		t.Errorf("expected per-agent error in text, got: %s", text)
 	}
 }

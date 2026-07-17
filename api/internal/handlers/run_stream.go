@@ -88,13 +88,9 @@ func (h *RunStreamHandler) Stream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if session.UserID != claims.GetEmail() {
-		allowed := false
-		if session.GroupID != "" {
-			allowed = CanAccessGroup(r.Context(), claims, session.GroupID, h.groupRepo, h.userService)
-		}
-		if !allowed && session.Source == "slack" {
-			allowed = h.store.IsParticipant(r.Context(), sessionID, claims.GetEmail())
-		}
+		// Sessions are personal — group membership does not grant replay of
+		// another member's session. Slack threads keep their participant check.
+		allowed := session.Source == "slack" && h.store.IsParticipant(r.Context(), sessionID, claims.GetEmail())
 		if !allowed {
 			http.Error(w, `{"error":"access denied"}`, http.StatusForbidden)
 			return

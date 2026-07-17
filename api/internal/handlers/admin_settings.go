@@ -62,12 +62,10 @@ func (h *AdminSettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Req
 		}
 	}
 
-	for key, value := range req {
-		if err := h.repo.Set(r.Context(), key, value); err != nil {
-			h.logger.Error("failed to persist setting", zap.String("key", key), zap.Error(err))
-			http.Error(w, `{"error":"failed to save settings"}`, http.StatusInternalServerError)
-			return
-		}
+	if err := h.repo.SetMany(r.Context(), req); err != nil {
+		h.logger.Error("failed to persist settings", zap.Error(err))
+		http.Error(w, `{"error":"failed to save settings"}`, http.StatusInternalServerError)
+		return
 	}
 
 	if err := h.service.Reload(r.Context()); err != nil {

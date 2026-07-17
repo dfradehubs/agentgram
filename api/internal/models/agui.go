@@ -182,6 +182,7 @@ type AGUIToolCallArgsEvent struct {
 	Type       AGUIEventType `json:"type"`
 	ToolCallID string        `json:"toolCallId"`
 	Delta      string        `json:"delta"`
+	AgentID    string        `json:"agentId,omitempty"` // Which agent is calling the tool (group debates)
 }
 
 // AGUIToolCallEndEvent signals the end of a tool call
@@ -189,4 +190,5 @@ type AGUIToolCallEndEvent struct {
 	Type       AGUIEventType `json:"type"`
 	ToolCallID string        `json:"toolCallId"`
 	Result     string        `json:"result,omitempty"`
+	AgentID    string        `json:"agentId,omitempty"` // Which agent is calling the tool (group debates)
 }

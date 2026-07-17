@@ -230,15 +230,11 @@ func (h *ProxyHandler) Chat(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			h.logger.Error("failed to get session", zap.Error(err))
 		}
-		// Verify ownership (group sessions allow all group members, Slack sessions allow participants)
+		// Sessions are personal — only the owner may continue them (group
+		// membership does NOT grant access to another member's session). Slack
+		// threads keep their multi-user participant check.
 		if session != nil && session.UserID != userEmail {
-			allowed := false
-			if session.GroupID != "" {
-				allowed = CanAccessGroup(r.Context(), claims, session.GroupID, h.groupRepo, h.userService)
-			}
-			if !allowed && session.Source == "slack" {
-				allowed = h.store.IsParticipant(r.Context(), chatReq.SessionID, userEmail)
-			}
+			allowed := session.Source == "slack" && h.store.IsParticipant(r.Context(), chatReq.SessionID, userEmail)
 			if !allowed {
 				w.Header().Set("Content-Type", "application/json")
 				http.Error(w, `{"error":"access denied"}`, http.StatusForbidden)

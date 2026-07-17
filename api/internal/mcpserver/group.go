@@ -116,12 +116,13 @@ func (h *Handler) handleGroupToolCall(w http.ResponseWriter, r *http.Request, re
 	type callResult struct {
 		text      string
 		sessionID string
+		isError   bool
 		err       error
 	}
 	done := make(chan callResult, 1)
 	go func() {
-		text, resultSessionID, err := h.callGroup(r.Context(), group, roster, agentsByID, args.Question, sessionID, userEmail, userGroups, lfTrace)
-		done <- callResult{text: text, sessionID: resultSessionID, err: err}
+		text, resultSessionID, isError, err := h.callGroup(r.Context(), group, roster, agentsByID, args.Question, sessionID, userEmail, userGroups, lfTrace)
+		done <- callResult{text: text, sessionID: resultSessionID, isError: isError, err: err}
 	}()
 
 	progressTicker := time.NewTicker(15 * time.Second)
@@ -172,10 +173,11 @@ func (h *Handler) handleGroupToolCall(w http.ResponseWriter, r *http.Request, re
 	}
 
 	if lfTrace != nil {
-		lfTrace.End(true, truncateString(responseText, 2000))
+		lfTrace.End(!cr.isError, truncateString(responseText, 2000))
 	}
 
-	flushSSE(h.server.MarshalToolResult(req.ID, responseText, false))
+	// isError=true when the debate produced no successful agent reply.
+	flushSSE(h.server.MarshalToolResult(req.ID, responseText, cr.isError))
 }
 
 // buildGroupRoster returns the group's agents the user can access as moderator
@@ -215,25 +217,30 @@ func (h *Handler) buildGroupRoster(ctx context.Context, group *models.AgentGroup
 
 // callGroup runs the moderated debate and returns the collected replies as a
 // single markdown text, plus the Agentgram session ID for continuity.
-func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roster []orchestrator.AgentBrief, agentsByID map[string]*models.Agent, question, sessionID, userEmail string, userGroups []string, lfTrace *lf.Trace) (string, string, error) {
+// callGroup returns the collected debate text, the session ID, an isError flag
+// (true when no agent produced a successful reply), and a transport error.
+func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roster []orchestrator.AgentBrief, agentsByID map[string]*models.Agent, question, sessionID, userEmail string, userGroups []string, lfTrace *lf.Trace) (string, string, bool, error) {
 	// Resolve or create the group session. Personal sessions: a resume must
 	// exist, belong to this group, and be owned by the caller — a transient
 	// error or another user's session must not silently fork a new session.
 	var session *models.Session
 	if sessionID != "" {
 		s, err := h.sessionStore.GetSession(ctx, sessionID)
-		if err != nil || s == nil {
-			return "", "", fmt.Errorf("session not found")
+		if err != nil {
+			return "", "", true, fmt.Errorf("session store error: %w", err)
+		}
+		if s == nil {
+			return "", "", true, fmt.Errorf("session not found")
 		}
 		if s.GroupID != group.ID || s.UserID != userEmail {
-			return "", "", fmt.Errorf("access denied to session")
+			return "", "", true, fmt.Errorf("access denied to session")
 		}
 		session = s
 	}
 	if session == nil {
 		s, err := h.sessionStore.CreateSession(ctx, userEmail, roster[0].ID, truncateString(question, 50))
 		if err != nil {
-			return "", "", fmt.Errorf("failed to create session: %w", err)
+			return "", "", true, fmt.Errorf("failed to create session: %w", err)
 		}
 		s.IsMultiAgent = true
 		s.GroupID = group.ID
@@ -269,9 +276,17 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 	// The MCP user's JWT, forwarded only when the agent's auth method is "forward"
 	authHeader := middleware.GetAuthHeaderFromContext(ctx)
 
-	// Detached context so the debate survives client disconnects/gateway timeouts
-	callCtx, cancel := context.WithTimeout(context.Background(), h.settings.Duration(appsettings.KeyMCPToolCallTimeout))
+	// Detached context (survives client disconnect) bounded by the tool-call
+	// timeout for the WHOLE debate — a single deadline shared across turns, so
+	// N turns can't each get a fresh full timeout. Preserve the GitHub token so
+	// require_github_token / forward-auth agents still receive X-GitHub-Token.
+	timeout := h.settings.Duration(appsettings.KeyMCPToolCallTimeout)
+	debateDeadline := time.Now().Add(timeout)
+	callCtx, cancel := context.WithDeadline(context.Background(), debateDeadline)
 	defer cancel()
+	if tok := middleware.GetGitHubTokenFromContext(ctx); tok != "" {
+		callCtx = context.WithValue(callCtx, middleware.GitHubTokenContextKey, tok)
+	}
 	if lfTrace != nil {
 		callCtx = lf.ContextWithTrace(callCtx, lfTrace)
 	}
@@ -284,6 +299,13 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 	// Collecting TurnRunner: run the agent against a buffer, persist, return text
 	run := func(turnCtx context.Context, agentID string) (string, error) {
 		agent := agentsByID[agentID]
+
+		// Each turn is bounded by the time LEFT in the shared debate deadline,
+		// never a fresh full timeout.
+		remaining := time.Until(debateDeadline)
+		if remaining <= 0 {
+			return "", context.DeadlineExceeded
+		}
 
 		agentSessionID, _ := h.sessionStore.GetAgentSessionID(turnCtx, session.SessionID, agentID)
 		hasAgentSession := agentSessionID != ""
@@ -308,7 +330,7 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 			RequestID:    fmt.Sprintf("mcp-group-%s", reqIDSuffix),
 			UserEmail:    userEmail,
 			UserGroups:   userGroups,
-			AgentTimeout: h.settings.Duration(appsettings.KeyMCPToolCallTimeout),
+			AgentTimeout: remaining,
 		})
 
 		if agentSpan != nil {
@@ -359,11 +381,12 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 	transcript := orchestrator.RenderTranscript(session.Messages)
 	results, debateErr := h.moderator.Debate(callCtx, roster, transcript, run, maxTurns)
 	if debateErr != nil && len(results) == 0 {
-		return "", session.SessionID, debateErr
+		return "", session.SessionID, true, debateErr
 	}
 
 	if len(results) == 0 {
-		return "No agent in this group can help with that request.", session.SessionID, nil
+		// Nobody applied — informational, not an error.
+		return "No agent in this group can help with that request.", session.SessionID, false, nil
 	}
 
 	// Collect per-agent contributions as markdown sections
@@ -399,7 +422,11 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 		}
 	}
 
-	return strings.Join(parts, "\n\n---\n\n"), session.SessionID, nil
+	// If no agent produced a successful reply, the whole debate failed — the
+	// text still carries the per-agent errors, but flag it so MCP clients and
+	// automations don't treat it as a success.
+	isError := distinctSpeakers(results) == 0
+	return strings.Join(parts, "\n\n---\n\n"), session.SessionID, isError, nil
 }
 
 // distinctSpeakers counts how many different agents replied successfully.

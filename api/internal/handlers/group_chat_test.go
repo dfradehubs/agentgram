@@ -99,7 +99,7 @@ func (f *fakeSessionStore) GetSession(_ context.Context, sessionID string) (*mod
 	defer f.mu.Unlock()
 	s, ok := f.sessions[sessionID]
 	if !ok {
-		return nil, fmt.Errorf("not found")
+		return nil, nil // absence, not error — mirrors the Redis store contract
 	}
 	cp := *s
 	cp.Messages = append([]models.ChatMessage(nil), s.Messages...)

@@ -48,18 +48,20 @@ const LOAD_OLDER_THRESHOLD_PX = 100;
 const RUN_RECOVERY_POLL_MS = 1500;
 const RUN_RECOVERY_MAX_POLLS = 40; // ~60s before falling back to a re-send
 
-// extractMentions returns the roster agent IDs @mentioned in the text.
-// Case-insensitive and tolerant of trailing punctuation: agent IDs are slugs
-// ([a-z0-9_-]), so "." / "," after the mention (e.g. "@logs-agent.") is not
-// captured as part of the ID and the mention still matches.
+const MENTION_ESCAPE_RE = /[.*+?^${}()|[\]\\]/g;
+
+// extractMentions returns the roster agent IDs @mentioned in the text. Matches
+// each roster ID literally (so IDs containing "." like "logs.prod" work) as a
+// whole @token: preceded by start/whitespace and followed by a non-ID char or
+// end, so trailing punctuation ("@logs-agent.") still matches. Case-insensitive.
 function extractMentions(text: string, roster: string[]): string[] {
-  const rosterLower = new Map(roster.map((id) => [id.toLowerCase(), id]));
-  const found = new Set<string>();
-  for (const m of text.matchAll(/@([a-z0-9_-]+)/gi)) {
-    const id = rosterLower.get(m[1].toLowerCase());
-    if (id) found.add(id);
+  const found: string[] = [];
+  for (const id of roster) {
+    const esc = id.replace(MENTION_ESCAPE_RE, "\\$&");
+    const re = new RegExp(`(^|\\s)@${esc}(?![\\w.-])`, "i");
+    if (re.test(text)) found.push(id);
   }
-  return [...found];
+  return found;
 }
 
 export function Chat() {

@@ -122,8 +122,11 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		status := http.StatusForbidden
-		if err == errSessionNotFound {
+		switch err {
+		case errSessionNotFound:
 			status = http.StatusNotFound
+		case errSessionStore:
+			status = http.StatusInternalServerError
 		}
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), status)
 		return
@@ -384,6 +387,9 @@ func (h *ProxyHandler) buildRoster(ctx context.Context, groupAgentIDs, override 
 // errSessionNotFound signals a resume request for a session_id that doesn't exist.
 var errSessionNotFound = fmt.Errorf("session not found")
 
+// errSessionStore signals a transient store failure (distinct from "not found").
+var errSessionStore = fmt.Errorf("session store error")
+
 // getOrCreateGroupSession resolves the session for a group chat request.
 // Group sessions are PERSONAL: resuming a session_id requires it to exist,
 // belong to this group, and be owned by the caller — a transient store error
@@ -394,7 +400,12 @@ func (h *ProxyHandler) getOrCreateGroupSession(ctx context.Context, claims *auth
 
 	if chatReq.SessionID != "" {
 		session, err := h.store.GetSession(ctx, chatReq.SessionID)
-		if err != nil || session == nil {
+		if err != nil {
+			// Transient store failure — surface as 5xx, don't fork a new session.
+			h.logger.Error("failed to get group session", zap.String("session_id", chatReq.SessionID), zap.Error(err))
+			return nil, errSessionStore
+		}
+		if session == nil {
 			return nil, errSessionNotFound
 		}
 		if session.GroupID != groupID {
@@ -422,9 +433,13 @@ func (h *ProxyHandler) getOrCreateGroupSession(ctx context.Context, claims *auth
 	session.IsMultiAgent = true
 	session.GroupID = groupID
 	session.AgentIDs = rosterIDs
+	// The group flags are load-bearing (they make this a personal group session);
+	// if they don't persist, fail rather than return a mislabeled session.
 	if err := h.store.SaveSession(ctx, session); err != nil {
-		h.logger.Error("failed to save session flags", zap.Error(err))
+		h.logger.Error("failed to save group session flags", zap.String("session_id", session.SessionID), zap.Error(err))
+		return nil, errSessionStore
 	}
+	// Group↔session index is best-effort (drives the sidebar list, not access).
 	if err := h.groupRepo.AddSession(ctx, groupID, session.SessionID); err != nil {
 		h.logger.Error("failed to add session to group", zap.Error(err),
 			zap.String("group_id", groupID), zap.String("session_id", session.SessionID))

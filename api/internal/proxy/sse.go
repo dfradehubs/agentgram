@@ -262,19 +262,27 @@ func (s *SSEWriter) SendToolCallStart(toolCallID, toolName string) error {
 
 // SendToolCallArgs sends the AG-UI TOOL_CALL_ARGS event
 func (s *SSEWriter) SendToolCallArgs(toolCallID, delta string) error {
+	s.mu.Lock()
+	agentID := s.agentID
+	s.mu.Unlock()
 	return s.SendAGUIEvent(&models.AGUIToolCallArgsEvent{
 		Type:       models.AGUIEventToolCallArgs,
 		ToolCallID: toolCallID,
 		Delta:      delta,
+		AgentID:    agentID,
 	})
 }
 
 // SendToolCallEnd sends the AG-UI TOOL_CALL_END event
 func (s *SSEWriter) SendToolCallEnd(toolCallID, result string) error {
+	s.mu.Lock()
+	agentID := s.agentID
+	s.mu.Unlock()
 	return s.SendAGUIEvent(&models.AGUIToolCallEndEvent{
 		Type:       models.AGUIEventToolCallEnd,
 		ToolCallID: toolCallID,
 		Result:     result,
+		AgentID:    agentID,
 	})
 }
 

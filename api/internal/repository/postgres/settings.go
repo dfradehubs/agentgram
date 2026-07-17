@@ -36,15 +36,25 @@ func (r *SettingsRepository) GetAll(ctx context.Context) (map[string]string, err
 	return out, rows.Err()
 }
 
-// Set upserts a single setting override.
-func (r *SettingsRepository) Set(ctx context.Context, key, value string) error {
-	_, err := r.pool.Exec(ctx,
-		`INSERT INTO runtime_config (key, value, updated_at) VALUES ($1, $2, NOW())
-		 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
-		key, value,
-	)
-	if err != nil {
-		return fmt.Errorf("set app setting %s: %w", key, err)
+// SetMany upserts several setting overrides in a single transaction.
+func (r *SettingsRepository) SetMany(ctx context.Context, values map[string]string) error {
+	if len(values) == 0 {
+		return nil
 	}
-	return nil
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin settings tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	for key, value := range values {
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO runtime_config (key, value, updated_at) VALUES ($1, $2, NOW())
+			 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+			key, value,
+		); err != nil {
+			return fmt.Errorf("set setting %s: %w", key, err)
+		}
+	}
+	return tx.Commit(ctx)
 }

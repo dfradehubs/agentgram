@@ -62,10 +62,14 @@ func (h *SubscribeHandler) Subscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify user has access to the group
-	if !CanAccessGroup(r.Context(), claims, session.GroupID, h.groupRepo, h.userService) {
-		http.Error(w, `{"error":"access denied"}`, http.StatusForbidden)
-		return
+	// Sessions are personal — only the owner may subscribe (Slack threads keep
+	// their multi-user participant check).
+	if session.UserID != claims.GetEmail() {
+		allowed := session.Source == "slack" && h.store.IsParticipant(r.Context(), sessionID, claims.GetEmail())
+		if !allowed {
+			http.Error(w, `{"error":"access denied"}`, http.StatusForbidden)
+			return
+		}
 	}
 
 	// Set SSE headers

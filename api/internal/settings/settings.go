@@ -66,7 +66,8 @@ var defByKey = func() map[string]Def {
 // Repository persists setting overrides.
 type Repository interface {
 	GetAll(ctx context.Context) (map[string]string, error)
-	Set(ctx context.Context, key, value string) error
+	// SetMany upserts several overrides atomically (all-or-nothing).
+	SetMany(ctx context.Context, values map[string]string) error
 }
 
 // Service resolves settings from an in-memory cache (DB overrides on top of
