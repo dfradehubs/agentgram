@@ -155,6 +155,58 @@ func TestDebateTranscriptGrows(t *testing.T) {
 	}
 }
 
+func TestDebatePromptRoutesAroundAnAgentThatCannotVerify(t *testing.T) {
+	// The moderator first tries to FINISH after the limitation response, then
+	// refuses again on the forced reduced-roster decision. Debate must still
+	// hand the request to the remaining agent deterministically.
+	mod, fp := newTestModerator("logs-agent", "FINISH", "FINISH", "FINISH")
+
+	run := func(_ context.Context, agentID string) (string, error) {
+		if agentID == "logs-agent" {
+			return "I do not have access to Prometheus or PagerDuty, so I cannot verify whether an alert fired.", nil
+		}
+		return "I checked the available cluster events and confirmed the alert.", nil
+	}
+
+	results, err := mod.Debate(context.Background(), testRoster, "User: Did an alert fire?", run, 4)
+	if err != nil {
+		t.Fatalf("Debate returned error: %v", err)
+	}
+	if len(results) != 2 || results[0].AgentID != "logs-agent" || results[1].AgentID != "kube-agent" {
+		t.Fatalf("unexpected routing results: %#v", results)
+	}
+	if len(fp.prompts) < 3 {
+		t.Fatalf("expected a follow-up moderator call, got %d", len(fp.prompts))
+	}
+	secondPrompt := fp.prompts[1]
+	if !strings.Contains(secondPrompt, "I do not have access to Prometheus or PagerDuty") {
+		t.Errorf("follow-up prompt omitted the insufficient reply:\n%s", secondPrompt)
+	}
+	if !strings.Contains(secondPrompt, "treat the request as unresolved") || !strings.Contains(secondPrompt, "different, untried agent") {
+		t.Errorf("follow-up prompt omitted the hand-off rule:\n%s", secondPrompt)
+	}
+	forcedPrompt := fp.prompts[2]
+	if !strings.Contains(forcedPrompt, "Moderator routing safeguard") || !strings.Contains(forcedPrompt, "- kube-agent") {
+		t.Errorf("forced hand-off prompt did not constrain routing to the remaining agent:\n%s", forcedPrompt)
+	}
+}
+
+func TestReplyNeedsHandoff(t *testing.T) {
+	for _, reply := range []string{
+		"No tengo acceso a Prometheus.",
+		"No puedo verificar si saltó una alerta.",
+		"I don't have access to PagerDuty.",
+		"I cannot confirm the incident.",
+	} {
+		if !replyNeedsHandoff([]TurnResult{{Text: reply}}) {
+			t.Errorf("replyNeedsHandoff(%q) = false", reply)
+		}
+	}
+	if replyNeedsHandoff([]TurnResult{{Text: "I checked PagerDuty and the alert fired."}}) {
+		t.Error("a verified answer should not force another agent")
+	}
+}
+
 func TestDebatePreservesPartialTextOnError(t *testing.T) {
 	mod, _ := newTestModerator("logs-agent", "FINISH")
 	results, err := mod.Debate(context.Background(), testRoster, "User: hello", func(_ context.Context, _ string) (string, error) {

@@ -6,10 +6,17 @@ import { AttachmentPreview } from "./AttachmentPreview";
 import { Button } from "@/components/ui/button";
 import {
   ArrowUp,
+  Bot,
   Paperclip,
   Square,
 } from "lucide-react";
 import type { Attachment } from "@/lib/types";
+import {
+  applyMention,
+  filterMentionOptions,
+  findActiveMention,
+  type MentionOption,
+} from "@/lib/mentions";
 
 const ACCEPTED_TYPES = "image/*,.pdf,.txt,.csv,.json";
 
@@ -21,6 +28,8 @@ interface ChatInputProps {
   // Input state
   input: string;
   setInput: (val: string) => void;
+  mentionOptions?: MentionOption[];
+  showMentionHint?: boolean;
   // Attachments
   pendingAttachments: Attachment[];
   onRemoveAttachment: (idx: number) => void;
@@ -41,6 +50,8 @@ export const ChatInput = React.memo(function ChatInput({
   isLoading,
   input,
   setInput,
+  mentionOptions = [],
+  showMentionHint = false,
   pendingAttachments,
   onRemoveAttachment,
   onFileSelect,
@@ -51,15 +62,79 @@ export const ChatInput = React.memo(function ChatInput({
   fileInputRef,
 }: ChatInputProps) {
   const t = useT();
+  const [isFocused, setIsFocused] = React.useState(false);
+  const [caret, setCaret] = React.useState(0);
+  const [activeMentionIndex, setActiveMentionIndex] = React.useState(0);
+  const [dismissedMention, setDismissedMention] = React.useState<string | null>(null);
+
+  const activeMention = React.useMemo(
+    () => mentionOptions.length > 0 ? findActiveMention(input, caret) : null,
+    [input, caret, mentionOptions.length],
+  );
+  const filteredMentionOptions = React.useMemo(
+    () => activeMention ? filterMentionOptions(mentionOptions, activeMention.query) : [],
+    [activeMention, mentionOptions],
+  );
+  const mentionKey = activeMention
+    ? `${activeMention.start}:${activeMention.end}:${activeMention.query}`
+    : null;
+  const isMentionListOpen = isFocused
+    && !isInputDisabled
+    && !!activeMention
+    && filteredMentionOptions.length > 0
+    && dismissedMention !== mentionKey;
+
+  React.useEffect(() => {
+    setActiveMentionIndex(0);
+  }, [activeMention?.query, mentionOptions]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value);
+    setCaret(e.target.selectionStart);
+    setDismissedMention(null);
     const textarea = e.target;
     textarea.style.height = "auto";
     textarea.style.height = Math.min(textarea.scrollHeight, 200) + "px";
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const selectMention = (option: MentionOption) => {
+    if (!activeMention) return;
+    const applied = applyMention(input, activeMention, option.id);
+    setInput(applied.value);
+    setCaret(applied.caret);
+    setDismissedMention(null);
+    requestAnimationFrame(() => {
+      const textarea = inputRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(applied.caret, applied.caret);
+      textarea.style.height = "auto";
+      textarea.style.height = Math.min(textarea.scrollHeight, 200) + "px";
+    });
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.nativeEvent.isComposing) return;
+    if (isMentionListOpen) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const direction = e.key === "ArrowDown" ? 1 : -1;
+        setActiveMentionIndex((index) =>
+          (index + direction + filteredMentionOptions.length) % filteredMentionOptions.length
+        );
+        return;
+      }
+      if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
+        e.preventDefault();
+        selectMention(filteredMentionOptions[activeMentionIndex]);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setDismissedMention(mentionKey);
+        return;
+      }
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       onSend();
@@ -95,6 +170,43 @@ export const ChatInput = React.memo(function ChatInput({
             attachments={pendingAttachments}
             onRemove={onRemoveAttachment}
           />
+          {isMentionListOpen && (
+            <div
+              id="chat-mention-suggestions"
+              role="listbox"
+              aria-label={t("chat.mentionSuggestions")}
+              className="absolute bottom-full left-10 right-4 z-20 mb-2 max-h-64 overflow-y-auto rounded-lg border bg-popover p-1 text-popover-foreground shadow-lg"
+            >
+              {filteredMentionOptions.map((option, index) => (
+                <button
+                  key={option.id}
+                  id={`chat-mention-option-${index}`}
+                  type="button"
+                  role="option"
+                  aria-selected={index === activeMentionIndex}
+                  onMouseEnter={() => setActiveMentionIndex(index)}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                  }}
+                  onClick={() => selectMention(option)}
+                  className={`flex w-full items-start gap-2 rounded-md px-2.5 py-2 text-left ${
+                    index === activeMentionIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent/60"
+                  }`}
+                >
+                  <Bot className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-baseline gap-2">
+                      <span className="truncate text-sm font-medium">{option.label}</span>
+                      <span className="truncate text-xs text-muted-foreground">@{option.id}</span>
+                    </span>
+                    {option.description && (
+                      <span className="block truncate text-xs text-muted-foreground">{option.description}</span>
+                    )}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
           <div className="flex items-center gap-2">
             <input
               ref={fileInputRef}
@@ -119,6 +231,19 @@ export const ChatInput = React.memo(function ChatInput({
               value={input}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
+              onFocus={(event) => {
+                setIsFocused(true);
+                setCaret(event.currentTarget.selectionStart);
+              }}
+              onBlur={() => setIsFocused(false)}
+              onClick={(event) => {
+                setCaret(event.currentTarget.selectionStart);
+                setDismissedMention(null);
+              }}
+              onSelect={(event) => {
+                setCaret(event.currentTarget.selectionStart);
+                setDismissedMention(null);
+              }}
               onPaste={handlePaste}
               placeholder={
                 isInputDisabled
@@ -127,6 +252,11 @@ export const ChatInput = React.memo(function ChatInput({
               }
               disabled={isInputDisabled}
               rows={1}
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded={isMentionListOpen}
+              aria-controls={isMentionListOpen ? "chat-mention-suggestions" : undefined}
+              aria-activedescendant={isMentionListOpen ? `chat-mention-option-${activeMentionIndex}` : undefined}
               aria-label={t("chat.message")}
               className="max-h-[200px] min-h-[40px] max-w-full flex-1 resize-none overflow-hidden bg-transparent py-2 text-sm leading-6 outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
             />
@@ -155,6 +285,7 @@ export const ChatInput = React.memo(function ChatInput({
         </div>
         <span className="p-2 block text-center text-[10px] text-muted-foreground">
           {t("chat.inputHint")}
+          {showMentionHint && <> · {t("chat.mentionHint")}</>}
         </span>
       </div>
     </div>

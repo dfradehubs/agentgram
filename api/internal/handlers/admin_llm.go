@@ -27,6 +27,29 @@ func validateLLMEndpoint(endpoint string) string {
 	return ""
 }
 
+var validLLMRoles = map[string]struct{}{
+	"chat":            {},
+	"summarizer":      {},
+	"file_processor":  {},
+	"chart_extractor": {},
+	"session_namer":   {},
+	"moderator":       {},
+}
+
+func validateLLMRole(role string) string {
+	if _, ok := validLLMRoles[role]; !ok {
+		return "role must be one of: chat, summarizer, file_processor, chart_extractor, session_namer, moderator"
+	}
+	return ""
+}
+
+func boolValue(value *bool, fallback bool) bool {
+	if value == nil {
+		return fallback
+	}
+	return *value
+}
+
 // AdminLLMHandler handles admin CRUD for LLM models
 type AdminLLMHandler struct {
 	llmRepo   repository.LLMModelRepository
@@ -52,7 +75,7 @@ type AdminLLMRequest struct {
 	APIKey    string `json:"api_key"`
 	Endpoint  string `json:"endpoint"`
 	Role      string `json:"role"`
-	Enabled   bool   `json:"enabled"`
+	Enabled   *bool  `json:"enabled"`
 	IsDefault bool   `json:"is_default"`
 }
 
@@ -137,6 +160,10 @@ func (h *AdminLLMHandler) CreateLLMModel(w http.ResponseWriter, r *http.Request)
 	if req.Role == "" {
 		req.Role = "chat"
 	}
+	if errMsg := validateLLMRole(req.Role); errMsg != "" {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, errMsg), http.StatusBadRequest)
+		return
+	}
 	if errMsg := validateLLMEndpoint(req.Endpoint); errMsg != "" {
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, errMsg), http.StatusBadRequest)
 		return
@@ -150,7 +177,7 @@ func (h *AdminLLMHandler) CreateLLMModel(w http.ResponseWriter, r *http.Request)
 		APIKey:    req.APIKey,
 		Endpoint:  req.Endpoint,
 		Role:      req.Role,
-		Enabled:   req.Enabled,
+		Enabled:   boolValue(req.Enabled, true),
 		IsDefault: req.IsDefault,
 	}
 
@@ -186,18 +213,23 @@ func (h *AdminLLMHandler) UpdateLLMModel(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// If api_key contains masked value, preserve existing key
+	existing, err := h.llmRepo.Get(r.Context(), id)
+	if err != nil {
+		http.Error(w, `{"error":"llm model not found"}`, http.StatusNotFound)
+		return
+	}
+
+	// If api_key contains a masked value, preserve the existing key.
 	if req.APIKey == "" || req.APIKey == "****" || (len(req.APIKey) > 8 && req.APIKey[4:8] == "****") {
-		existing, err := h.llmRepo.Get(r.Context(), id)
-		if err != nil {
-			http.Error(w, `{"error":"llm model not found"}`, http.StatusNotFound)
-			return
-		}
 		req.APIKey = existing.APIKey
 	}
 
 	if req.Role == "" {
 		req.Role = "chat"
+	}
+	if errMsg := validateLLMRole(req.Role); errMsg != "" {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, errMsg), http.StatusBadRequest)
+		return
 	}
 	if errMsg := validateLLMEndpoint(req.Endpoint); errMsg != "" {
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, errMsg), http.StatusBadRequest)
@@ -212,7 +244,7 @@ func (h *AdminLLMHandler) UpdateLLMModel(w http.ResponseWriter, r *http.Request)
 		APIKey:    req.APIKey,
 		Endpoint:  req.Endpoint,
 		Role:      req.Role,
-		Enabled:   req.Enabled,
+		Enabled:   boolValue(req.Enabled, existing.Enabled),
 		IsDefault: req.IsDefault,
 	}
 

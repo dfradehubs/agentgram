@@ -37,16 +37,6 @@ func (h *Handler) handleGroupToolCall(w http.ResponseWriter, r *http.Request, re
 		return
 	}
 
-	if h.moderatorLoadErr != nil {
-		h.logger.Error("MCP moderator is unavailable", zap.Error(h.moderatorLoadErr))
-		h.writeJSON(w, http.StatusOK, h.server.MarshalToolResult(req.ID, "Moderator LLM is temporarily unavailable", true))
-		return
-	}
-	if h.moderator == nil {
-		h.writeJSON(w, http.StatusOK, h.server.MarshalToolResult(req.ID, "No moderator LLM configured (admin: add an LLM model with role 'moderator')", true))
-		return
-	}
-
 	// Start the tool-call budget before authorization/roster/session setup. The
 	// execution detaches from client cancellation later, but preserves this
 	// absolute deadline so preflight work cannot restart the timeout.
@@ -70,6 +60,27 @@ func (h *Handler) handleGroupToolCall(w http.ResponseWriter, r *http.Request, re
 	group, err := h.groupRepo.Get(toolCtx, groupID)
 	if err != nil {
 		h.writeJSON(w, http.StatusOK, h.server.MarshalToolResult(req.ID, "Group not found", true))
+		return
+	}
+
+	// Resolve the moderator after authorization, for every tool call. This keeps
+	// MCP behavior in sync with admin configuration without a process restart.
+	moderator := h.moderator
+	if h.moderatorResolver != nil {
+		resolvedModerator, resolveErr := h.moderatorResolver.Resolve(toolCtx)
+		if resolveErr != nil {
+			if errors.Is(resolveErr, orchestrator.ErrModeratorNotConfigured) {
+				h.writeJSON(w, http.StatusOK, h.server.MarshalToolResult(req.ID, "No moderator LLM configured (admin: add an enabled LLM model with role 'moderator')", true))
+				return
+			}
+			h.logger.Error("MCP moderator is unavailable", zap.Error(resolveErr))
+			h.writeJSON(w, http.StatusOK, h.server.MarshalToolResult(req.ID, "Moderator LLM is temporarily unavailable", true))
+			return
+		}
+		moderator = resolvedModerator
+	}
+	if moderator == nil {
+		h.writeJSON(w, http.StatusOK, h.server.MarshalToolResult(req.ID, "No moderator LLM configured (admin: add an enabled LLM model with role 'moderator')", true))
 		return
 	}
 
@@ -123,7 +134,7 @@ func (h *Handler) handleGroupToolCall(w http.ResponseWriter, r *http.Request, re
 	}
 	done := make(chan callResult, 1)
 	go func() {
-		text, resultSessionID, isError, err := h.callGroup(toolCtx, group, roster, agentsByID, args.Question, sessionID, userEmail, userGroups, lfTrace)
+		text, resultSessionID, isError, err := h.callGroupWithModerator(toolCtx, moderator, group, roster, agentsByID, args.Question, sessionID, userEmail, userGroups, lfTrace)
 		done <- callResult{text: text, sessionID: resultSessionID, isError: isError, err: err}
 	}()
 
@@ -222,6 +233,14 @@ func (h *Handler) buildGroupRoster(ctx context.Context, group *models.AgentGroup
 // callGroup returns the collected debate text, the session ID, an isError flag
 // (true for an incomplete outcome or when no agent responded), and a transport error.
 func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roster []orchestrator.AgentBrief, agentsByID map[string]*models.Agent, question, sessionID, userEmail string, userGroups []string, lfTrace *lf.Trace) (string, string, bool, error) {
+	return h.callGroupWithModerator(ctx, h.moderator, group, roster, agentsByID, question, sessionID, userEmail, userGroups, lfTrace)
+}
+
+func (h *Handler) callGroupWithModerator(ctx context.Context, moderator *orchestrator.Moderator, group *models.AgentGroup, roster []orchestrator.AgentBrief, agentsByID map[string]*models.Agent, question, sessionID, userEmail string, userGroups []string, lfTrace *lf.Trace) (string, string, bool, error) {
+	if moderator == nil {
+		return "", sessionID, true, orchestrator.ErrModeratorNotConfigured
+	}
+
 	// The MCP user's JWT, forwarded only when the agent's auth method is "forward"
 	authHeader := middleware.GetAuthHeaderFromContext(ctx)
 
@@ -412,7 +431,7 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 		maxTurns = group.MaxTurns
 	}
 	transcript := orchestrator.RenderTranscript(session.Messages)
-	results, debateErr := h.moderator.Debate(callCtx, roster, transcript, run, maxTurns)
+	results, debateErr := moderator.Debate(callCtx, roster, transcript, run, maxTurns)
 	if debateErr != nil && len(results) == 0 {
 		return "", session.SessionID, true, debateErr
 	}
@@ -467,7 +486,7 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 	}
 	// Optional synthesis when several agents contributed
 	if !resultIncomplete && distinctSpeakers(results) >= 2 {
-		synthesis, err := h.moderator.Synthesize(callCtx, orchestrator.RenderTranscript(session.Messages))
+		synthesis, err := moderator.Synthesize(callCtx, orchestrator.RenderTranscript(session.Messages))
 		if err != nil {
 			h.logger.Warn("group synthesis failed", zap.String("group_id", group.ID), zap.Error(err))
 		} else if synthesis != "" {

@@ -17,7 +17,6 @@ import (
 	"github.com/dfradehubs/agentgram-api/internal/config"
 	"github.com/dfradehubs/agentgram-api/internal/identity"
 	lf "github.com/dfradehubs/agentgram-api/internal/langfuse"
-	"github.com/dfradehubs/agentgram-api/internal/llm"
 	"github.com/dfradehubs/agentgram-api/internal/mcp"
 	"github.com/dfradehubs/agentgram-api/internal/middleware"
 	"github.com/dfradehubs/agentgram-api/internal/models"
@@ -32,22 +31,22 @@ import (
 
 // Handler is the HTTP handler for MCP protocol requests
 type Handler struct {
-	server           *Server
-	registry         *agents.Registry
-	mcpRegistry      *mcp.Registry
-	proxy            *proxy.Proxy
-	sessionStore     store.SessionStore
-	userService      *service.UserService
-	groupRepo        repository.GroupRepository
-	oidcClient       *auth.OIDCClient
-	langfuseTracer   *lf.Tracer
-	cfg              *config.Config
-	oauth2Mgr        *mcp.OAuth2Manager
-	mcpRepo          repository.MCPServerRepository
-	moderator        *orchestrator.Moderator
-	moderatorLoadErr error
-	settings         *appsettings.Service
-	logger           *zap.Logger
+	server            *Server
+	registry          *agents.Registry
+	mcpRegistry       *mcp.Registry
+	proxy             *proxy.Proxy
+	sessionStore      store.SessionStore
+	userService       *service.UserService
+	groupRepo         repository.GroupRepository
+	oidcClient        *auth.OIDCClient
+	langfuseTracer    *lf.Tracer
+	cfg               *config.Config
+	oauth2Mgr         *mcp.OAuth2Manager
+	mcpRepo           repository.MCPServerRepository
+	moderator         *orchestrator.Moderator
+	moderatorResolver *orchestrator.ModeratorResolver
+	settings          *appsettings.Service
+	logger            *zap.Logger
 }
 
 // NewHandler creates a new MCP HTTP handler
@@ -66,45 +65,22 @@ func NewHandler(
 	llmRepo repository.LLMModelRepository,
 	settingsService *appsettings.Service,
 ) *Handler {
-	// Moderator LLM for group debate tools (role "moderator"); nil when unconfigured
-	var moderator *orchestrator.Moderator
-	var moderatorLoadErr error
-	if llmRepo != nil {
-		if modModels, err := llmRepo.ListByRole(context.Background(), "moderator"); err != nil {
-			moderatorLoadErr = fmt.Errorf("load moderator model: %w", err)
-			logger.Error("failed to load MCP moderator model", zap.Error(err))
-		} else if len(modModels) > 0 {
-			model := modModels[0]
-			provider, provErr := llm.NewProvider(model)
-			if provErr != nil {
-				moderatorLoadErr = fmt.Errorf("create moderator provider: %w", provErr)
-				logger.Error("failed to create MCP moderator provider", zap.Error(provErr))
-			} else {
-				if lfTracer != nil && lfTracer.Enabled() {
-					provider = lf.WrapProvider(provider, "moderator", model.Model)
-				}
-				moderator = orchestrator.NewWithProvider(provider, logger)
-			}
-		}
-	}
-
 	return &Handler{
-		server:           NewServer(registry, mcpRegistry, userService, groupRepo, logger),
-		registry:         registry,
-		mcpRegistry:      mcpRegistry,
-		proxy:            proxy.NewProxy(logger),
-		sessionStore:     sessionStore,
-		userService:      userService,
-		groupRepo:        groupRepo,
-		oidcClient:       oidcClient,
-		langfuseTracer:   lfTracer,
-		cfg:              cfg,
-		oauth2Mgr:        oauth2Mgr,
-		mcpRepo:          mcpRepo,
-		moderator:        moderator,
-		moderatorLoadErr: moderatorLoadErr,
-		settings:         settingsService,
-		logger:           logger,
+		server:            NewServer(registry, mcpRegistry, userService, groupRepo, logger),
+		registry:          registry,
+		mcpRegistry:       mcpRegistry,
+		proxy:             proxy.NewProxy(logger),
+		sessionStore:      sessionStore,
+		userService:       userService,
+		groupRepo:         groupRepo,
+		oidcClient:        oidcClient,
+		langfuseTracer:    lfTracer,
+		cfg:               cfg,
+		oauth2Mgr:         oauth2Mgr,
+		mcpRepo:           mcpRepo,
+		moderatorResolver: orchestrator.NewModeratorResolver(llmRepo, lfTracer, logger),
+		settings:          settingsService,
+		logger:            logger,
 	}
 }
 

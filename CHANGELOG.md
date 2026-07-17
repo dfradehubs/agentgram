@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.1] - 2026-07-17
+
+### Added
+
+- Typing `@` in a group chat now opens an accessible, keyboard-navigable list of agents and inserts the selected agent's canonical ID.
+
+### Changed
+
+- Moderator configuration is resolved for each web and MCP group request, so creating, enabling, changing, or deleting the moderator model takes effect without restarting Agentgram.
+- Group moderation now treats replies that lack access, evidence, tooling, or certainty as unresolved and hands the request to another suitable agent when one remains.
+
+### Fixed
+
+- New LLM configurations default to enabled when the field is omitted, invalid roles are rejected, explicit default models are selected deterministically, and database iteration errors are no longer ignored.
+
 ## [0.7.0] - 2026-07-17
 
 ### Added

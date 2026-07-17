@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { extractMentions, resolveMentions } from "../mentions";
+import {
+  applyMention,
+  extractMentions,
+  filterMentionOptions,
+  findActiveMention,
+  resolveMentions,
+} from "../mentions";
 
 const roster = ["logs-agent", "metrics-agent", "logs", "logs.prod"];
 
@@ -59,5 +65,44 @@ describe("extractMentions", () => {
 
   it("distinguishes plain text from an unresolved mention", () => {
     expect(resolveMentions("check the cluster", roster)).toEqual({ agentIds: [] });
+  });
+});
+
+describe("mention autocomplete helpers", () => {
+  const options = [
+    { id: "logs-agent", label: "Log Explorer" },
+    { id: "metrics.prod", label: "Production Metrics" },
+  ];
+
+  it("finds a mention at the start or after whitespace", () => {
+    expect(findActiveMention("@log", 4)).toEqual({ start: 0, end: 4, query: "log" });
+    expect(findActiveMention("ask\n@metrics.pr now", 15)).toEqual({ start: 4, end: 15, query: "metrics.pr" });
+  });
+
+  it("does not treat an email or mid-word @ as a mention", () => {
+    expect(findActiveMention("me@logs", 7)).toBeNull();
+    expect(findActiveMention("mail me@example.com", 10)).toBeNull();
+  });
+
+  it("filters by id or display label case-insensitively", () => {
+    expect(filterMentionOptions(options, "PROD").map((option) => option.id)).toEqual(["metrics.prod"]);
+    expect(filterMentionOptions(options, "explorer").map((option) => option.id)).toEqual(["logs-agent"]);
+  });
+
+  it("replaces the complete active token and restores the caret", () => {
+    const active = findActiveMention("ask @met.prod please", 8);
+    expect(active).not.toBeNull();
+    expect(applyMention("ask @met.prod please", active!, "metrics.prod")).toEqual({
+      value: "ask @metrics.prod please",
+      caret: 17,
+    });
+  });
+
+  it("adds a trailing space at the end of the message", () => {
+    const active = findActiveMention("@logs-a", 7)!;
+    expect(applyMention("@logs-a", active, "logs-agent")).toEqual({
+      value: "@logs-agent ",
+      caret: 12,
+    });
   });
 });

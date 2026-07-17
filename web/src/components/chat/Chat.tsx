@@ -19,7 +19,7 @@ import { ChatInput } from "./ChatInput";
 import { MCPToolsPanel } from "../mcp/MCPToolsPanel";
 import { Button } from "@/components/ui/button";
 import type { Attachment } from "@/lib/types";
-import { resolveMentions } from "@/lib/mentions";
+import { resolveMentions, type MentionOption } from "@/lib/mentions";
 import { groupRequiresGitHubConnection } from "@/lib/groups";
 import { reconnectMCPServer, getSession as fetchSession, shareSession, getMCPOAuth2LoginURL, ApiError } from "@/lib/api";
 import { toast } from "sonner";
@@ -104,6 +104,22 @@ export function Chat() {
   const isGroup = !isMCP && !!effectiveGroupId;
   const isMultiAgent = isGroup || (!isMCP && isSlackSession);
   const isReadOnly = isSlackSession && !effectiveGroupId;
+  const mentionOptions = useMemo<MentionOption[]>(() => {
+    if (!isGroup) return [];
+    return multiAgentIds.flatMap((id) => {
+      const agent = agents.find((candidate) => candidate.id === id);
+      if (!agent) return [];
+      return [{
+        id,
+        label: agent.name || id,
+        description: agent.description,
+      }];
+    });
+  }, [agents, isGroup, multiAgentIds]);
+  const mentionableAgentIds = useMemo(
+    () => mentionOptions.map((option) => option.id),
+    [mentionOptions],
+  );
 
   // MCP model selection
   const defaultModel = config.available_models.find((m) => m.default) || config.available_models[0];
@@ -488,7 +504,7 @@ export function Chat() {
       // Moderated group debate. Any @<agent-id> mentions matching the roster
       // steer the moderator (roster override); otherwise it picks freely.
       // Tolerant match: case-insensitive, ignores trailing punctuation.
-      const mentionResolution = resolveMentions(input, multiAgentIds);
+      const mentionResolution = resolveMentions(input, mentionableAgentIds);
       if (mentionResolution.error) {
         toast.error(mentionResolution.error === "ambiguous"
           ? "That @mention matches more than one agent. Use a unique agent ID."
@@ -505,7 +521,7 @@ export function Chat() {
     if (inputRef.current) {
       inputRef.current.style.height = "auto";
     }
-  }, [pendingAttachments, isGroup, input, multiAgentIds, sendMessage, scrollToBottom]);
+  }, [pendingAttachments, isGroup, input, mentionableAgentIds, sendMessage, scrollToBottom]);
 
   const handleFileSelect = useCallback((files: FileList | null) => {
     if (!files) return;
@@ -838,6 +854,8 @@ export function Chat() {
         isLoading={isLoading}
         input={input}
         setInput={setInput}
+        mentionOptions={mentionOptions}
+        showMentionHint={isGroup}
         pendingAttachments={pendingAttachments}
         onRemoveAttachment={handleRemoveAttachment}
         onFileSelect={handleFileSelect}

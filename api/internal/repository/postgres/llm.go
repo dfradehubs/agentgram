@@ -113,13 +113,16 @@ func (r *LLMModelRepository) List(ctx context.Context) ([]*models.LLMModel, erro
 		}
 		result = append(result, &m)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate llm models: %w", err)
+	}
 	return result, nil
 }
 
 func (r *LLMModelRepository) ListByRole(ctx context.Context, role string) ([]*models.LLMModel, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT id, name, provider, model, api_key, endpoint, role, enabled, is_default, created_at, updated_at
-		 FROM llm_models WHERE role = $1 AND enabled = true ORDER BY name`, role,
+		 FROM llm_models WHERE role = $1 AND enabled = true ORDER BY is_default DESC, name, id`, role,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list llm models by role: %w", err)
@@ -137,6 +140,9 @@ func (r *LLMModelRepository) ListByRole(ctx context.Context, role string) ([]*mo
 			return nil, fmt.Errorf("decrypt api key for %s: %w", m.ID, err)
 		}
 		result = append(result, &m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate llm models by role: %w", err)
 	}
 	return result, nil
 }
