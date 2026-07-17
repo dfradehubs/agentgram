@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.0] - 2026-07-17
+
+### Added
+
+- **Moderated agent-group debates.** Groups now use a dedicated streaming endpoint where an LLM moderator selects speakers, agents share the evolving transcript, and multi-speaker runs can end with a concise synthesis. Optional `@mentions` constrain the roster without bypassing moderation.
+- **Agent groups as MCP tools.** Every accessible group is exposed as a `group__<groupId>` tool with personal session continuity and bounded debate execution.
+- **Runtime administration.** Administrators can configure debate timeouts, turn limits, and MCP execution limits from the new General Configuration panel. LLM models also support a custom OpenAI-compatible endpoint and the new `moderator` role.
+
+### Changed
+
+- Group creation and editing moved to the admin surface. Group sessions are personal, reconnectable, and consistently attributed by agent across text, tools, charts, and error events.
+- Context propagation, deadlines, persistence finalization, and public error handling are now shared and bounded consistently across web and MCP group surfaces.
+
+### Fixed
+
+- Prevented direct 1:1 endpoints and transport retries from bypassing or duplicating moderated group runs.
+- Fixed lost or misattributed chart-only responses, stale group selection, duplicated user prompts, expired MCP save contexts, and silent moderator/session-mapping persistence failures.
+- Invalid moderator output now ends as an explicit incomplete/error result instead of a false successful debate.
+
 ## [0.6.1] - 2026-06-12
 
 ### Fixed
