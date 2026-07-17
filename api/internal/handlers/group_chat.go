@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -321,7 +322,7 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 		h.logger.Warn("group debate ended early", zap.String("group_id", groupID), zap.Error(debateErr))
 		reason := "moderator_error"
 		note := "⚠️ The debate ended early (moderator error or timeout); the replies above may be incomplete."
-		if debateErr == context.DeadlineExceeded {
+		if errors.Is(debateErr, context.DeadlineExceeded) {
 			reason = "timeout"
 			note = "⚠️ The debate hit the time limit before finishing; the replies above may be incomplete."
 		}
@@ -343,7 +344,10 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 		h.persistModeratorMessage(session.SessionID, "moderator", noAgentMsg)
 	case speakers == 0:
 		// Agents were selected but every turn failed (each already emitted a
-		// scoped turn.error). Add a visible summary so the run isn't empty.
+		// scoped turn.error). Emit a programmatic signal (the moderator may have
+		// said FINISH, so debateErr can be nil) plus a visible summary so the run
+		// isn't empty.
+		_ = sse.SendCustomEvent("debate.incomplete", map[string]interface{}{"reason": "all_agents_failed"})
 		failMsg := "All selected agents failed to respond. Please try again."
 		if locale == "es" {
 			failMsg = "Todos los agentes seleccionados fallaron al responder. Inténtalo de nuevo."

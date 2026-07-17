@@ -430,6 +430,46 @@ func TestGroupChatFailedTurnContinues(t *testing.T) {
 	}
 }
 
+// Regression: every selected agent fails but the moderator still says FINISH
+// (so debateErr is nil). The run must not look like a clean success — a
+// programmatic debate.incomplete{reason:all_agents_failed} is emitted alongside
+// the human notice.
+func TestGroupChatAllAgentsFailed(t *testing.T) {
+	fx := newGroupChatFixture(t, http.StatusInternalServerError, http.StatusInternalServerError,
+		"agent-a", "agent-b", "FINISH")
+
+	rec := fx.post(t, "g1", `{"messages":[{"role":"user","content":"check the cluster"}]}`)
+	events := parseSSEEvents(t, rec.Body.String())
+
+	// No RUN_ERROR (partial content exists as scoped turn.errors), but the run
+	// carries a programmatic incomplete signal.
+	if got := countEvents(events, "RUN_ERROR"); got != 0 {
+		t.Errorf("RUN_ERROR leaked (count=%d)", got)
+	}
+	var reason string
+	for _, ev := range events {
+		if ev["type"] == "CUSTOM" && ev["subType"] == "debate.incomplete" {
+			if data, _ := ev["data"].(map[string]interface{}); data != nil {
+				reason, _ = data["reason"].(string)
+			}
+		}
+	}
+	if reason != "all_agents_failed" {
+		t.Errorf("debate.incomplete reason = %q, want all_agents_failed", reason)
+	}
+	// The user still sees a visible failure notice.
+	var allText string
+	for _, ev := range events {
+		if ev["type"] == "TEXT_MESSAGE_CONTENT" {
+			delta, _ := ev["delta"].(string)
+			allText += delta
+		}
+	}
+	if !strings.Contains(allText, "All selected agents failed") {
+		t.Errorf("missing all-failed notice, got: %q", allText)
+	}
+}
+
 // Use case: the moderator decides nobody applies — the user gets an explicit
 // notice instead of silence.
 func TestGroupChatNoAgentApplies(t *testing.T) {

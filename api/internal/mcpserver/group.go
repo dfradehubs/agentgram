@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -274,18 +275,14 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 		// and fail rather than leave an orphan or hand back an unusable id.
 		if err := h.sessionStore.SaveSession(callCtx, s); err != nil {
 			h.logger.Error("failed to save group session flags", zap.String("session_id", s.SessionID), zap.Error(err))
-			delCtx, delCancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer delCancel()
-			_ = h.sessionStore.DeleteSession(delCtx, s.SessionID, userEmail, roster[0].ID)
+			h.deleteOrphanSession(s.SessionID, userEmail, roster[0].ID)
 			return "", "", true, fmt.Errorf("failed to persist session: %w", err)
 		}
 		// Index the session for the sidebar. This is load-bearing for listing —
 		// if it fails, the session would vanish from the user's view — so fail.
 		if err := h.groupRepo.AddSession(callCtx, group.ID, s.SessionID); err != nil {
 			h.logger.Error("failed to index group session", zap.String("session_id", s.SessionID), zap.Error(err))
-			delCtx, delCancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer delCancel()
-			_ = h.sessionStore.DeleteSession(delCtx, s.SessionID, userEmail, roster[0].ID)
+			h.deleteOrphanSession(s.SessionID, userEmail, roster[0].ID)
 			return "", "", true, fmt.Errorf("failed to index session: %w", err)
 		}
 		session = s
@@ -367,23 +364,23 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 			return "", fmt.Errorf("%s", result.Error)
 		}
 
-		// Persist the reply and grow the in-memory session for the next turn
-		turnSaveCtx, turnSaveCancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer turnSaveCancel()
+		// Persist the reply and grow the in-memory session for the next turn.
+		// Bound by callCtx (the absolute call deadline), not a fresh timeout, so
+		// slow persistence can't push the whole tool call past its budget.
 		assistantMsg := models.ChatMessage{
 			Role:    "assistant",
 			Content: result.AssistantText,
 			AgentID: agentID,
 		}
-		if err := h.sessionStore.AddMessage(turnSaveCtx, session.SessionID, assistantMsg); err != nil {
+		if err := h.sessionStore.AddMessage(callCtx, session.SessionID, assistantMsg); err != nil {
 			h.logger.Error("failed to persist assistant message", zap.Error(err))
 		}
 		session.Messages = append(session.Messages, assistantMsg)
 
 		if result.AgentSessionID != "" && result.AgentSessionID != agentSessionID {
-			_ = h.sessionStore.SetAgentSessionID(turnSaveCtx, session.SessionID, agentID, result.AgentSessionID)
+			_ = h.sessionStore.SetAgentSessionID(callCtx, session.SessionID, agentID, result.AgentSessionID)
 		} else if !hasAgentSession {
-			_ = h.sessionStore.SetAgentSessionID(turnSaveCtx, session.SessionID, agentID, session.SessionID)
+			_ = h.sessionStore.SetAgentSessionID(callCtx, session.SessionID, agentID, session.SessionID)
 		}
 
 		return result.AssistantText, nil
@@ -423,7 +420,7 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 	// clean success. Tell the client rather than presenting a partial result.
 	if debateErr != nil {
 		note := "the debate ended early (moderator error or timeout)"
-		if debateErr == context.DeadlineExceeded {
+		if errors.Is(debateErr, context.DeadlineExceeded) {
 			note = "the debate hit the tool-call timeout before finishing"
 		}
 		parts = append(parts, fmt.Sprintf("_⚠️ Note: %s; the answer above may be incomplete._", note))
@@ -436,9 +433,8 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 			h.logger.Warn("group synthesis failed", zap.String("group_id", group.ID), zap.Error(err))
 		} else if synthesis != "" {
 			parts = append(parts, fmt.Sprintf("**[Moderator]**\n\n%s", synthesis))
-			modSaveCtx, modSaveCancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer modSaveCancel()
-			if err := h.sessionStore.AddMessage(modSaveCtx, session.SessionID, models.ChatMessage{
+			// Bound by callCtx (absolute deadline), see per-turn persistence above.
+			if err := h.sessionStore.AddMessage(callCtx, session.SessionID, models.ChatMessage{
 				Role:    "assistant",
 				Content: synthesis,
 				AgentID: "moderator",
@@ -453,6 +449,18 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 	// result as a complete success.
 	isError := distinctSpeakers(results) == 0 || debateErr != nil
 	return strings.Join(parts, "\n\n---\n\n"), session.SessionID, isError, nil
+}
+
+// deleteOrphanSession best-effort removes a session that failed to fully
+// initialize. A cleanup failure is logged (not silently dropped) so an orphan
+// left behind is at least visible for reconciliation.
+func (h *Handler) deleteOrphanSession(sessionID, userEmail, agentID string) {
+	delCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := h.sessionStore.DeleteSession(delCtx, sessionID, userEmail, agentID); err != nil {
+		h.logger.Warn("failed to clean up orphan group session; manual reconciliation may be needed",
+			zap.String("session_id", sessionID), zap.Error(err))
+	}
 }
 
 // distinctSpeakers counts how many different agents replied successfully.

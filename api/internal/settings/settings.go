@@ -75,6 +75,10 @@ type Repository interface {
 type Service struct {
 	repo   Repository
 	logger *zap.Logger
+	// loadMu serializes Reload end-to-end (DB read + apply) so a stale periodic
+	// snapshot can't overwrite a newer PUT-triggered reload. It's distinct from
+	// mu so the DB read doesn't block hot-path readers (Int/Duration).
+	loadMu sync.Mutex
 	mu     sync.RWMutex
 	values map[string]string // effective values (default merged with DB)
 }
@@ -125,6 +129,11 @@ func (s *Service) Reload(ctx context.Context) error {
 	if s.repo == nil {
 		return nil
 	}
+	// Hold loadMu across the DB read AND the apply: this serializes concurrent
+	// reloads so the DB snapshot a reload applies is always at least as fresh as
+	// any reload that already completed (a periodic tick can't clobber a PUT).
+	s.loadMu.Lock()
+	defer s.loadMu.Unlock()
 	stored, err := s.repo.GetAll(ctx)
 	if err != nil {
 		return err

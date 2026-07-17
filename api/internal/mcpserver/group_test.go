@@ -352,6 +352,30 @@ func TestCallGroupAllFailedIsError(t *testing.T) {
 	}
 }
 
+type staticSettingsRepo struct{ vals map[string]string }
+
+func (r staticSettingsRepo) GetAll(context.Context) (map[string]string, error) { return r.vals, nil }
+func (r staticSettingsRepo) SetMany(context.Context, map[string]string) error  { return nil }
+
+// Regression (deadline extremo): with a tiny tool-call timeout the whole call
+// must abort — no agent gets to reply — proving the absolute deadline bounds the
+// debate and per-turn work rather than being restarted per turn.
+func TestCallGroupDeadlineBoundsWholeCall(t *testing.T) {
+	h, group := newGroupTestHandler(t, http.StatusOK, "agent-a", "agent-b", "FINISH")
+	h.settings = appsettings.New(staticSettingsRepo{vals: map[string]string{
+		appsettings.KeyMCPToolCallTimeout: "1ns", // guaranteed exhausted before the first turn
+	}}, zap.NewNop())
+	roster, agentsByID := h.buildGroupRoster(context.Background(), group, "user@example.com", nil)
+
+	text, _, isError, _ := h.callGroup(context.Background(), group, roster, agentsByID, "hi", "", "user@example.com", nil, nil)
+	if !isError {
+		t.Errorf("expected isError=true under an exhausted deadline, got: %s", text)
+	}
+	if strings.Contains(text, "reply from agent-a") || strings.Contains(text, "reply from agent-b") {
+		t.Errorf("an agent replied despite the exhausted deadline: %s", text)
+	}
+}
+
 // Use case (IMPORTANT): if the group-session flags can't be persisted, callGroup
 // errors instead of handing back a session_id the client can't reopen.
 func TestCallGroupPersistFailure(t *testing.T) {

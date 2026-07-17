@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { extractMentions } from "../mentions";
 
-const roster = ["logs-agent", "metrics-agent", "logs", "logs.prod", "Logs"];
+const roster = ["logs-agent", "metrics-agent", "logs", "logs.prod"];
 
 describe("extractMentions", () => {
   it("matches a plain mention", () => {
@@ -30,9 +30,11 @@ describe("extractMentions", () => {
     expect(extractMentions("@logs.prod down", roster)).toEqual(["logs.prod"]);
   });
 
-  it("is case-sensitive (IDs may differ only by case)", () => {
-    expect(extractMentions("@Logs here", roster)).toEqual(["Logs"]);
-    expect(extractMentions("@logs here", roster)).toEqual(["logs"]);
+  it("is case-insensitive so a case typo still resolves (no silent widening)", () => {
+    // "@Logs-Agent" must resolve to "logs-agent", not match nothing and fall
+    // back to broadcasting to the whole group.
+    expect(extractMentions("@Logs-Agent here", roster)).toEqual(["logs-agent"]);
+    expect(extractMentions("@METRICS-AGENT here", roster)).toEqual(["metrics-agent"]);
   });
 
   it("does not match an ID that is a prefix of a longer word", () => {

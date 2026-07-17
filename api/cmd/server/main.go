@@ -221,8 +221,9 @@ func main() {
 	defer registry.StopAutoRefresh()
 
 	// Create DB-backed MCP registry and load. The upstream MCP tool-call timeout
-	// reuses the runtime setting (fixed at startup for the registry).
-	mcpRegistry := mcp.NewDBRegistry(mcpRepo, settingsService.Duration(settings.KeyMCPToolCallTimeout), logger)
+	// is read per call from the runtime setting, so admin changes apply without
+	// a restart (even to the registry's long-lived, cached clients).
+	mcpRegistry := mcp.NewDBRegistry(mcpRepo, func() time.Duration { return settingsService.Duration(settings.KeyMCPToolCallTimeout) }, logger)
 	if err := mcpRegistry.LoadFromDB(loadCtx); err != nil {
 		logger.Fatal("failed to load MCP servers from DB", zap.Error(err))
 	}

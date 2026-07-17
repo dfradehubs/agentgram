@@ -159,6 +159,23 @@ func (p *A2AProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *mod
 			if messageStarted {
 				sendToClient(func() error { return sse.SendTextMessageEnd() })
 			}
+			// A context error (deadline/cancel) means the stream was cut mid-flight:
+			// whatever we have is truncated, not a completed answer. Surface it as a
+			// partial/error result so the debate doesn't treat it as success. The
+			// detached ctx isn't cancelled by client disconnect, so this only fires
+			// on a real timeout/cancellation.
+			if ctxErr := a2aCtx.Err(); ctxErr != nil {
+				errMsg := fmt.Sprintf("agent timed out: %v", ctxErr)
+				sendToClient(func() error { sse.SendRunError(errMsg); return nil })
+				flushText()
+				return &ProxyResult{
+					AssistantText:  accumulated.String(),
+					AgentSessionID: agentContextID,
+					ToolCalls:      toolCalls,
+					ContentParts:   contentParts,
+					Error:          errMsg,
+				}, fmt.Errorf("%s", errMsg)
+			}
 			// If we accumulated text or tool calls, it was a successful run
 			if accumulated.Len() > 0 || len(toolCalls) > 0 {
 				sendToClient(func() error { return sse.SendRunFinished() })
@@ -310,17 +327,24 @@ func (p *A2AProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *mod
 				return nil, fmt.Errorf("%s", fullErr)
 
 			case "canceled":
+				// A canceled task is incomplete, not a successful answer — treat it
+				// like failed/rejected so partial content is flagged as an error.
 				if messageStarted {
 					sendToClient(func() error { return sse.SendTextMessageEnd() })
 				}
-				sendToClient(func() error { return sse.SendRunFinished() })
-				flushText()
-				return &ProxyResult{
-					AssistantText:  accumulated.String(),
-					AgentSessionID: agentContextID,
-					ToolCalls:      toolCalls,
-					ContentParts:   contentParts,
-				}, nil
+				const canceledErr = "task canceled by agent"
+				sendToClient(func() error { sse.SendRunError(canceledErr); return nil })
+				if accumulated.Len() > 0 || len(toolCalls) > 0 {
+					flushText()
+					return &ProxyResult{
+						AssistantText:  accumulated.String(),
+						AgentSessionID: agentContextID,
+						ToolCalls:      toolCalls,
+						ContentParts:   contentParts,
+						Error:          canceledErr,
+					}, fmt.Errorf("%s", canceledErr)
+				}
+				return nil, fmt.Errorf("%s", canceledErr)
 
 			case "working":
 				// Working status messages contain intermediate steps:
