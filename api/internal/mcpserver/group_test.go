@@ -70,6 +70,7 @@ type mcpFakeSessionStore struct {
 	mu            sync.Mutex
 	sessions      map[string]*models.Session
 	agentSessions map[string]string
+	failSave      bool // when true, SaveSession returns an error
 }
 
 func newMCPFakeSessionStore() *mcpFakeSessionStore {
@@ -99,6 +100,9 @@ func (f *mcpFakeSessionStore) GetSession(_ context.Context, sessionID string) (*
 func (f *mcpFakeSessionStore) SaveSession(_ context.Context, session *models.Session) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.failSave {
+		return fmt.Errorf("simulated store failure")
+	}
 	f.sessions[session.SessionID] = session
 	return nil
 }
@@ -336,5 +340,21 @@ func TestCallGroupAllFailedIsError(t *testing.T) {
 	}
 	if !strings.Contains(text, "_error:") {
 		t.Errorf("expected per-agent error in text, got: %s", text)
+	}
+}
+
+// Use case (IMPORTANT): if the group-session flags can't be persisted, callGroup
+// errors instead of handing back a session_id the client can't reopen.
+func TestCallGroupPersistFailure(t *testing.T) {
+	h, group := newGroupTestHandler(t, http.StatusOK, "agent-a", "FINISH")
+	h.sessionStore.(*mcpFakeSessionStore).failSave = true
+	roster, agentsByID := h.buildGroupRoster(context.Background(), group, "user@example.com", nil)
+
+	_, _, isError, err := h.callGroup(context.Background(), group, roster, agentsByID, "hi", "", "user@example.com", nil, nil)
+	if err == nil {
+		t.Fatal("expected an error when the session flags fail to persist")
+	}
+	if !isError {
+		t.Error("expected isError=true on persist failure")
 	}
 }

@@ -373,14 +373,11 @@ func (h *SessionsHandler) PatchCharts(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, "session not found", http.StatusNotFound)
 		return
 	}
+	// Sessions are personal — only the owner may modify them (group membership
+	// does NOT grant write access to another member's session). Slack threads
+	// keep their multi-user participant check.
 	if existing.UserID != claims.GetEmail() {
-		allowed := false
-		if existing.GroupID != "" {
-			allowed = CanParticipateInGroup(r.Context(), claims, existing.GroupID, h.groupRepo)
-		}
-		if !allowed && existing.Source == "slack" {
-			allowed = h.store.IsParticipant(r.Context(), sessionID, claims.GetEmail())
-		}
+		allowed := existing.Source == "slack" && h.store.IsParticipant(r.Context(), sessionID, claims.GetEmail())
 		if !allowed {
 			writeJSONError(w, "access denied", http.StatusForbidden)
 			return

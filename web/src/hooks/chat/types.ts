@@ -16,6 +16,7 @@ export interface UseChatOptions {
   chatEndpoint?: string; // Override default chat endpoint
   mcpConfig?: MCPConfig; // MCP mode: use MCP endpoint + include model_id/server_ids
   groupId?: string; // Group ID for collaborative sessions
+  groupAgentIds?: string[]; // Roster of the active group (for @mention parsing on retry)
   userName?: string; // Display name of current user (for multi-user group sessions)
 }
 

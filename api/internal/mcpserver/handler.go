@@ -853,6 +853,10 @@ func (h *Handler) callAgent(ctx context.Context, agent *models.Agent, question s
 	if tok := middleware.GetGitHubTokenFromContext(ctx); tok != "" {
 		callCtx = context.WithValue(callCtx, middleware.GitHubTokenContextKey, tok)
 	}
+	// Carry the caller's identity claims so the proxy emits X-User-* downstream.
+	if claims := middleware.GetUserFromContext(ctx); claims != nil {
+		callCtx = context.WithValue(callCtx, middleware.UserContextKey, claims)
+	}
 
 	proxyResult, err := h.proxy.Handle(callCtx, buf, agent, chatReq, authHeader, opts)
 	if err != nil {

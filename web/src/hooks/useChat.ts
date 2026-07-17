@@ -15,6 +15,7 @@ function isValidChartData(data: unknown): data is ChartData {
   );
 }
 import { getChatEndpoint, getGroupChatEndpoint, getMCPChatEndpoint, getMultiMCPChatEndpoint, getRunStreamUrl } from "@/lib/api";
+import { extractMentions } from "@/lib/mentions";
 import { useBackgroundStreamContext } from "@/contexts/BackgroundStreamContext";
 import { reportMetric } from "@/lib/telemetry";
 
@@ -81,6 +82,7 @@ export function useChat({
   chatEndpoint: chatEndpointOverride,
   mcpConfig,
   groupId,
+  groupAgentIds,
   userName,
 }: UseChatOptions): UseChatReturn {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
@@ -304,8 +306,10 @@ export function useChat({
             }
 
             case "TOOL_CALL_ARGS": {
+              // Scope to the emitting agent's tool group so two agents reusing a
+              // toolCallId (group debates) don't cross-contaminate.
               streamItems = streamItems.map((item) => {
-                if (item.type === "tool_group") {
+                if (item.type === "tool_group" && (!event.agentId || item.agentId === event.agentId)) {
                   return {
                     ...item,
                     toolCalls: item.toolCalls.map((tc) =>
@@ -321,7 +325,7 @@ export function useChat({
 
             case "TOOL_CALL_END": {
               streamItems = streamItems.map((item) => {
-                if (item.type === "tool_group") {
+                if (item.type === "tool_group" && (!event.agentId || item.agentId === event.agentId)) {
                   return {
                     ...item,
                     toolCalls: item.toolCalls.map((tc) =>
@@ -1110,8 +1114,9 @@ export function useChat({
     // original text so "@agent-a ..." stays targeted (the backend validates the
     // ids against the real group roster); no mentions = moderator decides.
     if (groupId) {
-      const mentions = (targetMsg.content.match(/(?:^|\s)@([\w.-]+)/g) || [])
-        .map((m) => m.trim().slice(1));
+      // Re-derive the @mention roster override with the same parser as a fresh
+      // send (case-insensitive, canonicalized against the group roster).
+      const mentions = extractMentions(targetMsg.content, groupAgentIds || []);
       sendMessage(undefined, undefined, targetMsg.attachments, targetMsg.content, messagesBeforeRetry, {
         agentIds: mentions.length > 0 ? mentions : undefined,
       });
@@ -1125,7 +1130,7 @@ export function useChat({
     }
 
     sendMessage(targetMsg.agent_id, undefined, targetMsg.attachments, targetMsg.content, messagesBeforeRetry);
-  }, [messages, isLoading, groupId, sendMessage, sendMultiple]);
+  }, [messages, isLoading, groupId, groupAgentIds, sendMessage, sendMultiple]);
 
   // Allow external code to replace messages (e.g. when reloading session from server)
   const replaceMessages = useCallback((newMessages: Message[]) => {

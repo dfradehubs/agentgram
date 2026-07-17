@@ -315,7 +315,16 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if debateErr != nil {
+		// Some agent replied but the debate ended abnormally (moderator error or
+		// deadline). Tell the user the answer may be incomplete instead of
+		// finishing silently.
 		h.logger.Warn("group debate ended early", zap.String("group_id", groupID), zap.Error(debateErr))
+		note := "⚠️ The debate ended early (moderator error or timeout); the replies above may be incomplete."
+		if debateErr == context.DeadlineExceeded {
+			note = "⚠️ The debate hit the time limit before finishing; the replies above may be incomplete."
+		}
+		h.streamModeratorMessage(sse, "moderator", note)
+		h.persistModeratorMessage(session.SessionID, "moderator", note)
 	}
 
 	if len(results) == 0 {

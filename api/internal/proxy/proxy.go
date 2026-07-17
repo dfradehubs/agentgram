@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/dfradehubs/agentgram-api/internal/agents"
+	"github.com/dfradehubs/agentgram-api/internal/middleware"
 	"github.com/dfradehubs/agentgram-api/internal/models"
 	"github.com/dfradehubs/agentgram-api/internal/tracing"
 	"go.opentelemetry.io/otel/attribute"
@@ -109,6 +110,24 @@ func resolveAgentTimeout(d time.Duration) time.Duration {
 		return d
 	}
 	return defaultAgentTimeout
+}
+
+// newDetachedAgentContext returns a context detached from the caller's
+// cancellation (so the agent stream survives a client disconnect) but carrying
+// the caller's trace span, GitHub token AND identity claims — the latter drive
+// the outbound X-User-Email / X-User-Groups headers (identity.SetHeaders), so
+// downstream agents receive the acting user's identity/tenant. Bounded by the
+// resolved agent timeout.
+func newDetachedAgentContext(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	c, cancel := context.WithTimeout(context.Background(), resolveAgentTimeout(timeout))
+	c = trace.ContextWithSpan(c, trace.SpanFromContext(ctx))
+	if tok := middleware.GetGitHubTokenFromContext(ctx); tok != "" {
+		c = context.WithValue(c, middleware.GitHubTokenContextKey, tok)
+	}
+	if claims := middleware.GetUserFromContext(ctx); claims != nil {
+		c = context.WithValue(c, middleware.UserContextKey, claims)
+	}
+	return c, cancel
 }
 
 // Handle handles a request and routes it to the corresponding protocol.

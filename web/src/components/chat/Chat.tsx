@@ -19,6 +19,7 @@ import { ChatInput } from "./ChatInput";
 import { MCPToolsPanel } from "../mcp/MCPToolsPanel";
 import { Button } from "@/components/ui/button";
 import type { Attachment } from "@/lib/types";
+import { extractMentions } from "@/lib/mentions";
 import { reconnectMCPServer, getSession as fetchSession, shareSession, getMCPOAuth2LoginURL, ApiError } from "@/lib/api";
 import { toast } from "sonner";
 import {
@@ -47,22 +48,6 @@ const LOAD_OLDER_THRESHOLD_PX = 100;
 // Recovery polling after a reload while a run may still be in flight server-side.
 const RUN_RECOVERY_POLL_MS = 1500;
 const RUN_RECOVERY_MAX_POLLS = 40; // ~60s before falling back to a re-send
-
-const MENTION_ESCAPE_RE = /[.*+?^${}()|[\]\\]/g;
-
-// extractMentions returns the roster agent IDs @mentioned in the text. Matches
-// each roster ID literally (so IDs containing "." like "logs.prod" work) as a
-// whole @token: preceded by start/whitespace and followed by a non-ID char or
-// end, so trailing punctuation ("@logs-agent.") still matches. Case-insensitive.
-function extractMentions(text: string, roster: string[]): string[] {
-  const found: string[] = [];
-  for (const id of roster) {
-    const esc = id.replace(MENTION_ESCAPE_RE, "\\$&");
-    const re = new RegExp(`(^|\\s)@${esc}(?![\\w.-])`, "i");
-    if (re.test(text)) found.push(id);
-  }
-  return found;
-}
 
 export function Chat() {
   const { agents, currentAgent } = useAgents();
@@ -196,6 +181,7 @@ export function Chat() {
       ? { serverIds: mcpServerIds, modelId: selectedModelId }
       : undefined,
     groupId: effectiveGroupId || undefined,
+    groupAgentIds: multiAgentIds,
     userName: displayName,
   });
 

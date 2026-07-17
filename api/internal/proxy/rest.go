@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/dfradehubs/agentgram-api/internal/agents"
-	"github.com/dfradehubs/agentgram-api/internal/middleware"
 	"github.com/dfradehubs/agentgram-api/internal/models"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -47,20 +46,11 @@ func (p *RESTProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *mo
 		return nil, err
 	}
 
-	// Use a separate context for the agent request so the stream continues
-	// even if the client disconnects. This lets us capture the full response
-	// for session persistence. Bounded by the (configurable) agent timeout.
-	agentCtx, agentCancel := context.WithTimeout(context.Background(), agentTimeout)
+	// Detached context: survives client disconnect (to capture the full
+	// response for persistence) while carrying trace span, GitHub token and
+	// identity claims, bounded by the configurable agent timeout.
+	agentCtx, agentCancel := newDetachedAgentContext(ctx, agentTimeout)
 	defer agentCancel()
-
-	// Propagate trace span into the detached context so child spans remain
-	// connected to the original trace.
-	agentCtx = trace.ContextWithSpan(agentCtx, trace.SpanFromContext(ctx))
-
-	// Propagate GitHub token from the original request context
-	if githubToken := middleware.GetGitHubTokenFromContext(ctx); githubToken != "" {
-		agentCtx = context.WithValue(agentCtx, middleware.GitHubTokenContextKey, githubToken)
-	}
 
 	// Record the outgoing request body as a span event
 	bodyBytes, _ := io.ReadAll(body)

@@ -656,6 +656,54 @@ paths:
       summary: Update an agent (admin)
       tags:
       - admin-agents
+  /api/admin/settings:
+    get:
+      description: Returns every known runtime setting with its definition and current
+        effective value.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List runtime settings
+      tags:
+      - admin
+    put:
+      consumes:
+      - application/json
+      description: Validates and atomically persists key→value overrides, then reloads
+        the cache.
+      parameters:
+      - description: Key/value overrides
+        in: body
+        name: request
+        required: true
+        schema:
+          additionalProperties:
+            type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_dfradehubs_agentgram-api_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update runtime settings
+      tags:
+      - admin
   /api/agents:
     get:
       description: Returns only the agents the authenticated user has access to. Admins

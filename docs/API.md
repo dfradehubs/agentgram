@@ -68,7 +68,7 @@ All error responses use the following JSON structure:
 
 ## AG-UI SSE Protocol
 
-All chat endpoints (`/api/agents/{id}/chat`, `/api/sessions/{id}/broadcast`, `/api/sessions/{id}/conversation`, `/api/mcp/servers/{id}/chat`, `/api/mcp/chat`) respond with `text/event-stream` using the AG-UI protocol.
+All chat endpoints (`/api/agents/{id}/chat`, `/api/groups/{id}/chat`, `/api/mcp/servers/{id}/chat`, `/api/mcp/chat`) respond with `text/event-stream` using the AG-UI protocol.
 
 ### Event Types
 
@@ -125,7 +125,7 @@ data: {"type":"RUN_FINISHED","threadId":"sess-123","runId":"run-456"}
 
 ### Multi-Agent Events
 
-In broadcast and conversation modes, events include an `agentId` field to identify which agent is responding. The `isThinking` field in `TEXT_MESSAGE_START` marks intermediate thinking steps.
+In group debates, events include an `agentId` field to identify which agent is responding. The `isThinking` field in `TEXT_MESSAGE_START` marks intermediate thinking steps.
 
 ### Custom Events
 
@@ -534,144 +534,42 @@ Deletes a session and all its messages.
 
 ---
 
-## Multi-Agent Session Endpoints
+## Agent Group Endpoints
 
-Authentication required. Owner-only access.
+Agent **groups** are created by administrators (see *Admin Group Endpoints*). A user chats with a group and an LLM **moderator** picks which member agents respond, in sequence, each seeing the previous replies. **Group sessions are personal** — each user only ever sees and resumes their own.
 
-### POST /api/sessions/multi
+### GET /api/groups
 
-Creates a new multi-agent session.
+Lists the groups the caller is allowed to use.
+
+### POST /api/groups/{groupId}/chat
+
+Sends a message to the group; the moderator decides who answers.
 
 **Request Body**:
 ```json
 {
-  "session_name": "Optional name",
-  "agent_ids": ["agent-1", "agent-2"],
-  "multi_agent_mode": "broadcast",
-  "sequence": ["agent-1", "user", "agent-2", "user"]
+  "messages": [{ "role": "user", "content": "Is checkout healthy?" }],
+  "session_id": "optional — resume one of YOUR group sessions",
+  "agent_ids": ["optional", "roster", "override"]
 }
 ```
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `session_name` | string | no | Session name (auto-generated from agent names if omitted) |
-| `agent_ids` | array | yes | At least 2 agent IDs |
-| `multi_agent_mode` | string | no | `"broadcast"` (default) or `"conversation"` |
-| `sequence` | array | conditional | Required for `conversation` mode. Ordered list of agent IDs and `"user"` markers. |
+| `messages` | array | yes | Conversation messages; the last one is the new user turn |
+| `session_id` | string | no | Resume an existing session **you own** in this group |
+| `agent_ids` | array | no | @mention roster override: only these members may answer (omit = moderator chooses) |
 
-**Response** `201`: Session object.
+**Response**: `text/event-stream` (AG-UI). Exactly one `RUN_STARTED` / `RUN_FINISHED` pair. `TEXT_MESSAGE_*` and `TOOL_CALL_*` events carry an `agentId`; a `CUSTOM` event with `subType: "moderator.select"` announces each turn, and `subType: "turn.error"` reports a failed agent turn without aborting the debate.
 
-**Errors**: `400` (invalid input, fewer than 2 agents, missing sequence for conversation), `403` (access denied to an agent), `404` (agent not found).
+**Errors**: `403` (no access to the group, or `session_id` not owned by the caller), `404` (unknown `session_id`), `500` (session store error), `503` (no moderator LLM configured).
 
-### GET /api/sessions/multi
+### GET /api/groups/{groupId}/sessions
 
-Lists all multi-agent sessions for the authenticated user.
+Lists the caller's own sessions in the group (personal — never other members').
 
-**Response** `200`:
-```json
-{
-  "sessions": [...]
-}
-```
-
-### GET /api/sessions/multi/{sessionId}
-
-Returns a multi-agent session with all messages.
-
-**Response** `200`: Session object with messages.
-
-**Errors**: `403` (not owner), `404` (not found).
-
-### PATCH /api/sessions/multi/{sessionId}
-
-Updates a multi-agent session (rename and/or update sequence).
-
-**Request Body**:
-```json
-{
-  "session_name": "New name",
-  "sequence": ["agent-1", "user", "agent-2", "user"]
-}
-```
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `session_name` | string | no | New session name |
-| `sequence` | array | no | New sequence (only for conversation mode sessions) |
-
-**Response** `200`: Updated session object.
-
-**Errors**: `400` (invalid sequence), `403` (not owner), `404` (not found).
-
-### DELETE /api/sessions/multi/{sessionId}
-
-Deletes a multi-agent session.
-
-**Response**: `204 No Content`
-
-**Errors**: `403` (not owner), `404` (not found).
-
----
-
-## Broadcast SSE Endpoint
-
-Authentication required. Owner-only access to the session. Permission check on all target agents.
-
-### POST /api/sessions/{sessionId}/broadcast
-
-Sends a message to multiple agents in parallel. Responses are streamed and interleaved as AG-UI events with `agentId` fields.
-
-**Request Body**:
-```json
-{
-  "message": "What do you think about this topic?",
-  "agent_ids": ["agent-1", "agent-2"],
-  "send_context": true,
-  "summarize_context": false
-}
-```
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `message` | string | yes | The message to broadcast |
-| `agent_ids` | array | yes | At least 2 agent IDs to broadcast to |
-| `send_context` | boolean | no | Send previous conversation context (default: true) |
-| `summarize_context` | boolean | no | Summarize context before sending (default: false) |
-
-**Response**: `text/event-stream` with AG-UI events. Each event includes an `agentId` field.
-
-**Errors**: `400` (missing message, fewer than 2 agents, session not multi-agent), `403` (access denied), `404` (session or agent not found).
-
----
-
-## Conversation SSE Endpoint
-
-Authentication required. Owner-only access. Session must be in `conversation` mode.
-
-### POST /api/sessions/{sessionId}/conversation
-
-Sends a message and executes the conversation sequence. Agents are called sequentially according to the session's `sequence` definition. Execution pauses when a `"user"` step is reached.
-
-**Request Body**:
-```json
-{
-  "message": "Start the process",
-  "send_context": true,
-  "summarize_context": false
-}
-```
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `message` | string | yes | The user's message |
-| `send_context` | boolean | no | Send previous conversation context (default: true) |
-| `summarize_context` | boolean | no | Summarize context before sending (default: false) |
-
-**Response**: `text/event-stream` with AG-UI events. Includes `CUSTOM` events with `subType: "CONVERSATION_STEP"` to indicate progress through the sequence.
-
-**Errors**: `400` (missing message, session not in conversation mode, no sequence defined), `403` (access denied), `404` (session or agent not found).
-
----
+> The same moderated debate is exposed over MCP as one `ask_group_<groupId>` tool per accessible group.
 
 ## MCP Server Endpoints
 

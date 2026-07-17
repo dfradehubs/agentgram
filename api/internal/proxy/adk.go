@@ -116,20 +116,12 @@ func (p *ADKProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *mod
 		userID = claims.Email
 	}
 
-	// Use a detached context for the ADK connection so that if the frontend
-	// disconnects mid-stream, the backend can still finish reading the agent
-	// response and persist it. The original ctx is only used to detect client
-	// disconnection for early SSE write abort.
-	adkCtx, adkCancel := context.WithTimeout(context.Background(), agentTimeout)
+	// Detached context: survives client disconnect (so the backend can finish
+	// reading + persisting the response) while carrying trace span, GitHub token
+	// and identity claims, bounded by the configurable timeout. The original ctx
+	// is only used to detect client disconnection for early SSE write abort.
+	adkCtx, adkCancel := newDetachedAgentContext(ctx, agentTimeout)
 	defer adkCancel()
-
-	// Propagate trace span into the detached context
-	adkCtx = trace.ContextWithSpan(adkCtx, trace.SpanFromContext(ctx))
-
-	// Preserve GitHub token for upstream forwarding logic.
-	if githubToken := middleware.GetGitHubTokenFromContext(ctx); githubToken != "" {
-		adkCtx = context.WithValue(adkCtx, middleware.GitHubTokenContextKey, githubToken)
-	}
 
 	// Connect to ADK agent with retry on connection errors (pre-content)
 	const maxAgentRetries = 3
@@ -144,7 +136,12 @@ func (p *ADKProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *mod
 				zap.String("agent_id", agent.ID),
 				zap.Int("attempt", attempt+1),
 				zap.Duration("delay", delay))
-			time.Sleep(delay)
+			// Cancelable backoff: don't sleep past the agent timeout / cancellation.
+			select {
+			case <-time.After(delay):
+			case <-adkCtx.Done():
+				return nil, adkCtx.Err()
+			}
 		}
 		resp, adkSessionID, lastErr = p.client.RunSSE(adkCtx, agent, userMessage, chatReq.SessionID, userID, auth, requestID, attachments)
 		if lastErr == nil {

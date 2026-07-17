@@ -35,6 +35,13 @@ type settingItem struct {
 
 // ListSettings handles GET /api/admin/settings — every known setting with its
 // definition (label, type, default, bounds) and current effective value.
+// @Summary List runtime settings
+// @Description Returns every known runtime setting with its definition and current effective value.
+// @Tags admin
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{}
+// @Router /api/admin/settings [get]
 func (h *AdminSettingsHandler) ListSettings(w http.ResponseWriter, r *http.Request) {
 	effective := h.service.Effective()
 	items := make([]settingItem, 0, len(settings.Defs))
@@ -47,6 +54,16 @@ func (h *AdminSettingsHandler) ListSettings(w http.ResponseWriter, r *http.Reque
 
 // UpdateSettings handles PUT /api/admin/settings — validates and persists a
 // map of key→value overrides, then reloads the in-memory cache.
+// @Summary Update runtime settings
+// @Description Validates and atomically persists key→value overrides, then reloads the cache.
+// @Tags admin
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body map[string]string true "Key/value overrides"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} models.ErrorResponse
+// @Router /api/admin/settings [put]
 func (h *AdminSettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	var req map[string]string
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -68,8 +85,13 @@ func (h *AdminSettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	// The write committed, but if the in-memory cache can't be refreshed this
+	// instance would keep serving stale values — report failure rather than a
+	// misleading success.
 	if err := h.service.Reload(r.Context()); err != nil {
-		h.logger.Error("failed to reload settings", zap.Error(err))
+		h.logger.Error("failed to reload settings after save", zap.Error(err))
+		http.Error(w, `{"error":"settings saved but reload failed; retry"}`, http.StatusInternalServerError)
+		return
 	}
 
 	if claims := middleware.GetUserFromContext(r.Context()); claims != nil && h.auditRepo != nil {

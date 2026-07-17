@@ -11,9 +11,7 @@ import (
 
 	"github.com/dfradehubs/agentgram-api/internal/a2a"
 	"github.com/dfradehubs/agentgram-api/internal/agents"
-	"github.com/dfradehubs/agentgram-api/internal/middleware"
 	"github.com/dfradehubs/agentgram-api/internal/models"
-	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
@@ -70,18 +68,10 @@ func (p *A2AProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *mod
 		return nil, err
 	}
 
-	// Use a detached context for upstream A2A streaming so frontend/client
-	// disconnects do not abort the agent stream mid-run.
-	a2aCtx, a2aCancel := context.WithTimeout(context.Background(), agentTimeout)
+	// Detached context: survives client disconnect while carrying trace span,
+	// GitHub token and identity claims, bounded by the configurable timeout.
+	a2aCtx, a2aCancel := newDetachedAgentContext(ctx, agentTimeout)
 	defer a2aCancel()
-
-	// Propagate current trace span into the detached context.
-	a2aCtx = trace.ContextWithSpan(a2aCtx, trace.SpanFromContext(ctx))
-
-	// Preserve GitHub token for upstream forwarding logic.
-	if githubToken := middleware.GetGitHubTokenFromContext(ctx); githubToken != "" {
-		a2aCtx = context.WithValue(a2aCtx, middleware.GitHubTokenContextKey, githubToken)
-	}
 
 	// Send message/stream to A2A agent with retry on connection errors (pre-content)
 	const maxAgentRetries = 3
@@ -95,7 +85,12 @@ func (p *A2AProxy) Handle(ctx context.Context, w http.ResponseWriter, agent *mod
 				zap.String("agent_id", agent.ID),
 				zap.Int("attempt", attempt+1),
 				zap.Duration("delay", delay))
-			time.Sleep(delay)
+			// Cancelable backoff: don't sleep past the agent timeout / cancellation.
+			select {
+			case <-time.After(delay):
+			case <-a2aCtx.Done():
+				return nil, a2aCtx.Err()
+			}
 		}
 		resp, lastErr = p.client.SendMessageStream(a2aCtx, agent, userMessage, chatReq.SessionID, auth, requestID, attachments)
 		if lastErr == nil {

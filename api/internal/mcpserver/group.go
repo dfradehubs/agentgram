@@ -248,9 +248,14 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 		for _, b := range roster {
 			s.AgentIDs = append(s.AgentIDs, b.ID)
 		}
+		// The group flags are load-bearing (they make this a resumable personal
+		// group session); if they don't persist, fail rather than hand back a
+		// session_id the client can't reopen.
 		if err := h.sessionStore.SaveSession(ctx, s); err != nil {
-			h.logger.Error("failed to save session flags", zap.Error(err))
+			h.logger.Error("failed to save group session flags", zap.String("session_id", s.SessionID), zap.Error(err))
+			return "", "", true, fmt.Errorf("failed to persist session: %w", err)
 		}
+		// Group↔session index is best-effort (drives the sidebar list, not access).
 		if err := h.groupRepo.AddSession(ctx, group.ID, s.SessionID); err != nil {
 			h.logger.Error("failed to add session to group", zap.Error(err))
 		}
@@ -286,6 +291,10 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 	defer cancel()
 	if tok := middleware.GetGitHubTokenFromContext(ctx); tok != "" {
 		callCtx = context.WithValue(callCtx, middleware.GitHubTokenContextKey, tok)
+	}
+	// Carry the caller's identity claims so the proxy emits X-User-* downstream.
+	if claims := middleware.GetUserFromContext(ctx); claims != nil {
+		callCtx = context.WithValue(callCtx, middleware.UserContextKey, claims)
 	}
 	if lfTrace != nil {
 		callCtx = lf.ContextWithTrace(callCtx, lfTrace)
@@ -403,6 +412,17 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 		parts = append(parts, fmt.Sprintf("**[%s]**\n\n%s", name, res.Text))
 	}
 
+	// A debate that started (some agent replied) but ended abnormally — the
+	// moderator failed or the deadline hit before FINISH — is incomplete, not a
+	// clean success. Tell the client rather than presenting a partial result.
+	if debateErr != nil {
+		note := "the debate ended early (moderator error or timeout)"
+		if debateErr == context.DeadlineExceeded {
+			note = "the debate hit the tool-call timeout before finishing"
+		}
+		parts = append(parts, fmt.Sprintf("_⚠️ Note: %s; the answer above may be incomplete._", note))
+	}
+
 	// Optional synthesis when several agents contributed
 	if distinctSpeakers(results) >= 2 {
 		synthesis, err := h.moderator.Synthesize(callCtx, orchestrator.RenderTranscript(session.Messages))
@@ -422,10 +442,10 @@ func (h *Handler) callGroup(ctx context.Context, group *models.AgentGroup, roste
 		}
 	}
 
-	// If no agent produced a successful reply, the whole debate failed — the
-	// text still carries the per-agent errors, but flag it so MCP clients and
-	// automations don't treat it as a success.
-	isError := distinctSpeakers(results) == 0
+	// isError when no agent replied successfully OR the debate ended abnormally
+	// (moderator error / deadline) — either way the client shouldn't treat the
+	// result as a complete success.
+	isError := distinctSpeakers(results) == 0 || debateErr != nil
 	return strings.Join(parts, "\n\n---\n\n"), session.SessionID, isError, nil
 }
 
