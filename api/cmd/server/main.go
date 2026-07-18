@@ -15,6 +15,7 @@ import (
 	"github.com/dfradehubs/agentgram-api/internal/crypto"
 	"github.com/dfradehubs/agentgram-api/internal/db"
 	lf "github.com/dfradehubs/agentgram-api/internal/langfuse"
+	"github.com/dfradehubs/agentgram-api/internal/llmresolver"
 	"github.com/dfradehubs/agentgram-api/internal/mcp"
 	"github.com/dfradehubs/agentgram-api/internal/metrics"
 	"github.com/dfradehubs/agentgram-api/internal/proxy"
@@ -173,6 +174,7 @@ func main() {
 	mcpRepo := postgres.NewMCPServerRepository(pool)
 	auditRepo := postgres.NewAuditRepository(pool)
 	llmRepo := postgres.NewLLMModelRepository(pool, dataCipher)
+	providerRepo := postgres.NewLLMProviderRepository(pool, dataCipher)
 	chatEventRepo := postgres.NewChatEventRepository(pool)
 	basicAuthRepo := postgres.NewBasicAuthRepository(pool)
 	groupRepo := postgres.NewGroupRepository(pool)
@@ -184,7 +186,15 @@ func main() {
 	slackRepo := postgres.NewSlackIntegrationRepository(pool, dataCipher)
 	slackLinkRepo := postgres.NewSlackUserLinkRepository(pool, dataCipher)
 
-	// Migrate plaintext API keys to encrypted form
+	// Migrate plaintext API keys to encrypted form. Providers are authoritative;
+	// legacy model columns remain synchronized for rollback compatibility.
+	providerMigrated, err := providerRepo.MigrateEncryptKeys(dbCtx)
+	if err != nil {
+		logger.Fatal("failed to encrypt existing LLM provider API keys", zap.Error(err))
+	}
+	if providerMigrated > 0 {
+		logger.Info("encrypted plaintext LLM provider API keys", zap.Int("count", providerMigrated))
+	}
 	migrated, err := llmRepo.MigrateEncryptKeys(dbCtx)
 	if err != nil {
 		logger.Fatal("failed to encrypt existing LLM API keys", zap.Error(err))
@@ -286,10 +296,14 @@ func main() {
 		keycloakProv := auth.NewKeycloakProvider(cfg.Auth.Keycloak.Issuer, time.Duration(cfg.Auth.Keycloak.JWKSCacheTTL)*time.Second)
 		oidcClientForSlack = auth.NewOIDCClient(cfg.Auth.Keycloak, keycloakProv)
 	}
-	// Create summarizer for Slack thread context
-	var slackSummarizer *summarizer.Summarizer
-	if summarizerModels, err := llmRepo.ListByRole(loadCtx, "summarizer"); err == nil && len(summarizerModels) > 0 {
-		slackSummarizer = summarizer.New(summarizerModels[0], logger)
+	// Resolve the Slack summarizer per operation so provider edits apply without restart.
+	slackLLMResolver := llmresolver.New(llmRepo, lfTracer, logger)
+	slackSummarizer := func(ctx context.Context) *summarizer.Summarizer {
+		_, provider, err := slackLLMResolver.ResolveRole(ctx, "summarizer", "slack-summarizer")
+		if err != nil {
+			return nil
+		}
+		return summarizer.NewWithProvider(provider, logger)
 	}
 
 	var githubClientForSlack *auth.GitHubOAuthClient
@@ -319,6 +333,7 @@ func main() {
 		UserRepo:        userRepo,
 		AuditRepo:       auditRepo,
 		LLMRepo:         llmRepo,
+		ProviderRepo:    providerRepo,
 		GroupRepo:       groupRepo,
 		SettingsRepo:    settingsRepo,
 		SettingsService: settingsService,

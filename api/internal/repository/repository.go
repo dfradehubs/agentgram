@@ -2,10 +2,13 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/dfradehubs/agentgram-api/internal/models"
 )
+
+var ErrProviderInUse = errors.New("llm provider is in use")
 
 // UserRepository manages user persistence
 type UserRepository interface {
@@ -55,6 +58,16 @@ type LLMModelRepository interface {
 	Update(ctx context.Context, model *models.LLMModel) error
 	Delete(ctx context.Context, id string) error
 	Count(ctx context.Context) (int, error)
+}
+
+// LLMProviderRepository manages shared LLM provider credentials.
+type LLMProviderRepository interface {
+	Create(ctx context.Context, provider *models.LLMProvider) error
+	Get(ctx context.Context, id string) (*models.LLMProvider, error)
+	List(ctx context.Context) ([]*models.LLMProvider, error)
+	Update(ctx context.Context, provider *models.LLMProvider) error
+	Delete(ctx context.Context, id string) error
+	MigrateEncryptKeys(ctx context.Context) (int, error)
 }
 
 // ChatEventRepository manages chat event analytics persistence.

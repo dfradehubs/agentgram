@@ -35,6 +35,7 @@ func NewGroupsHandler(groupRepo repository.GroupRepository, sessionStore store.S
 type UserGroupResponse struct {
 	ID            string   `json:"id"`
 	Name          string   `json:"name"`
+	Description   string   `json:"description"`
 	AgentIDs      []string `json:"agentIds"`
 	AllowedUsers  []string `json:"allowed_users,omitempty"`
 	AllowedGroups []string `json:"allowed_groups,omitempty"`
@@ -45,6 +46,7 @@ func groupToUserResponse(g *models.AgentGroup) UserGroupResponse {
 	return UserGroupResponse{
 		ID:            g.ID,
 		Name:          g.Name,
+		Description:   g.Description,
 		AgentIDs:      g.AgentIDs,
 		AllowedUsers:  g.AllowedUsers,
 		AllowedGroups: g.AllowedGroups,

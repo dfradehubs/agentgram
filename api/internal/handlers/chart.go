@@ -119,13 +119,13 @@ func (h *ChartHandler) resolveExtractor(r *http.Request) *chartextractor.Extract
 	}
 	model := llmModels[0]
 
-	// Wrap with TracedProvider for Langfuse generation tracking
-	if h.langfuseTracer != nil && h.langfuseTracer.Enabled() {
-		provider, provErr := llm.NewProvider(model)
-		if provErr == nil {
-			traced := lf.WrapProvider(provider, "chart-extractor", model.Model)
-			return chartextractor.NewWithProvider(traced, h.logger)
-		}
+	provider, err := llm.NewProvider(model)
+	if err != nil {
+		h.logger.Warn("failed to create chart extractor provider", zap.Error(err))
+		return nil
 	}
-	return chartextractor.New(model, h.logger)
+	if h.langfuseTracer != nil && h.langfuseTracer.Enabled() {
+		provider = lf.WrapProvider(provider, "chart-extractor", model.Model)
+	}
+	return chartextractor.NewWithProvider(provider, h.logger)
 }

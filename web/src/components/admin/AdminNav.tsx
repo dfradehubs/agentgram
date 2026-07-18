@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bot, Server, Users, UsersRound, ArrowLeft, Brain, BarChart3, Settings } from "lucide-react";
+import { Bot, Server, Users, UsersRound, ArrowLeft, Brain, BarChart3, Settings, KeyRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/admin/agents", label: "Agents", icon: Bot },
   { href: "/admin/groups", label: "Groups", icon: UsersRound },
   { href: "/admin/mcp", label: "MCP Servers", icon: Server },
+  { href: "/admin/providers", label: "Providers", icon: KeyRound },
   { href: "/admin/llm", label: "LLM Models", icon: Brain },
   { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/observability", label: "Observability", icon: BarChart3 },

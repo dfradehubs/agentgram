@@ -3,11 +3,10 @@ package llm
 import (
 	"context"
 	"fmt"
-	"net"
 	"net/http"
-	"time"
 
 	"github.com/dfradehubs/agentgram-api/internal/models"
+	"github.com/dfradehubs/agentgram-api/internal/security"
 )
 
 // Message represents a message in an LLM conversation.
@@ -60,8 +59,17 @@ func NewProvider(model *models.LLMModel) (Provider, error) {
 
 // NewProviderWithClient creates a Provider with a custom HTTP client. If client is nil, a default client is used.
 func NewProviderWithClient(model *models.LLMModel, client *http.Client) (Provider, error) {
-	if model == nil || model.APIKey == "" {
+	if model == nil {
 		return nil, fmt.Errorf("invalid LLM model configuration")
+	}
+	customEndpoint := model.Provider == "openai" && model.Endpoint != ""
+	if model.APIKey == "" && !customEndpoint {
+		return nil, fmt.Errorf("api key is required for provider %s", model.Provider)
+	}
+	if customEndpoint {
+		if err := security.ValidateEndpointURL(model.Endpoint); err != nil {
+			return nil, fmt.Errorf("unsafe custom LLM endpoint: %w", err)
+		}
 	}
 
 	if client == nil {
@@ -70,14 +78,9 @@ func NewProviderWithClient(model *models.LLMModel, client *http.Client) (Provide
 		// calls (large context, tool-use loops). Use transport-level
 		// timeouts for connection, TLS, and first-header instead.
 		client = &http.Client{
-			Transport: &http.Transport{
-				DialContext: (&net.Dialer{
-					Timeout:   30 * time.Second,
-					KeepAlive: 30 * time.Second,
-				}).DialContext,
-				TLSHandshakeTimeout:   10 * time.Second,
-				ResponseHeaderTimeout: 5 * time.Minute,
-				IdleConnTimeout:       90 * time.Second,
+			Transport: security.NewSafeTransport(),
+			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+				return http.ErrUseLastResponse
 			},
 		}
 	}

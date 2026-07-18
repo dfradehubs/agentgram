@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
 
 	"github.com/go-chi/chi/v5"
 
@@ -13,19 +12,6 @@ import (
 	"github.com/dfradehubs/agentgram-api/internal/repository"
 	"go.uber.org/zap"
 )
-
-// validateLLMEndpoint validates the optional custom endpoint of an LLM model.
-// Empty means "provider default". Returns an error message, or "" when valid.
-func validateLLMEndpoint(endpoint string) string {
-	if endpoint == "" {
-		return ""
-	}
-	u, err := url.Parse(endpoint)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return "endpoint must be a valid http(s) URL"
-	}
-	return ""
-}
 
 var validLLMRoles = map[string]struct{}{
 	"chat":            {},
@@ -68,15 +54,13 @@ func NewAdminLLMHandler(llmRepo repository.LLMModelRepository, auditRepo reposit
 
 // AdminLLMRequest is the request body for creating/updating LLM models
 type AdminLLMRequest struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Provider  string `json:"provider"`
-	Model     string `json:"model"`
-	APIKey    string `json:"api_key"`
-	Endpoint  string `json:"endpoint"`
-	Role      string `json:"role"`
-	Enabled   *bool  `json:"enabled"`
-	IsDefault bool   `json:"is_default"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	ProviderID string `json:"provider_id"`
+	Model      string `json:"model"`
+	Role       string `json:"role"`
+	Enabled    *bool  `json:"enabled"`
+	IsDefault  bool   `json:"is_default"`
 }
 
 // ListLLMModels handles GET /api/admin/llm
@@ -90,33 +74,25 @@ func (h *AdminLLMHandler) ListLLMModels(w http.ResponseWriter, r *http.Request) 
 
 	// Mask API keys in response
 	type safeModel struct {
-		ID        string `json:"id"`
-		Name      string `json:"name"`
-		Provider  string `json:"provider"`
-		Model     string `json:"model"`
-		APIKey    string `json:"api_key"`
-		Endpoint  string `json:"endpoint,omitempty"`
-		Role      string `json:"role"`
-		Enabled   bool   `json:"enabled"`
-		IsDefault bool   `json:"is_default"`
+		ID              string `json:"id"`
+		Name            string `json:"name"`
+		ProviderID      string `json:"provider_id"`
+		ProviderName    string `json:"provider_name"`
+		ProviderType    string `json:"provider_type"`
+		ProviderEnabled bool   `json:"provider_enabled"`
+		Model           string `json:"model"`
+		Role            string `json:"role"`
+		Enabled         bool   `json:"enabled"`
+		IsDefault       bool   `json:"is_default"`
 	}
 
 	safe := make([]safeModel, len(models))
 	for i, m := range models {
-		masked := "****"
-		if len(m.APIKey) > 8 {
-			masked = m.APIKey[:4] + "****" + m.APIKey[len(m.APIKey)-4:]
-		}
 		safe[i] = safeModel{
-			ID:        m.ID,
-			Name:      m.Name,
-			Provider:  m.Provider,
-			Model:     m.Model,
-			APIKey:    masked,
-			Endpoint:  m.Endpoint,
-			Role:      m.Role,
-			Enabled:   m.Enabled,
-			IsDefault: m.IsDefault,
+			ID: m.ID, Name: m.Name, ProviderID: m.ProviderID,
+			ProviderName: m.ProviderName, ProviderType: m.ProviderType,
+			ProviderEnabled: m.ProviderEnabled,
+			Model:           m.Model, Role: m.Role, Enabled: m.Enabled, IsDefault: m.IsDefault,
 		}
 	}
 
@@ -134,12 +110,8 @@ func (h *AdminLLMHandler) GetLLMModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Mask API key
-	if len(model.APIKey) > 8 {
-		model.APIKey = model.APIKey[:4] + "****" + model.APIKey[len(model.APIKey)-4:]
-	} else {
-		model.APIKey = "****"
-	}
+	model.APIKey = ""
+	model.Endpoint = ""
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(model)
@@ -153,8 +125,8 @@ func (h *AdminLLMHandler) CreateLLMModel(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if req.ID == "" || req.Name == "" || req.Provider == "" || req.Model == "" || req.APIKey == "" {
-		http.Error(w, `{"error":"id, name, provider, model, and api_key are required"}`, http.StatusBadRequest)
+	if req.ID == "" || req.Name == "" || req.ProviderID == "" || req.Model == "" {
+		http.Error(w, `{"error":"id, name, provider_id, and model are required"}`, http.StatusBadRequest)
 		return
 	}
 	if req.Role == "" {
@@ -164,21 +136,14 @@ func (h *AdminLLMHandler) CreateLLMModel(w http.ResponseWriter, r *http.Request)
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, errMsg), http.StatusBadRequest)
 		return
 	}
-	if errMsg := validateLLMEndpoint(req.Endpoint); errMsg != "" {
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, errMsg), http.StatusBadRequest)
-		return
-	}
-
 	model := &models.LLMModel{
-		ID:        req.ID,
-		Name:      req.Name,
-		Provider:  req.Provider,
-		Model:     req.Model,
-		APIKey:    req.APIKey,
-		Endpoint:  req.Endpoint,
-		Role:      req.Role,
-		Enabled:   boolValue(req.Enabled, true),
-		IsDefault: req.IsDefault,
+		ID:         req.ID,
+		Name:       req.Name,
+		ProviderID: req.ProviderID,
+		Model:      req.Model,
+		Role:       req.Role,
+		Enabled:    boolValue(req.Enabled, true),
+		IsDefault:  req.IsDefault,
 	}
 
 	if err := h.llmRepo.Create(r.Context(), model); err != nil {
@@ -194,9 +159,6 @@ func (h *AdminLLMHandler) CreateLLMModel(w http.ResponseWriter, r *http.Request)
 		ResourceType: "llm_model",
 		ResourceID:   req.ID,
 	})
-
-	// Mask API key in response
-	model.APIKey = "****"
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -219,11 +181,6 @@ func (h *AdminLLMHandler) UpdateLLMModel(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// If api_key contains a masked value, preserve the existing key.
-	if req.APIKey == "" || req.APIKey == "****" || (len(req.APIKey) > 8 && req.APIKey[4:8] == "****") {
-		req.APIKey = existing.APIKey
-	}
-
 	if req.Role == "" {
 		req.Role = "chat"
 	}
@@ -231,21 +188,19 @@ func (h *AdminLLMHandler) UpdateLLMModel(w http.ResponseWriter, r *http.Request)
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, errMsg), http.StatusBadRequest)
 		return
 	}
-	if errMsg := validateLLMEndpoint(req.Endpoint); errMsg != "" {
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, errMsg), http.StatusBadRequest)
+	if req.Name == "" || req.ProviderID == "" || req.Model == "" {
+		http.Error(w, `{"error":"name, provider_id, and model are required"}`, http.StatusBadRequest)
 		return
 	}
 
 	model := &models.LLMModel{
-		ID:        id,
-		Name:      req.Name,
-		Provider:  req.Provider,
-		Model:     req.Model,
-		APIKey:    req.APIKey,
-		Endpoint:  req.Endpoint,
-		Role:      req.Role,
-		Enabled:   boolValue(req.Enabled, existing.Enabled),
-		IsDefault: req.IsDefault,
+		ID:         id,
+		Name:       req.Name,
+		ProviderID: req.ProviderID,
+		Model:      req.Model,
+		Role:       req.Role,
+		Enabled:    boolValue(req.Enabled, existing.Enabled),
+		IsDefault:  req.IsDefault,
 	}
 
 	if err := h.llmRepo.Update(r.Context(), model); err != nil {
@@ -261,9 +216,6 @@ func (h *AdminLLMHandler) UpdateLLMModel(w http.ResponseWriter, r *http.Request)
 		ResourceType: "llm_model",
 		ResourceID:   id,
 	})
-
-	// Mask API key in response
-	model.APIKey = "****"
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(model)

@@ -224,7 +224,7 @@ func newGroupTestHandler(t *testing.T, agentAStatus int, moderatorSays ...string
 		t.Fatalf("LoadAgents: %v", err)
 	}
 
-	group := &models.AgentGroup{ID: "g1", Name: "Test Group", AgentIDs: []string{"agent-a", "agent-b"}, CreatedBy: "user@example.com"}
+	group := &models.AgentGroup{ID: "g1", Name: "Test Group", Description: "Investigates production incidents", AgentIDs: []string{"agent-a", "agent-b"}, CreatedBy: "user@example.com"}
 	groupRepo := &mcpFakeGroupRepo{groups: map[string]*models.AgentGroup{"g1": group}}
 	userService := service.NewUserService(&mcpFakeUserRepo{}, nil, nil)
 
@@ -314,6 +314,9 @@ func TestToolsListIncludesGroups(t *testing.T) {
 	}
 	if !strings.Contains(body, "Test Group") || !strings.Contains(body, "Agent A, Agent B") {
 		t.Errorf("group tool description missing name/members:\n%s", body)
+	}
+	if !strings.Contains(body, "Investigates production incidents") {
+		t.Errorf("group tool description missing configured purpose:\n%s", body)
 	}
 }
 

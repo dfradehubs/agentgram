@@ -539,8 +539,8 @@ Deletes a session and all its messages.
 Administrator authentication is required for every endpoint in this section.
 
 - `GET /api/admin/groups` lists all configured groups; `GET /api/admin/groups/{id}` returns one.
-- `POST /api/admin/groups` creates a group. The JSON body requires `id`, `name`, and at least two `agent_ids`; optional fields are `allowed_users`, `allowed_groups`, and `max_turns` (`0` uses the runtime default, maximum `50`).
-- `PUT /api/admin/groups/{id}` updates `name`, `agent_ids`, and `max_turns`, preserving the invariant that every group has at least two agents.
+- `POST /api/admin/groups` creates a group. The JSON body requires `id`, `name`, and at least two `agent_ids`; optional fields are `description` (maximum 2,000 characters), `allowed_users`, `allowed_groups`, and `max_turns` (`0` uses the runtime default, maximum `50`). The description is published as the purpose of the group's MCP tool.
+- `PUT /api/admin/groups/{id}` updates `name`, `description`, `agent_ids`, and `max_turns`, preserving the invariant that every group has at least two agents. Omitting `description` preserves its current value.
 - `PUT /api/admin/groups/{id}/permissions` replaces `allowed_users` and `allowed_groups`.
 - `DELETE /api/admin/groups/{id}` deletes the group.
 
@@ -1032,9 +1032,34 @@ Updates permission lists for an MCP server.
 
 Authentication required. Admin role required.
 
+### LLM Providers
+
+Providers hold reusable credentials shared by one or more models. The CRUD endpoints are:
+
+- `GET /api/admin/llm-providers`
+- `GET /api/admin/llm-providers/{id}`
+- `POST /api/admin/llm-providers`
+- `PUT /api/admin/llm-providers/{id}`
+- `DELETE /api/admin/llm-providers/{id}`
+
+```json
+{
+  "id": "openai-production",
+  "name": "OpenAI Production",
+  "provider_type": "openai",
+  "api_key": "sk-...",
+  "endpoint": "",
+  "enabled": true
+}
+```
+
+`provider_type` is `anthropic`, `google`, `openai`, or `custom`. Native providers require an API key and do not accept an endpoint. Custom providers require an OpenAI-compatible HTTP(S) endpoint and may omit the API key. Keys are encrypted at rest and masked in responses. Deleting a provider referenced by a model returns `409 Conflict`.
+
+The schema migration keeps the legacy model credential columns synchronized for rollback. A rollback disables models whose Provider was disabled. Keyless Custom Endpoints require this release or newer because v0.7.1 required a non-empty key for every LLM connection.
+
 ### GET /api/admin/llm
 
-Lists all LLM models. API keys are masked in the response (first 4 + `****` + last 4 characters).
+Lists all LLM models and their selected provider. Credentials are not returned by model endpoints.
 
 **Response** `200`:
 ```json
@@ -1043,9 +1068,10 @@ Lists all LLM models. API keys are masked in the response (first 4 + `****` + la
     {
       "id": "gpt-4o",
       "name": "GPT-4o",
-      "provider": "openai",
+      "provider_id": "openai-production",
+      "provider_name": "OpenAI Production",
+      "provider_type": "openai",
       "model": "gpt-4o",
-      "api_key": "sk-p****abcd",
       "role": "chat",
       "enabled": true,
       "is_default": true
@@ -1056,7 +1082,7 @@ Lists all LLM models. API keys are masked in the response (first 4 + `****` + la
 
 ### GET /api/admin/llm/{id}
 
-Returns a single LLM model (API key masked).
+Returns a single LLM model with provider metadata and no credentials.
 
 **Response** `200`: LLM model object.
 
@@ -1071,9 +1097,8 @@ Creates a new LLM model.
 {
   "id": "gpt-4o",
   "name": "GPT-4o",
-  "provider": "openai",
+  "provider_id": "openai-production",
   "model": "gpt-4o",
-  "api_key": "sk-...",
   "role": "chat",
   "enabled": true,
   "is_default": true
@@ -1084,25 +1109,23 @@ Creates a new LLM model.
 |-------|------|----------|-------------|
 | `id` | string | yes | Unique model identifier |
 | `name` | string | yes | Display name |
-| `provider` | string | yes | LLM provider (e.g., `"openai"`, `"anthropic"`) |
+| `provider_id` | string | yes | Shared provider configuration |
 | `model` | string | yes | Provider model name |
-| `api_key` | string | yes | API key for the provider |
-| `role` | string | no | Model role: `"chat"` (default), `"summarizer"`, `"file_processor"`, `"session_namer"`, or `"moderator"` |
-| `endpoint` | string | no | Optional HTTP(S) endpoint override for OpenAI-compatible providers |
+| `role` | string | no | Model role: `"chat"` (default), `"summarizer"`, `"file_processor"`, `"chart_extractor"`, `"session_namer"`, or `"moderator"` (group moderator) |
 | `enabled` | boolean | no | Whether the model is active |
 | `is_default` | boolean | no | Whether this is the default model for its role |
 
-**Response** `201`: LLM model object (API key masked).
+**Response** `201`: LLM model object.
 
 **Errors**: `400` (missing required fields).
 
 ### PUT /api/admin/llm/{id}
 
-Updates an existing LLM model. If `api_key` is omitted or contains a masked value, the existing key is preserved.
+Updates an existing LLM model or reassigns it to another provider.
 
 **Request Body**: Same as POST (except `id` is taken from the URL path).
 
-**Response** `200`: Updated LLM model object (API key masked).
+**Response** `200`: Updated LLM model object.
 
 **Errors**: `400` (invalid body), `404` (not found), `500` (update failed).
 

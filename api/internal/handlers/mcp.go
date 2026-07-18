@@ -14,7 +14,7 @@ import (
 	"github.com/dfradehubs/agentgram-api/internal/audit"
 	"github.com/dfradehubs/agentgram-api/internal/identity"
 	lf "github.com/dfradehubs/agentgram-api/internal/langfuse"
-	"github.com/dfradehubs/agentgram-api/internal/llm"
+	"github.com/dfradehubs/agentgram-api/internal/llmresolver"
 	"github.com/dfradehubs/agentgram-api/internal/mcp"
 	"github.com/dfradehubs/agentgram-api/internal/metrics"
 	"github.com/dfradehubs/agentgram-api/internal/middleware"
@@ -31,6 +31,7 @@ type MCPHandler struct {
 	orchestrator   *mcp.ChatOrchestrator
 	store          store.SessionStore
 	sessionNamer   *sessionnamer.Namer
+	llmResolver    *llmresolver.Resolver
 	audit          *audit.Logger
 	langfuseTracer *lf.Tracer
 	chatEventRepo  repository.ChatEventRepository
@@ -42,26 +43,11 @@ type MCPHandler struct {
 // NewMCPHandler creates a new MCP handler. maxRoundsFn resolves the max
 // LLM ↔ tool rounds per request (a runtime setting).
 func NewMCPHandler(llmRepo repository.LLMModelRepository, registry *mcp.Registry, sessionStore store.SessionStore, maxRoundsFn func() int, auditLogger *audit.Logger, logger *zap.Logger, lfTracer *lf.Tracer, oauth2Mgr *mcp.OAuth2Manager, mcpRepo repository.MCPServerRepository, chatEventRepo ...repository.ChatEventRepository) *MCPHandler {
-	var namer *sessionnamer.Namer
-	ctx := context.Background()
-	if namerModels, err := llmRepo.ListByRole(ctx, "session_namer"); err == nil && len(namerModels) > 0 {
-		model := namerModels[0]
-		provider, provErr := llm.NewProvider(model)
-		if provErr == nil && lfTracer != nil && lfTracer.Enabled() {
-			provider = lf.WrapProvider(provider, "session-namer", model.Model)
-		}
-		if provErr == nil {
-			namer = sessionnamer.NewWithProvider(provider, logger)
-		} else {
-			namer = sessionnamer.New(model, logger)
-		}
-	}
-
 	h := &MCPHandler{
 		registry:       registry,
 		orchestrator:   mcp.NewChatOrchestrator(llmRepo, maxRoundsFn, logger),
 		store:          sessionStore,
-		sessionNamer:   namer,
+		llmResolver:    llmresolver.New(llmRepo, lfTracer, logger),
 		audit:          auditLogger,
 		langfuseTracer: lfTracer,
 		oauth2Mgr:      oauth2Mgr,
@@ -72,6 +58,17 @@ func NewMCPHandler(llmRepo repository.LLMModelRepository, registry *mcp.Registry
 		h.chatEventRepo = chatEventRepo[0]
 	}
 	return h
+}
+
+func (h *MCPHandler) currentSessionNamer(ctx context.Context) *sessionnamer.Namer {
+	if h.llmResolver == nil {
+		return h.sessionNamer
+	}
+	_, provider, err := h.llmResolver.ResolveRole(ctx, "session_namer", "session-namer")
+	if err != nil {
+		return nil
+	}
+	return sessionnamer.NewWithProvider(provider, h.logger)
 }
 
 // MCPServerResponse is the public representation of an MCP server
@@ -484,7 +481,8 @@ func (h *MCPHandler) Chat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Async: generate a short LLM-based session name for new sessions
-	if isNewSession && h.sessionNamer != nil && runResult != nil && runResult.AssistantText != "" {
+	sessionNamer := h.currentSessionNamer(ctx)
+	if isNewSession && sessionNamer != nil && runResult != nil && runResult.AssistantText != "" {
 		userContent := ""
 		for _, m := range req.Messages {
 			if m.Role == "user" && m.Content != "" {
@@ -495,7 +493,7 @@ func (h *MCPHandler) Chat(w http.ResponseWriter, r *http.Request) {
 			namerCtx := lf.ContextWithTrace(context.Background(), lfTrace)
 			namerCtx, cancel := context.WithTimeout(namerCtx, 10*time.Second)
 			defer cancel()
-			name, err := h.sessionNamer.GenerateName(namerCtx, userContent, runResult.AssistantText)
+			name, err := sessionNamer.GenerateName(namerCtx, userContent, runResult.AssistantText)
 			if err != nil {
 				h.logger.Warn("session namer failed", zap.String("session_id", sessionID), zap.Error(err))
 				return
@@ -700,7 +698,8 @@ func (h *MCPHandler) ChatMulti(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Async: generate a short LLM-based session name for new sessions
-	if isNewMultiSession && h.sessionNamer != nil && runResult != nil && runResult.AssistantText != "" {
+	sessionNamer := h.currentSessionNamer(ctx)
+	if isNewMultiSession && sessionNamer != nil && runResult != nil && runResult.AssistantText != "" {
 		userContent := ""
 		for _, m := range req.Messages {
 			if m.Role == "user" && m.Content != "" {
@@ -711,7 +710,7 @@ func (h *MCPHandler) ChatMulti(w http.ResponseWriter, r *http.Request) {
 			namerCtx := lf.ContextWithTrace(context.Background(), lfTrace)
 			namerCtx, cancel := context.WithTimeout(namerCtx, 10*time.Second)
 			defer cancel()
-			name, err := h.sessionNamer.GenerateName(namerCtx, userContent, runResult.AssistantText)
+			name, err := sessionNamer.GenerateName(namerCtx, userContent, runResult.AssistantText)
 			if err != nil {
 				h.logger.Warn("session namer failed", zap.String("session_id", sessionID), zap.Error(err))
 				return

@@ -57,15 +57,21 @@ func (r *LLMModelRepository) Create(ctx context.Context, model *models.LLMModel)
 		}
 	}
 
-	encKey, err := r.encryptKey(model.APIKey)
-	if err != nil {
-		return fmt.Errorf("encrypt api key: %w", err)
+	var providerType, encKey, endpoint string
+	if err := tx.QueryRow(ctx,
+		`SELECT provider_type, api_key, endpoint FROM llm_providers WHERE id=$1`, model.ProviderID,
+	).Scan(&providerType, &encKey, &endpoint); err != nil {
+		return fmt.Errorf("load llm provider: %w", err)
+	}
+	legacyType := providerType
+	if legacyType == "custom" {
+		legacyType = "openai"
 	}
 
 	if _, err := tx.Exec(ctx,
-		`INSERT INTO llm_models (id, name, provider, model, api_key, endpoint, role, enabled, is_default)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-		model.ID, model.Name, model.Provider, model.Model, encKey, model.Endpoint, model.Role, model.Enabled, model.IsDefault,
+		`INSERT INTO llm_models (id, name, provider_id, provider, model, api_key, endpoint, role, enabled, is_default)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+		model.ID, model.Name, model.ProviderID, legacyType, model.Model, encKey, endpoint, model.Role, model.Enabled, model.IsDefault,
 	); err != nil {
 		return fmt.Errorf("insert llm model: %w", err)
 	}
@@ -75,10 +81,13 @@ func (r *LLMModelRepository) Create(ctx context.Context, model *models.LLMModel)
 
 func (r *LLMModelRepository) Get(ctx context.Context, id string) (*models.LLMModel, error) {
 	var m models.LLMModel
-	err := r.pool.QueryRow(ctx,
-		`SELECT id, name, provider, model, api_key, endpoint, role, enabled, is_default, created_at, updated_at
-		 FROM llm_models WHERE id = $1`, id,
-	).Scan(&m.ID, &m.Name, &m.Provider, &m.Model, &m.APIKey, &m.Endpoint, &m.Role, &m.Enabled, &m.IsDefault, &m.CreatedAt, &m.UpdatedAt)
+	err := r.pool.QueryRow(ctx, `
+		SELECT m.id, m.name, m.provider_id, p.name, p.provider_type, p.enabled,
+			CASE WHEN p.provider_type='custom' THEN 'openai' ELSE p.provider_type END,
+			m.model, p.api_key, p.endpoint, m.role, m.enabled, m.is_default, m.created_at, m.updated_at
+		FROM llm_models m JOIN llm_providers p ON p.id=m.provider_id WHERE m.id=$1`, id,
+	).Scan(&m.ID, &m.Name, &m.ProviderID, &m.ProviderName, &m.ProviderType, &m.ProviderEnabled, &m.Provider,
+		&m.Model, &m.APIKey, &m.Endpoint, &m.Role, &m.Enabled, &m.IsDefault, &m.CreatedAt, &m.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("get llm model: %w", err)
 	}
@@ -92,10 +101,11 @@ func (r *LLMModelRepository) Get(ctx context.Context, id string) (*models.LLMMod
 }
 
 func (r *LLMModelRepository) List(ctx context.Context) ([]*models.LLMModel, error) {
-	rows, err := r.pool.Query(ctx,
-		`SELECT id, name, provider, model, api_key, endpoint, role, enabled, is_default, created_at, updated_at
-		 FROM llm_models ORDER BY name`,
-	)
+	rows, err := r.pool.Query(ctx, `
+		SELECT m.id, m.name, m.provider_id, p.name, p.provider_type, p.enabled,
+			CASE WHEN p.provider_type='custom' THEN 'openai' ELSE p.provider_type END,
+			m.model, p.api_key, p.endpoint, m.role, m.enabled, m.is_default, m.created_at, m.updated_at
+		FROM llm_models m JOIN llm_providers p ON p.id=m.provider_id ORDER BY m.name, m.id`)
 	if err != nil {
 		return nil, fmt.Errorf("list llm models: %w", err)
 	}
@@ -104,7 +114,8 @@ func (r *LLMModelRepository) List(ctx context.Context) ([]*models.LLMModel, erro
 	var result []*models.LLMModel
 	for rows.Next() {
 		var m models.LLMModel
-		if err := rows.Scan(&m.ID, &m.Name, &m.Provider, &m.Model, &m.APIKey, &m.Endpoint, &m.Role, &m.Enabled, &m.IsDefault, &m.CreatedAt, &m.UpdatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.Name, &m.ProviderID, &m.ProviderName, &m.ProviderType, &m.ProviderEnabled, &m.Provider,
+			&m.Model, &m.APIKey, &m.Endpoint, &m.Role, &m.Enabled, &m.IsDefault, &m.CreatedAt, &m.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan llm model: %w", err)
 		}
 		m.APIKey, err = r.decryptKey(m.APIKey)
@@ -120,10 +131,13 @@ func (r *LLMModelRepository) List(ctx context.Context) ([]*models.LLMModel, erro
 }
 
 func (r *LLMModelRepository) ListByRole(ctx context.Context, role string) ([]*models.LLMModel, error) {
-	rows, err := r.pool.Query(ctx,
-		`SELECT id, name, provider, model, api_key, endpoint, role, enabled, is_default, created_at, updated_at
-		 FROM llm_models WHERE role = $1 AND enabled = true ORDER BY is_default DESC, name, id`, role,
-	)
+	rows, err := r.pool.Query(ctx, `
+		SELECT m.id, m.name, m.provider_id, p.name, p.provider_type, p.enabled,
+			CASE WHEN p.provider_type='custom' THEN 'openai' ELSE p.provider_type END,
+			m.model, p.api_key, p.endpoint, m.role, m.enabled, m.is_default, m.created_at, m.updated_at
+		FROM llm_models m JOIN llm_providers p ON p.id=m.provider_id
+		WHERE m.role=$1 AND m.enabled=true AND p.enabled=true
+		ORDER BY m.is_default DESC, m.name, m.id`, role)
 	if err != nil {
 		return nil, fmt.Errorf("list llm models by role: %w", err)
 	}
@@ -132,7 +146,8 @@ func (r *LLMModelRepository) ListByRole(ctx context.Context, role string) ([]*mo
 	var result []*models.LLMModel
 	for rows.Next() {
 		var m models.LLMModel
-		if err := rows.Scan(&m.ID, &m.Name, &m.Provider, &m.Model, &m.APIKey, &m.Endpoint, &m.Role, &m.Enabled, &m.IsDefault, &m.CreatedAt, &m.UpdatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.Name, &m.ProviderID, &m.ProviderName, &m.ProviderType, &m.ProviderEnabled, &m.Provider,
+			&m.Model, &m.APIKey, &m.Endpoint, &m.Role, &m.Enabled, &m.IsDefault, &m.CreatedAt, &m.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan llm model: %w", err)
 		}
 		m.APIKey, err = r.decryptKey(m.APIKey)
@@ -163,15 +178,21 @@ func (r *LLMModelRepository) Update(ctx context.Context, model *models.LLMModel)
 		}
 	}
 
-	encKey, err := r.encryptKey(model.APIKey)
-	if err != nil {
-		return fmt.Errorf("encrypt api key: %w", err)
+	var providerType, encKey, endpoint string
+	if err := tx.QueryRow(ctx,
+		`SELECT provider_type, api_key, endpoint FROM llm_providers WHERE id=$1`, model.ProviderID,
+	).Scan(&providerType, &encKey, &endpoint); err != nil {
+		return fmt.Errorf("load llm provider: %w", err)
+	}
+	legacyType := providerType
+	if legacyType == "custom" {
+		legacyType = "openai"
 	}
 
 	tag, err := tx.Exec(ctx,
-		`UPDATE llm_models SET name=$2, provider=$3, model=$4, api_key=$5, endpoint=$6, role=$7, enabled=$8, is_default=$9, updated_at=NOW()
+		`UPDATE llm_models SET name=$2, provider_id=$3, provider=$4, model=$5, api_key=$6, endpoint=$7, role=$8, enabled=$9, is_default=$10, updated_at=NOW()
 		 WHERE id=$1`,
-		model.ID, model.Name, model.Provider, model.Model, encKey, model.Endpoint, model.Role, model.Enabled, model.IsDefault,
+		model.ID, model.Name, model.ProviderID, legacyType, model.Model, encKey, endpoint, model.Role, model.Enabled, model.IsDefault,
 	)
 	if err != nil {
 		return fmt.Errorf("update llm model: %w", err)

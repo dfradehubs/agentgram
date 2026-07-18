@@ -33,6 +33,8 @@ const (
 	SlackSessionsGroupID = "slack-sessions"
 )
 
+type SummarizerResolver func(context.Context) *summarizer.Summarizer
+
 func containsString(slice []string, s string) bool {
 	for _, v := range slice {
 		if v == s {
@@ -65,7 +67,7 @@ type MessageHandler struct {
 	githubClient  *auth.GitHubOAuthClient
 	linkRepo      repository.SlackUserLinkRepository
 	cipher        *crypto.AESCrypto
-	summarizer    *summarizer.Summarizer
+	summarizer    SummarizerResolver
 	lfTracer      *lf.Tracer
 	chatEventRepo repository.ChatEventRepository
 	hostURL       string
@@ -94,7 +96,7 @@ func NewMessageHandler(
 	githubClient *auth.GitHubOAuthClient,
 	linkRepo repository.SlackUserLinkRepository,
 	cipher *crypto.AESCrypto,
-	sum *summarizer.Summarizer,
+	sum SummarizerResolver,
 	lfTracer *lf.Tracer,
 	chatEventRepo repository.ChatEventRepository,
 	hostURL string,
@@ -121,6 +123,13 @@ func NewMessageHandler(
 		threadCache:   make(map[string]cachedThread),
 		groupsCache:   make(map[string]cachedGroups),
 	}
+}
+
+func (h *MessageHandler) currentSummarizer(ctx context.Context) *summarizer.Summarizer {
+	if h.summarizer == nil {
+		return nil
+	}
+	return h.summarizer(ctx)
 }
 
 // HandleMessage processes a single Slack message event.
@@ -253,7 +262,7 @@ func (h *MessageHandler) HandleMessage(ctx context.Context, client *slackapi.Cli
 			fullSession, agentID, lastUserMsg, hasAgentSession,
 			true, // sendContext
 			agent.MaxContextTokens, agent.SummarizeThreshold,
-			h.summarizer, ctx,
+			h.currentSummarizer(ctx), ctx,
 		)
 		messagesToSend = result.Messages
 	} else {
@@ -542,7 +551,8 @@ func (h *MessageHandler) extractUnreadMessages(threadMsgs []slackapi.Message) []
 // summarizeContext uses the LLM summarizer to condense unread messages into context.
 // Falls back to simple concatenation if summarizer is unavailable.
 func (h *MessageHandler) summarizeContext(ctx context.Context, messages []string) string {
-	if h.summarizer == nil || len(messages) == 0 {
+	sum := h.currentSummarizer(ctx)
+	if sum == nil || len(messages) == 0 {
 		return strings.Join(messages, "\n")
 	}
 
@@ -552,7 +562,7 @@ func (h *MessageHandler) summarizeContext(ctx context.Context, messages []string
 		chatMsgs = append(chatMsgs, models.ChatMessage{Role: "user", Content: m})
 	}
 
-	summary, err := h.summarizer.Summarize(ctx, chatMsgs)
+	summary, err := sum.Summarize(ctx, chatMsgs)
 	if err != nil {
 		h.logger.Warn("failed to summarize thread context, using raw messages", zap.Error(err))
 		return strings.Join(messages, "\n")

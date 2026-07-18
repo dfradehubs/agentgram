@@ -6,6 +6,7 @@ import "time"
 type AgentGroup struct {
 	ID            string    `json:"id"`
 	Name          string    `json:"name"`
+	Description   string    `json:"description"`
 	AgentIDs      []string  `json:"agent_ids"`
 	CreatedBy     string    `json:"created_by"`
 	AllowedUsers  []string  `json:"allowed_users,omitempty"`
