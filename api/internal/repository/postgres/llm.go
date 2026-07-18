@@ -21,18 +21,6 @@ func NewLLMModelRepository(pool *pgxpool.Pool, cipher *crypto.AESCrypto) *LLMMod
 	return &LLMModelRepository{pool: pool, cipher: cipher}
 }
 
-// encryptKey encrypts an API key before storing. Returns plaintext if cipher is nil.
-func (r *LLMModelRepository) encryptKey(key string) (string, error) {
-	if r.cipher == nil || key == "" {
-		return key, nil
-	}
-	// Already encrypted — skip double encryption
-	if crypto.IsEncrypted(key) {
-		return key, nil
-	}
-	return r.cipher.Encrypt(key)
-}
-
 // decryptKey decrypts an API key after reading. Returns as-is if cipher is nil or value is plaintext.
 func (r *LLMModelRepository) decryptKey(key string) (string, error) {
 	if r.cipher == nil || key == "" {
