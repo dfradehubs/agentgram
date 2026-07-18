@@ -9,7 +9,12 @@ import (
 	"github.com/dfradehubs/agentgram-api/internal/summarizer"
 )
 
-const maxContextMessages = 10
+const (
+	maxContextMessages        = 10
+	maxGroupContributions     = 8
+	maxGroupContributionRunes = 4000
+	maxGroupContextRunes      = 24000
+)
 
 // PrepareMessagesForAgent prepares the messages to send to an agent.
 // If we already have a session with the agent, only the new message is sent.
@@ -114,7 +119,14 @@ func PrepareMessagesForMultiAgent(
 		if estimateTokens(contextMessages) > threshold {
 			summary, err := sum.Summarize(ctx, contextMessages)
 			if err == nil && summary != "" {
-				contextMsg = fmt.Sprintf("[Multi-agent session context summary]\n%s\n\nThe user is now talking to you. Keep the previous context in mind.", summary)
+				const summaryPrefix = "Summary of earlier contributions:\n"
+				const summaryMarker = "\n[Summary truncated.]"
+				summaryRunes := []rune(summary)
+				maxSummaryRunes := maxGroupContextRunes - len([]rune(summaryPrefix+summaryMarker))
+				if len(summaryRunes) > maxSummaryRunes {
+					summary = string(summaryRunes[:maxSummaryRunes]) + summaryMarker
+				}
+				contextMsg = summaryPrefix + summary
 			}
 		}
 	}
@@ -124,11 +136,13 @@ func PrepareMessagesForMultiAgent(
 		contextMsg = buildMultiAgentContextMessage(contextMessages)
 	}
 
+	canonical := newMessage
+	canonical.Content = fmt.Sprintf(
+		"[Original user request]\n%s\n\n[Previous group contributions]\n%s\n\nContinue the group task using the original request and the contributions above. Complement, correct, or disagree when useful.",
+		newMessage.Content, contextMsg,
+	)
 	return ContextResult{
-		Messages: []models.ChatMessage{
-			{Role: "user", Content: contextMsg},
-			newMessage,
-		},
+		Messages:    []models.ChatMessage{canonical},
 		ContextSent: true,
 	}
 }
@@ -246,25 +260,53 @@ func containsAgent(ids []string, target string) bool {
 
 // buildMultiAgentContextMessage creates a context summary from other agents' messages
 func buildMultiAgentContextMessage(messages []models.ChatMessage) string {
-	// Take last N messages
-	start := 0
-	if len(messages) > maxContextMessages {
-		start = len(messages) - maxContextMessages
+	filtered := make([]models.ChatMessage, 0, len(messages))
+	for _, msg := range messages {
+		if msg.Role == "system" || msg.IsError || msg.AgentID == "moderator" || strings.TrimSpace(msg.Content) == "" {
+			continue
+		}
+		filtered = append(filtered, msg)
 	}
-	recent := messages[start:]
+	windowTruncated := len(filtered) > maxGroupContributions
+	if windowTruncated {
+		filtered = filtered[len(filtered)-maxGroupContributions:]
+	}
 
-	var sb strings.Builder
-	for _, msg := range recent {
+	const truncationMarker = "\n[Earlier or oversized contributions were truncated.]\n"
+	remaining := maxGroupContextRunes - len([]rune(truncationMarker))
+	truncated := windowTruncated
+	lines := make([]string, 0, len(filtered))
+	for i := len(filtered) - 1; i >= 0; i-- {
+		msg := filtered[i]
 		prefix := "User"
 		if msg.Role == "assistant" {
 			prefix = fmt.Sprintf("Agent[%s]", msg.AgentID)
 		} else if msg.UserName != "" {
 			prefix = fmt.Sprintf("User[%s]", msg.UserName)
+		} else if msg.UserEmail != "" {
+			prefix = fmt.Sprintf("User[%s]", msg.UserEmail)
 		}
-		fmt.Fprintf(&sb, "%s: %s\n", prefix, msg.Content)
+		content := []rune(msg.Content)
+		if len(content) > maxGroupContributionRunes {
+			content = content[:maxGroupContributionRunes]
+			truncated = true
+		}
+		line := []rune(fmt.Sprintf("%s: %s\n", prefix, string(content)))
+		if len(line) > remaining {
+			truncated = true
+			break
+		}
+		lines = append(lines, string(line))
+		remaining -= len(line)
 	}
-
-	return fmt.Sprintf("[Multi-agent session context]\nOther users and agents have been talking in this same session:\n---\n%s---\nThe user is now talking to you. Keep the previous context and the participants in mind.", sb.String())
+	var sb strings.Builder
+	for i := len(lines) - 1; i >= 0; i-- {
+		sb.WriteString(lines[i])
+	}
+	if truncated {
+		sb.WriteString(truncationMarker)
+	}
+	return strings.TrimSpace(sb.String())
 }
 
 // buildContextMessage creates a summary of previous conversation for context

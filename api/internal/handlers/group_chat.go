@@ -252,7 +252,7 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 		}
 		hasAgentSession := agentSessionID != ""
 
-		prep := proxy.PrepareMessagesForMultiAgent(session, agentID, userMsg, hasAgentSession, true, agent.MaxContextTokens, agent.SummarizeThreshold, h.summarizer, turnCtx)
+		prep := proxy.PrepareMessagesForMultiAgent(session, agentID, userMsg, hasAgentSession, true, agent.MaxContextTokens, agent.SummarizeThreshold, h.currentSummarizer(turnCtx), turnCtx)
 		messagesToSend := prep.Messages
 
 		// Prefix [DisplayName] on the last user message so agents know who is asking
@@ -261,10 +261,11 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Process file attachments for custom-protocol agents (A2A/ADK pass them natively)
-		if agent.Protocol == "custom" && h.fileProcessor != nil && len(messagesToSend) > 0 {
+		fileProcessor := h.currentFileProcessor(turnCtx)
+		if agent.Protocol == "custom" && fileProcessor != nil && len(messagesToSend) > 0 {
 			lastMsg := &messagesToSend[len(messagesToSend)-1]
 			if len(lastMsg.Attachments) > 0 {
-				if err := h.fileProcessor.ProcessAttachments(turnCtx, lastMsg); err != nil {
+				if err := fileProcessor.ProcessAttachments(turnCtx, lastMsg); err != nil {
 					h.logger.Error("failed to process attachments", zap.Error(err))
 				}
 			}

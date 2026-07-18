@@ -16,7 +16,7 @@ import (
 	"github.com/dfradehubs/agentgram-api/internal/audit"
 	"github.com/dfradehubs/agentgram-api/internal/fileprocessor"
 	lf "github.com/dfradehubs/agentgram-api/internal/langfuse"
-	"github.com/dfradehubs/agentgram-api/internal/llm"
+	"github.com/dfradehubs/agentgram-api/internal/llmresolver"
 	"github.com/dfradehubs/agentgram-api/internal/metrics"
 	"github.com/dfradehubs/agentgram-api/internal/middleware"
 	"github.com/dfradehubs/agentgram-api/internal/models"
@@ -47,6 +47,7 @@ type ProxyHandler struct {
 	summarizer        *summarizer.Summarizer
 	sessionNamer      *sessionnamer.Namer
 	fileProcessor     *fileprocessor.Processor
+	llmResolver       *llmresolver.Resolver
 	moderator         *orchestrator.Moderator
 	moderatorResolver *orchestrator.ModeratorResolver
 	settings          *appsettings.Service
@@ -58,47 +59,6 @@ type ProxyHandler struct {
 
 // NewProxyHandler creates a new proxy handler
 func NewProxyHandler(llmRepo repository.LLMModelRepository, registry *agents.Registry, userService *service.UserService, groupRepo repository.GroupRepository, sessionStore store.SessionStore, hub *pubsub.Hub, auditLogger *audit.Logger, logger *zap.Logger, settingsService *appsettings.Service, lfTracer *lf.Tracer, chatEventRepo ...repository.ChatEventRepository) *ProxyHandler {
-	var sum *summarizer.Summarizer
-	var fp *fileprocessor.Processor
-	var namer *sessionnamer.Namer
-
-	ctx := context.Background()
-	if summarizerModels, err := llmRepo.ListByRole(ctx, "summarizer"); err == nil && len(summarizerModels) > 0 {
-		model := summarizerModels[0]
-		provider, provErr := llm.NewProvider(model)
-		if provErr == nil && lfTracer != nil && lfTracer.Enabled() {
-			provider = lf.WrapProvider(provider, "summarizer", model.Model)
-		}
-		if provErr == nil {
-			sum = summarizer.NewWithProvider(provider, logger)
-		} else {
-			sum = summarizer.New(model, logger)
-		}
-	}
-	if fpModels, err := llmRepo.ListByRole(ctx, "file_processor"); err == nil && len(fpModels) > 0 {
-		model := fpModels[0]
-		provider, provErr := llm.NewProvider(model)
-		if provErr == nil && lfTracer != nil && lfTracer.Enabled() {
-			provider = lf.WrapProvider(provider, "file-processor", model.Model)
-		}
-		if provErr == nil {
-			fp = fileprocessor.NewWithProvider(provider, model, logger)
-		} else {
-			fp = fileprocessor.New(model, logger)
-		}
-	}
-	if namerModels, err := llmRepo.ListByRole(ctx, "session_namer"); err == nil && len(namerModels) > 0 {
-		model := namerModels[0]
-		provider, provErr := llm.NewProvider(model)
-		if provErr == nil && lfTracer != nil && lfTracer.Enabled() {
-			provider = lf.WrapProvider(provider, "session-namer", model.Model)
-		}
-		if provErr == nil {
-			namer = sessionnamer.NewWithProvider(provider, logger)
-		} else {
-			namer = sessionnamer.New(model, logger)
-		}
-	}
 	h := &ProxyHandler{
 		registry:          registry,
 		userService:       userService,
@@ -106,9 +66,7 @@ func NewProxyHandler(llmRepo repository.LLMModelRepository, registry *agents.Reg
 		proxy:             proxy.NewProxy(logger),
 		store:             sessionStore,
 		hub:               hub,
-		summarizer:        sum,
-		sessionNamer:      namer,
-		fileProcessor:     fp,
+		llmResolver:       llmresolver.New(llmRepo, lfTracer, logger),
 		moderatorResolver: orchestrator.NewModeratorResolver(llmRepo, lfTracer, logger),
 		settings:          settingsService,
 		audit:             auditLogger,
@@ -119,6 +77,39 @@ func NewProxyHandler(llmRepo repository.LLMModelRepository, registry *agents.Reg
 		h.chatEventRepo = chatEventRepo[0]
 	}
 	return h
+}
+
+func (h *ProxyHandler) currentSummarizer(ctx context.Context) *summarizer.Summarizer {
+	if h.llmResolver == nil {
+		return h.summarizer
+	}
+	_, provider, err := h.llmResolver.ResolveRole(ctx, "summarizer", "summarizer")
+	if err != nil {
+		return nil
+	}
+	return summarizer.NewWithProvider(provider, h.logger)
+}
+
+func (h *ProxyHandler) currentFileProcessor(ctx context.Context) *fileprocessor.Processor {
+	if h.llmResolver == nil {
+		return h.fileProcessor
+	}
+	model, provider, err := h.llmResolver.ResolveRole(ctx, "file_processor", "file-processor")
+	if err != nil {
+		return nil
+	}
+	return fileprocessor.NewWithProvider(provider, model, h.logger)
+}
+
+func (h *ProxyHandler) currentSessionNamer(ctx context.Context) *sessionnamer.Namer {
+	if h.llmResolver == nil {
+		return h.sessionNamer
+	}
+	_, provider, err := h.llmResolver.ResolveRole(ctx, "session_namer", "session-namer")
+	if err != nil {
+		return nil
+	}
+	return sessionnamer.NewWithProvider(provider, h.logger)
 }
 
 // Chat handles POST /api/agents/:agentId/chat
@@ -326,7 +317,7 @@ func (h *ProxyHandler) Chat(w http.ResponseWriter, r *http.Request) {
 	var contextSent bool
 	if session.IsMultiAgent {
 		sendContext := chatReq.SendContext == nil || *chatReq.SendContext
-		result := proxy.PrepareMessagesForMultiAgent(session, agentID, userMsg, hasAgentSession, sendContext, agent.MaxContextTokens, agent.SummarizeThreshold, h.summarizer, ctx)
+		result := proxy.PrepareMessagesForMultiAgent(session, agentID, userMsg, hasAgentSession, sendContext, agent.MaxContextTokens, agent.SummarizeThreshold, h.currentSummarizer(ctx), ctx)
 		messagesToSend = result.Messages
 		contextSent = result.ContextSent
 	} else {
@@ -341,10 +332,11 @@ func (h *ProxyHandler) Chat(w http.ResponseWriter, r *http.Request) {
 
 	// Process file attachments (convert to text via LLM) — only for "custom" protocol.
 	// A2A and ADK support native file parts, so attachments are passed through as-is.
-	if agent.Protocol == "custom" && h.fileProcessor != nil && len(messagesToSend) > 0 {
+	fileProcessor := h.currentFileProcessor(ctx)
+	if agent.Protocol == "custom" && fileProcessor != nil && len(messagesToSend) > 0 {
 		lastMsg := &messagesToSend[len(messagesToSend)-1]
 		if len(lastMsg.Attachments) > 0 {
-			if err := h.fileProcessor.ProcessAttachments(ctx, lastMsg); err != nil {
+			if err := fileProcessor.ProcessAttachments(ctx, lastMsg); err != nil {
 				h.logger.Error("failed to process attachments", zap.Error(err))
 			}
 		}
@@ -598,12 +590,13 @@ func (h *ProxyHandler) Chat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Async: generate a short LLM-based session name for new sessions
-	if isNewSession && h.sessionNamer != nil && result != nil && result.AssistantText != "" {
+	sessionNamer := h.currentSessionNamer(ctx)
+	if isNewSession && sessionNamer != nil && result != nil && result.AssistantText != "" {
 		go func() {
 			namerCtx := lf.ContextWithTrace(context.Background(), lfTrace)
 			namerCtx, cancel := context.WithTimeout(namerCtx, 10*time.Second)
 			defer cancel()
-			name, err := h.sessionNamer.GenerateName(namerCtx, userMsg.Content, result.AssistantText)
+			name, err := sessionNamer.GenerateName(namerCtx, userMsg.Content, result.AssistantText)
 			if err != nil {
 				h.logger.Warn("session namer failed", zap.String("session_id", session.SessionID), zap.Error(err))
 				return

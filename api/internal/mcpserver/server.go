@@ -216,11 +216,17 @@ func (s *Server) buildGroupTool(group *models.AgentGroup, toolName string) map[s
 		}
 	}
 
+	purpose := strings.TrimSpace(group.Description)
+	if purpose == "" {
+		purpose = "Use this moderated multi-agent group when its combined members are better suited than a single agent."
+	}
+	description := fmt.Sprintf(
+		"[Group: %s] Purpose: %s Members: %s. A moderator selects the agents best suited to answer, and they can build on previous contributions.",
+		group.Name, purpose, strings.Join(members, ", "))
+
 	return map[string]interface{}{
-		"name": toolName,
-		"description": fmt.Sprintf(
-			"[Group: %s] Moderated multi-agent group (%s). A moderator picks the most relevant agent(s) to answer; they can build on each other's replies.",
-			group.Name, strings.Join(members, ", ")),
+		"name":        toolName,
+		"description": description,
 		"inputSchema": map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{

@@ -40,6 +40,7 @@ type AdminDeps struct {
 	UserRepo        repository.UserRepository
 	AuditRepo       repository.AuditRepository
 	LLMRepo         repository.LLMModelRepository
+	ProviderRepo    repository.LLMProviderRepository
 	GroupRepo       repository.GroupRepository
 	SettingsRepo    settings.Repository
 	SettingsService *settings.Service
@@ -425,6 +426,13 @@ func SetupRoutes(cfg *config.Config, registry *agents.Registry, sessionStore sto
 				}
 
 				// Admin LLM
+				adminProviderHandler := handlers.NewAdminProviderHandler(adminDeps.ProviderRepo, adminDeps.AuditRepo, logger)
+				r.Get("/llm-providers", adminProviderHandler.List)
+				r.Post("/llm-providers", adminProviderHandler.Create)
+				r.Get("/llm-providers/{id}", adminProviderHandler.Get)
+				r.Put("/llm-providers/{id}", adminProviderHandler.Update)
+				r.Delete("/llm-providers/{id}", adminProviderHandler.Delete)
+
 				adminLLMHandler := handlers.NewAdminLLMHandler(adminDeps.LLMRepo, adminDeps.AuditRepo, logger)
 				r.Get("/llm", adminLLMHandler.ListLLMModels)
 				r.Post("/llm", adminLLMHandler.CreateLLMModel)

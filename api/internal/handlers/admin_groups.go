@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -34,6 +35,7 @@ func NewAdminGroupsHandler(groupRepo repository.GroupRepository, auditRepo repos
 type AdminGroupRequest struct {
 	ID            string   `json:"id"`
 	Name          string   `json:"name"`
+	Description   *string  `json:"description"`
 	AgentIDs      []string `json:"agent_ids"`
 	AllowedUsers  []string `json:"allowed_users"`
 	AllowedGroups []string `json:"allowed_groups"`
@@ -44,6 +46,7 @@ type AdminGroupRequest struct {
 type AdminGroupResponse struct {
 	ID            string   `json:"id"`
 	Name          string   `json:"name"`
+	Description   string   `json:"description"`
 	AgentIDs      []string `json:"agent_ids"`
 	CreatedBy     string   `json:"created_by"`
 	AllowedUsers  []string `json:"allowed_users"`
@@ -57,6 +60,7 @@ func groupToAdminResponse(g *models.AgentGroup) AdminGroupResponse {
 	return AdminGroupResponse{
 		ID:            g.ID,
 		Name:          g.Name,
+		Description:   g.Description,
 		AgentIDs:      g.AgentIDs,
 		CreatedBy:     g.CreatedBy,
 		AllowedUsers:  g.AllowedUsers,
@@ -119,15 +123,24 @@ func (h *AdminGroupsHandler) CreateGroup(w http.ResponseWriter, r *http.Request)
 		http.Error(w, `{"error":"max_turns must be between 0 (default) and 50"}`, http.StatusBadRequest)
 		return
 	}
+	description := ""
+	if req.Description != nil {
+		description = strings.TrimSpace(*req.Description)
+	}
+	if len([]rune(description)) > 2000 {
+		http.Error(w, `{"error":"description must be 2000 characters or less"}`, http.StatusBadRequest)
+		return
+	}
 
 	claims := middleware.GetUserFromContext(r.Context())
 
 	group := &models.AgentGroup{
-		ID:        req.ID,
-		Name:      req.Name,
-		AgentIDs:  req.AgentIDs,
-		CreatedBy: claims.GetEmail(),
-		MaxTurns:  req.MaxTurns,
+		ID:          req.ID,
+		Name:        req.Name,
+		Description: description,
+		AgentIDs:    req.AgentIDs,
+		CreatedBy:   claims.GetEmail(),
+		MaxTurns:    req.MaxTurns,
 	}
 
 	if err := h.groupRepo.Create(r.Context(), group, req.AllowedUsers, req.AllowedGroups); err != nil {
@@ -182,12 +195,26 @@ func (h *AdminGroupsHandler) UpdateGroup(w http.ResponseWriter, r *http.Request)
 		http.Error(w, `{"error":"max_turns must be between 0 (default) and 50"}`, http.StatusBadRequest)
 		return
 	}
+	existing, err := h.groupRepo.Get(r.Context(), id)
+	if err != nil {
+		http.Error(w, `{"error":"group not found"}`, http.StatusNotFound)
+		return
+	}
+	description := existing.Description
+	if req.Description != nil {
+		description = strings.TrimSpace(*req.Description)
+	}
+	if len([]rune(description)) > 2000 {
+		http.Error(w, `{"error":"description must be 2000 characters or less"}`, http.StatusBadRequest)
+		return
+	}
 
 	group := &models.AgentGroup{
-		ID:       id,
-		Name:     req.Name,
-		AgentIDs: req.AgentIDs,
-		MaxTurns: req.MaxTurns,
+		ID:          id,
+		Name:        req.Name,
+		Description: description,
+		AgentIDs:    req.AgentIDs,
+		MaxTurns:    req.MaxTurns,
 	}
 
 	if err := h.groupRepo.Update(r.Context(), group); err != nil {

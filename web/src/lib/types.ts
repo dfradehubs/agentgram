@@ -127,6 +127,7 @@ export type TimelineItem =
 export interface MultiAgentGroup {
   id: string;
   name: string;
+  description: string;
   agentIds: string[];
   allowedUsers?: string[];
   allowedGroups?: string[];
@@ -149,6 +150,7 @@ export interface AppSetting {
 export interface AdminGroup {
   id: string;
   name: string;
+  description: string;
   agent_ids: string[];
   created_by: string;
   allowed_users: string[];
@@ -277,13 +279,24 @@ export interface BasicAuthUser {
 export interface AdminLLMModel {
   id: string;
   name: string;
-  provider: string;
+  provider_id: string;
+  provider_name: string;
+  provider_type: string;
+  provider_enabled: boolean;
   model: string;
-  api_key: string;
-  endpoint?: string; // Optional custom API endpoint (OpenAI-compatible)
   role: string;
   enabled: boolean;
   is_default: boolean;
+}
+
+export interface AdminLLMProvider {
+  id: string;
+  name: string;
+  provider_type: "anthropic" | "google" | "openai" | "custom";
+  api_key: string;
+  endpoint?: string;
+  enabled: boolean;
+  clear_api_key?: boolean;
 }
 
 export interface LLMModelOption {

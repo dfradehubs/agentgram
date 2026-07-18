@@ -66,7 +66,9 @@ func (p *openaiProvider) GenerateContent(ctx context.Context, req *Request) (*Re
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+p.model.APIKey)
+	if p.model.APIKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+p.model.APIKey)
+	}
 
 	resp, err := p.client.Do(httpReq)
 	if err != nil {

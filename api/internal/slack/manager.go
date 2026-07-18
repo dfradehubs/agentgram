@@ -17,7 +17,6 @@ import (
 	"github.com/dfradehubs/agentgram-api/internal/proxy"
 	"github.com/dfradehubs/agentgram-api/internal/repository"
 	"github.com/dfradehubs/agentgram-api/internal/store"
-	"github.com/dfradehubs/agentgram-api/internal/summarizer"
 	"go.uber.org/zap"
 )
 
@@ -39,7 +38,7 @@ type BotManager struct {
 	oidcClient    *auth.OIDCClient
 	githubClient  *auth.GitHubOAuthClient
 	cipher        *crypto.AESCrypto
-	summarizer    *summarizer.Summarizer
+	summarizer    SummarizerResolver
 	lfTracer      *lf.Tracer
 	chatEventRepo repository.ChatEventRepository
 	hostURL       string
@@ -60,7 +59,7 @@ func NewBotManager(
 	oidcClient *auth.OIDCClient,
 	githubClient *auth.GitHubOAuthClient,
 	cipher *crypto.AESCrypto,
-	sum *summarizer.Summarizer,
+	sum SummarizerResolver,
 	lfTracer *lf.Tracer,
 	chatEventRepo repository.ChatEventRepository,
 	hostURL string,

@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import type { AdminLLMModel } from "@/lib/types";
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import type { AdminLLMModel, AdminLLMProvider } from "@/lib/types";
+import { getAdminLLMProviders } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 
 interface LLMFormProps {
@@ -11,27 +13,33 @@ interface LLMFormProps {
 }
 
 export function LLMForm({ model, onSave, onCancel }: LLMFormProps) {
+  const [providers, setProviders] = useState<AdminLLMProvider[]>([]);
   const [form, setForm] = useState({
     id: model?.id || "",
     name: model?.name || "",
-    provider: model?.provider || "anthropic",
+    provider_id: model?.provider_id || "",
     model_id: model?.model || "",
-    api_key: model?.api_key || "",
-    endpoint: model?.endpoint || "",
     role: model?.role || "chat",
     enabled: model?.enabled ?? true,
     is_default: model?.is_default ?? false,
   });
+
+  useEffect(() => {
+    getAdminLLMProviders().then((items) => {
+      setProviders(items);
+      setForm((current) => current.provider_id || items.length === 0
+        ? current
+        : { ...current, provider_id: items[0].id });
+    }).catch(() => setProviders([]));
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSave({
       id: form.id,
       name: form.name,
-      provider: form.provider,
+      provider_id: form.provider_id,
       model: form.model_id,
-      api_key: form.api_key,
-      endpoint: form.endpoint,
       role: form.role,
       enabled: form.enabled,
       is_default: form.is_default,
@@ -72,13 +80,16 @@ export function LLMForm({ model, onSave, onCancel }: LLMFormProps) {
           <label className="mb-1 block text-sm font-medium">Provider</label>
           <select
             className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-            value={form.provider}
-            onChange={e => update("provider", e.target.value)}
+            value={form.provider_id}
+            onChange={e => update("provider_id", e.target.value)}
+            required
           >
-            <option value="anthropic">Anthropic</option>
-            <option value="openai">OpenAI</option>
-            <option value="google">Google</option>
+            <option value="" disabled>Select a provider</option>
+            {providers.filter((provider) => provider.enabled || provider.id === model?.provider_id).map((provider) => (
+              <option key={provider.id} value={provider.id}>{provider.name} ({provider.provider_type})</option>
+            ))}
           </select>
+          {providers.length === 0 && <p className="mt-1 text-xs text-muted-foreground">Create a <Link className="underline" href="/admin/providers">Provider</Link> first.</p>}
         </div>
         <div>
           <label className="mb-1 block text-sm font-medium">Model</label>
@@ -90,33 +101,6 @@ export function LLMForm({ model, onSave, onCancel }: LLMFormProps) {
             placeholder="claude-sonnet-4-20250514"
           />
         </div>
-      </div>
-
-      <div>
-        <label className="mb-1 block text-sm font-medium">API Key</label>
-        <input
-          type="password"
-          className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-          value={form.api_key}
-          onChange={e => update("api_key", e.target.value)}
-          required={!model}
-          placeholder={model ? "Leave empty to keep the current one" : "sk-..."}
-        />
-        {model && (
-          <p className="mt-1 text-xs text-muted-foreground">
-            Leave the field empty to keep the current API key
-          </p>
-        )}
-      </div>
-
-      <div>
-        <label className="mb-1 block text-sm font-medium">Custom endpoint (optional)</label>
-        <input
-          className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-          value={form.endpoint}
-          onChange={e => update("endpoint", e.target.value)}
-          placeholder="https://my-gateway/v1/chat/completions (OpenAI-compatible; empty = provider default)"
-        />
       </div>
 
       <div className="grid grid-cols-2 gap-4">
@@ -132,7 +116,7 @@ export function LLMForm({ model, onSave, onCancel }: LLMFormProps) {
             <option value="file_processor">File Processor</option>
             <option value="chart_extractor">Chart Extractor</option>
             <option value="session_namer">Session Namer</option>
-            <option value="moderator">Moderator</option>
+            <option value="moderator">Group Moderator</option>
           </select>
         </div>
         <div className="flex flex-col justify-end gap-3 pb-1">
@@ -158,7 +142,7 @@ export function LLMForm({ model, onSave, onCancel }: LLMFormProps) {
       </div>
 
       <div className="flex gap-2 pt-4">
-        <Button type="submit">{model ? "Save changes" : "Create model"}</Button>
+        <Button type="submit" disabled={providers.length === 0}>{model ? "Save changes" : "Create model"}</Button>
         <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
       </div>
     </form>

@@ -323,7 +323,7 @@ func RunLoop(ctx context.Context, w http.ResponseWriter, params LoopParams) (*Ru
 func ResolveModel(ctx context.Context, llmRepo repository.LLMModelRepository, modelID string) (*models.LLMModel, error) {
 	if modelID != "" {
 		m, err := llmRepo.Get(ctx, modelID)
-		if err == nil && m.Enabled {
+		if err == nil && m.Enabled && m.ProviderEnabled {
 			return m, nil
 		}
 	}

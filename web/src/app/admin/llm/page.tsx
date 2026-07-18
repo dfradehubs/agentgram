@@ -15,7 +15,7 @@ const roleLabels: Record<string, string> = {
   file_processor: "File Processor",
   chart_extractor: "Chart Extractor",
   session_namer: "Session Namer",
-  moderator: "Moderator",
+  moderator: "Group Moderator",
 };
 
 export default function AdminLLMPage() {
@@ -126,15 +126,15 @@ export default function AdminLLMPage() {
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <span className="rounded bg-muted px-2 py-0.5 text-xs">{model.provider}</span>
+                    <span className="rounded bg-muted px-2 py-0.5 text-xs">{model.provider_name} ({model.provider_type})</span>
                   </td>
                   <td className="px-4 py-3 text-xs text-muted-foreground">{model.model}</td>
                   <td className="px-4 py-3">
                     <span className="rounded bg-muted px-2 py-0.5 text-xs">{roleLabels[model.role] || model.role}</span>
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`rounded px-2 py-0.5 text-xs ${model.enabled ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-600"}`}>
-                      {model.enabled ? "Active" : "Inactive"}
+                    <span className={`rounded px-2 py-0.5 text-xs ${model.enabled && model.provider_enabled ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-600"}`}>
+                      {!model.enabled ? "Inactive" : model.provider_enabled ? "Active" : "Provider disabled"}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right">

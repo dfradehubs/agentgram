@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.0] - 2026-07-18
+
+### Added
+
+- Shared LLM Providers for Anthropic, Google, OpenAI, and OpenAI-compatible Custom Endpoints, with encrypted reusable credentials and an Admin Providers page.
+- Configurable group descriptions published as MCP tool purposes so clients can choose the right group.
+
+### Changed
+
+- LLM models now reference a Provider instead of duplicating API keys and endpoints. Existing configurations are migrated losslessly and legacy columns remain synchronized for rollback.
+- Summarizer, file processor, session namer, Slack summarizer, chart extractor, and group moderator configurations resolve dynamically, so Provider edits apply without restarting Agentgram.
+- Group agents receive one bounded, attributed prompt containing the original request and previous agent contributions, including with custom templates that only consume the last message.
+
+### Security
+
+- Custom Endpoints use SSRF-safe transports, reject redirects and unsafe endpoint forms, and omit Authorization when no API key is configured.
+- Disabled Providers cannot be bypassed by selecting a model explicitly, and Providers referenced by models cannot be deleted.
+
 ## [0.7.1] - 2026-07-17
 
 ### Added

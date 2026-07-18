@@ -19,6 +19,7 @@ export function GroupForm({ group, onSave, onCancel }: GroupFormProps) {
   const [form, setForm] = useState({
     id: group?.id || "",
     name: group?.name || "",
+    description: group?.description || "",
     agent_ids: group?.agent_ids || [],
     allowed_users: group?.allowed_users || [],
     allowed_groups: group?.allowed_groups || [],
@@ -43,6 +44,7 @@ export function GroupForm({ group, onSave, onCancel }: GroupFormProps) {
     onSave({
       id: form.id,
       name: form.name,
+      description: form.description,
       agent_ids: form.agent_ids,
       allowed_users: form.allowed_users,
       allowed_groups: form.allowed_groups,
@@ -75,6 +77,20 @@ export function GroupForm({ group, onSave, onCancel }: GroupFormProps) {
             required
           />
         </div>
+      </div>
+
+      <div>
+        <label className="mb-1 block text-sm font-medium">Description</label>
+        <textarea
+          className="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm"
+          value={form.description}
+          onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
+          maxLength={2000}
+          placeholder="Explain what this group contributes and when an MCP client should use it."
+        />
+        <p className="mt-1 text-xs text-muted-foreground">
+          This purpose is included in the group MCP tool description so clients can decide when to call it.
+        </p>
       </div>
 
       <div>

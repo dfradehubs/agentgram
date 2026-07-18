@@ -4,6 +4,7 @@ import type {
   AdminAgent,
   AdminGroup,
   AdminLLMModel,
+  AdminLLMProvider,
   AdminMCPServer,
   AdminUser,
   AppSetting,
@@ -421,6 +422,7 @@ export async function deleteBasicAuthUser(id: string): Promise<void> {
 interface GroupApiResponse {
   id: string;
   name: string;
+  description: string;
   agentIds: string[];
   allowed_users?: string[];
   allowed_groups?: string[];
@@ -431,6 +433,7 @@ function mapGroupResponse(g: GroupApiResponse): MultiAgentGroup {
   return {
     id: g.id,
     name: g.name,
+    description: g.description || "",
     agentIds: g.agentIds,
     allowedUsers: g.allowed_users,
     allowedGroups: g.allowed_groups,
@@ -594,6 +597,29 @@ export async function updateAdminLLM(id: string, model: Partial<AdminLLMModel>):
 
 export async function deleteAdminLLM(id: string): Promise<void> {
   await fetchApi(`/api/admin/llm/${id}`, { method: "DELETE" });
+}
+
+export async function getAdminLLMProviders(): Promise<AdminLLMProvider[]> {
+  const data = await fetchApi<{ providers: AdminLLMProvider[] }>("/api/admin/llm-providers");
+  return data.providers || [];
+}
+
+export async function createAdminLLMProvider(provider: Partial<AdminLLMProvider>): Promise<AdminLLMProvider> {
+  return fetchApi<AdminLLMProvider>("/api/admin/llm-providers", {
+    method: "POST",
+    body: JSON.stringify(provider),
+  });
+}
+
+export async function updateAdminLLMProvider(id: string, provider: Partial<AdminLLMProvider>): Promise<AdminLLMProvider> {
+  return fetchApi<AdminLLMProvider>(`/api/admin/llm-providers/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(provider),
+  });
+}
+
+export async function deleteAdminLLMProvider(id: string): Promise<void> {
+  await fetchApi(`/api/admin/llm-providers/${id}`, { method: "DELETE" });
 }
 
 // Available LLM models (from /api/config)
