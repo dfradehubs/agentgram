@@ -12,8 +12,9 @@ import (
 
 // Namer generates short session names using an LLM.
 type Namer struct {
-	provider llm.Provider
-	logger   *zap.Logger
+	provider  llm.Provider
+	logger    *zap.Logger
+	maxTokens int // admin override, 0 = auto (built-in default)
 }
 
 // New creates a new Namer if model is valid, otherwise returns nil.
@@ -27,8 +28,9 @@ func New(model *models.LLMModel, logger *zap.Logger) *Namer {
 		return nil
 	}
 	return &Namer{
-		provider: provider,
-		logger:   logger,
+		provider:  provider,
+		logger:    logger,
+		maxTokens: model.MaxTokens,
 	}
 }
 
@@ -62,7 +64,7 @@ func (n *Namer) GenerateName(ctx context.Context, userMessage, assistantPreview 
 	resp, err := n.provider.GenerateContent(ctx, &llm.Request{
 		SystemPrompt: systemPrompt,
 		Messages:     []llm.Message{{Role: "user", Content: content}},
-		MaxTokens:    30,
+		MaxTokens:    llm.EffectiveMaxTokens(n.maxTokens, 30),
 	})
 	if err != nil {
 		n.logger.Warn("session namer failed", zap.Error(err))

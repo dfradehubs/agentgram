@@ -126,6 +126,9 @@ type TurnRunner func(ctx context.Context, agentID string) (string, error)
 type Moderator struct {
 	provider llm.Provider
 	logger   *zap.Logger
+	// maxTokens is the admin-configured per-model override (0 = auto → the
+	// moderatorMaxTokens / synthesisMaxTokens defaults). The resolver sets it.
+	maxTokens int
 }
 
 // New creates a Moderator if the model is usable, otherwise returns nil.
@@ -138,7 +141,7 @@ func New(model *models.LLMModel, logger *zap.Logger) *Moderator {
 		logger.Warn("failed to create LLM provider for moderator", zap.Error(err))
 		return nil
 	}
-	return &Moderator{provider: provider, logger: logger}
+	return &Moderator{provider: provider, logger: logger, maxTokens: model.MaxTokens}
 }
 
 // NewWithProvider creates a Moderator with a pre-configured provider (e.g. traced).
@@ -188,11 +191,25 @@ Conversation:
 %s
 ---`
 
-const moderatorMaxTokens = 64
+// moderatorMaxTokens bounds the next-speaker call. The visible answer is tiny
+// (an agent id or FINISH), but Claude 5 models (e.g. claude-sonnet-5, the prod
+// moderator) emit a thinking block before the text block, and the anthropic
+// provider only surfaces text blocks. With 64 the thinking consumed the whole
+// budget and the response was cut before any text block, leaving empty content
+// and aborting the debate. This caps output only and does not reserve cost (you
+// pay generated tokens), so it is set with wide headroom: enough for the
+// model's routing-thinking plus the id even on a long debate transcript.
+// ponytail: constant, not per-model config — make it a field on LLMModel only
+// if a model needs a different budget.
+const moderatorMaxTokens = 4096
 
 // synthesisMaxTokens bounds the final consolidation. MUST be > 0: several
 // providers (Anthropic, OpenAI) require a positive max_tokens and reject 0.
-const synthesisMaxTokens = 1024
+// Sized like moderatorMaxTokens for headroom: Claude 5 models spend thinking
+// tokens from this budget before the text block, and a truncated synthesis is
+// indistinguishable from the "nothing to consolidate" empty answer the prompt
+// allows. Output-cap only, no reserved cost.
+const synthesisMaxTokens = 4096
 
 // NextSpeaker asks the LLM who should speak next. Returns done=true when the
 // debate should end only for explicit FINISH. Empty or unknown output is a
@@ -208,7 +225,7 @@ func (m *Moderator) NextSpeaker(ctx context.Context, roster []AgentBrief, transc
 	prompt := fmt.Sprintf(nextSpeakerPrompt, rosterDesc.String(), transcript, strings.Join(ids, ", "))
 	resp, err := m.provider.GenerateContent(ctx, &llm.Request{
 		Messages:  []llm.Message{{Role: "user", Content: prompt}},
-		MaxTokens: moderatorMaxTokens,
+		MaxTokens: llm.EffectiveMaxTokens(m.maxTokens, moderatorMaxTokens),
 	})
 	if err != nil {
 		return "", false, fmt.Errorf("moderator next-speaker call failed: %w", err)
@@ -331,7 +348,7 @@ func replyNeedsHandoff(results []TurnResult) bool {
 func (m *Moderator) Synthesize(ctx context.Context, transcript string) (string, error) {
 	resp, err := m.provider.GenerateContent(ctx, &llm.Request{
 		Messages:  []llm.Message{{Role: "user", Content: fmt.Sprintf(synthesisPrompt, transcript)}},
-		MaxTokens: synthesisMaxTokens,
+		MaxTokens: llm.EffectiveMaxTokens(m.maxTokens, synthesisMaxTokens),
 	})
 	if err != nil {
 		return "", fmt.Errorf("moderator synthesis call failed: %w", err)

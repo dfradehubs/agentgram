@@ -116,7 +116,7 @@ func (p *Processor) reformulate(ctx context.Context, files []extractedFile, user
 	resp, err := p.provider.GenerateContent(ctx, &llm.Request{
 		Messages:     []llm.Message{{Role: "user", Content: userMsg}},
 		SystemPrompt: reformulationSystemPrompt,
-		MaxTokens:    2048,
+		MaxTokens:    llm.EffectiveMaxTokens(p.model.MaxTokens, 2048),
 	})
 	if err != nil {
 		return "", err
@@ -197,7 +197,7 @@ func (p *Processor) processImage(ctx context.Context, att models.Attachment) (st
 
 	resp, err := p.provider.GenerateContent(ctx, &llm.Request{
 		Messages:  []llm.Message{{Role: "user", Content: content}},
-		MaxTokens: 1024,
+		MaxTokens: llm.EffectiveMaxTokens(p.model.MaxTokens, 1024),
 	})
 	if err != nil {
 		return "", err

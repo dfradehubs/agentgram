@@ -58,8 +58,9 @@ type ChartData struct {
 
 // Extractor extracts chart data from arbitrary content using an LLM
 type Extractor struct {
-	provider llm.Provider
-	logger   *zap.Logger
+	provider  llm.Provider
+	logger    *zap.Logger
+	maxTokens int // admin override, 0 = auto (built-in default)
 }
 
 // New creates a new Extractor if model is valid, otherwise returns nil
@@ -73,8 +74,9 @@ func New(model *models.LLMModel, logger *zap.Logger) *Extractor {
 		return nil
 	}
 	return &Extractor{
-		provider: provider,
-		logger:   logger,
+		provider:  provider,
+		logger:    logger,
+		maxTokens: model.MaxTokens,
 	}
 }
 
@@ -136,7 +138,7 @@ func (e *Extractor) Extract(ctx context.Context, data string) (*ChartData, error
 
 	resp, err := e.provider.GenerateContent(ctx, &llm.Request{
 		Messages:  []llm.Message{{Role: "user", Content: prompt}},
-		MaxTokens: 1024,
+		MaxTokens: llm.EffectiveMaxTokens(e.maxTokens, 1024),
 	})
 	if err != nil {
 		e.logger.Warn("chart extractor failed", zap.Error(err))

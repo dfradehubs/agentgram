@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"strconv"
 	"sync"
 
 	lf "github.com/dfradehubs/agentgram-api/internal/langfuse"
@@ -71,11 +72,13 @@ func (r *ModeratorResolver) Resolve(ctx context.Context) (*Moderator, error) {
 	if r.tracer != nil && r.tracer.Enabled() {
 		provider = lf.WrapProvider(provider, "moderator", model.Model)
 	}
-	r.cached = NewWithProvider(provider, r.logger)
+	mod := NewWithProvider(provider, r.logger)
+	mod.maxTokens = model.MaxTokens
+	r.cached = mod
 	r.cacheKey = cacheKey
 	return r.cached, nil
 }
 
 func moderatorModelCacheKey(model *models.LLMModel) [sha256.Size]byte {
-	return sha256.Sum256([]byte(model.ID + "\x00" + model.Provider + "\x00" + model.Model + "\x00" + model.APIKey + "\x00" + model.Endpoint))
+	return sha256.Sum256([]byte(model.ID + "\x00" + model.Provider + "\x00" + model.Model + "\x00" + model.APIKey + "\x00" + model.Endpoint + "\x00" + strconv.Itoa(model.MaxTokens)))
 }

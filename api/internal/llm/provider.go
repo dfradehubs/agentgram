@@ -31,6 +31,15 @@ type ToolCall struct {
 	Arguments map[string]interface{}
 }
 
+// EffectiveMaxTokens returns the admin-configured override when positive,
+// otherwise the caller's built-in default. 0 (or negative) means "auto".
+func EffectiveMaxTokens(configured, def int) int {
+	if configured > 0 {
+		return configured
+	}
+	return def
+}
+
 // Request represents a request to an LLM provider.
 type Request struct {
 	Messages     []Message
