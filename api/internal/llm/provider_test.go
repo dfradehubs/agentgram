@@ -21,3 +21,19 @@ func TestNativeProviderRejectsEmptyAPIKey(t *testing.T) {
 		t.Fatal("native provider accepted an empty API key")
 	}
 }
+
+func TestEffectiveMaxTokens(t *testing.T) {
+	cases := []struct {
+		configured, def, want int
+	}{
+		{0, 4096, 4096},  // auto → default
+		{-1, 4096, 4096}, // negative → default
+		{512, 4096, 512}, // override wins
+		{4096, 64, 4096}, // override wins even above default
+	}
+	for _, c := range cases {
+		if got := EffectiveMaxTokens(c.configured, c.def); got != c.want {
+			t.Errorf("EffectiveMaxTokens(%d,%d)=%d want %d", c.configured, c.def, got, c.want)
+		}
+	}
+}

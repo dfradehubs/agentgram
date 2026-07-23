@@ -18,7 +18,8 @@ type LLMResponse = llm.Response
 
 // LLMClient wraps an llm.Provider for backward compatibility within the MCP package.
 type LLMClient struct {
-	provider llm.Provider
+	provider  llm.Provider
+	maxTokens int // admin override, 0 = auto (built-in default)
 }
 
 // NewLLMClient creates a new LLM client for the given LLM model.
@@ -28,7 +29,7 @@ func NewLLMClient(model *models.LLMModel) *LLMClient {
 		// Return a client that will error on Chat() calls
 		return &LLMClient{}
 	}
-	return &LLMClient{provider: provider}
+	return &LLMClient{provider: provider, maxTokens: model.MaxTokens}
 }
 
 // NewLLMClientWithProvider creates an LLM client with a pre-configured provider (e.g. traced).
@@ -51,6 +52,6 @@ func (c *LLMClient) Chat(ctx context.Context, messages []LLMMessage, tools []Too
 	return c.provider.GenerateContent(ctx, &llm.Request{
 		Messages:  messages,
 		Tools:     llmTools,
-		MaxTokens: 4096,
+		MaxTokens: llm.EffectiveMaxTokens(c.maxTokens, 4096),
 	})
 }

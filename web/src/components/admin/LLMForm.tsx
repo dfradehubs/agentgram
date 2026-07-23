@@ -22,6 +22,7 @@ export function LLMForm({ model, onSave, onCancel }: LLMFormProps) {
     role: model?.role || "chat",
     enabled: model?.enabled ?? true,
     is_default: model?.is_default ?? false,
+    max_tokens: model?.max_tokens ?? 0,
   });
 
   useEffect(() => {
@@ -43,10 +44,11 @@ export function LLMForm({ model, onSave, onCancel }: LLMFormProps) {
       role: form.role,
       enabled: form.enabled,
       is_default: form.is_default,
+      max_tokens: form.max_tokens,
     });
   };
 
-  const update = (field: string, value: string | boolean) =>
+  const update = (field: string, value: string | boolean | number) =>
     setForm(prev => ({ ...prev, [field]: value }));
 
   return (
@@ -138,6 +140,24 @@ export function LLMForm({ model, onSave, onCancel }: LLMFormProps) {
             />
             Default model
           </label>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="mb-1 block text-sm font-medium">Max tokens</label>
+          <input
+            type="number"
+            min={0}
+            max={200000}
+            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+            value={form.max_tokens}
+            onChange={e => update("max_tokens", e.target.valueAsNumber || 0)}
+            placeholder="0"
+          />
+          <p className="mt-1 text-xs text-muted-foreground">
+            Output token cap. 0 = auto (per-role default). Raise for reasoning/thinking models (e.g. the group moderator) that would otherwise return empty.
+          </p>
         </div>
       </div>
 

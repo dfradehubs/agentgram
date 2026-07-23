@@ -12,8 +12,9 @@ import (
 
 // Summarizer summarizes conversation context using an LLM
 type Summarizer struct {
-	provider llm.Provider
-	logger   *zap.Logger
+	provider  llm.Provider
+	logger    *zap.Logger
+	maxTokens int // admin override, 0 = auto (built-in default)
 }
 
 // New creates a new Summarizer if model is valid, otherwise returns nil
@@ -27,8 +28,9 @@ func New(model *models.LLMModel, logger *zap.Logger) *Summarizer {
 		return nil
 	}
 	return &Summarizer{
-		provider: provider,
-		logger:   logger,
+		provider:  provider,
+		logger:    logger,
+		maxTokens: model.MaxTokens,
 	}
 }
 
@@ -93,7 +95,7 @@ func (s *Summarizer) Summarize(ctx context.Context, messages []models.ChatMessag
 
 	resp, err := s.provider.GenerateContent(ctx, &llm.Request{
 		Messages:  []llm.Message{{Role: "user", Content: prompt}},
-		MaxTokens: 2048,
+		MaxTokens: llm.EffectiveMaxTokens(s.maxTokens, 2048),
 	})
 	if err != nil {
 		s.logger.Warn("summarizer failed", zap.Error(err))

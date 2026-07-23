@@ -61,6 +61,18 @@ type AdminLLMRequest struct {
 	Role       string `json:"role"`
 	Enabled    *bool  `json:"enabled"`
 	IsDefault  bool   `json:"is_default"`
+	MaxTokens  int    `json:"max_tokens"` // 0 = auto (per-role default)
+}
+
+// maxTokensCap bounds the configurable output cap; above any real model's limit.
+const maxTokensCap = 200000
+
+// validateMaxTokens rejects negative or absurd values. 0 is valid ("auto").
+func validateMaxTokens(v int) string {
+	if v < 0 || v > maxTokensCap {
+		return fmt.Sprintf("max_tokens must be between 0 (auto) and %d", maxTokensCap)
+	}
+	return ""
 }
 
 // ListLLMModels handles GET /api/admin/llm
@@ -84,6 +96,7 @@ func (h *AdminLLMHandler) ListLLMModels(w http.ResponseWriter, r *http.Request) 
 		Role            string `json:"role"`
 		Enabled         bool   `json:"enabled"`
 		IsDefault       bool   `json:"is_default"`
+		MaxTokens       int    `json:"max_tokens"`
 	}
 
 	safe := make([]safeModel, len(models))
@@ -93,6 +106,7 @@ func (h *AdminLLMHandler) ListLLMModels(w http.ResponseWriter, r *http.Request) 
 			ProviderName: m.ProviderName, ProviderType: m.ProviderType,
 			ProviderEnabled: m.ProviderEnabled,
 			Model:           m.Model, Role: m.Role, Enabled: m.Enabled, IsDefault: m.IsDefault,
+			MaxTokens: m.MaxTokens,
 		}
 	}
 
@@ -136,6 +150,10 @@ func (h *AdminLLMHandler) CreateLLMModel(w http.ResponseWriter, r *http.Request)
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, errMsg), http.StatusBadRequest)
 		return
 	}
+	if errMsg := validateMaxTokens(req.MaxTokens); errMsg != "" {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, errMsg), http.StatusBadRequest)
+		return
+	}
 	model := &models.LLMModel{
 		ID:         req.ID,
 		Name:       req.Name,
@@ -144,6 +162,7 @@ func (h *AdminLLMHandler) CreateLLMModel(w http.ResponseWriter, r *http.Request)
 		Role:       req.Role,
 		Enabled:    boolValue(req.Enabled, true),
 		IsDefault:  req.IsDefault,
+		MaxTokens:  req.MaxTokens,
 	}
 
 	if err := h.llmRepo.Create(r.Context(), model); err != nil {
@@ -192,6 +211,10 @@ func (h *AdminLLMHandler) UpdateLLMModel(w http.ResponseWriter, r *http.Request)
 		http.Error(w, `{"error":"name, provider_id, and model are required"}`, http.StatusBadRequest)
 		return
 	}
+	if errMsg := validateMaxTokens(req.MaxTokens); errMsg != "" {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, errMsg), http.StatusBadRequest)
+		return
+	}
 
 	model := &models.LLMModel{
 		ID:         id,
@@ -201,6 +224,7 @@ func (h *AdminLLMHandler) UpdateLLMModel(w http.ResponseWriter, r *http.Request)
 		Role:       req.Role,
 		Enabled:    boolValue(req.Enabled, existing.Enabled),
 		IsDefault:  req.IsDefault,
+		MaxTokens:  req.MaxTokens,
 	}
 
 	if err := h.llmRepo.Update(r.Context(), model); err != nil {

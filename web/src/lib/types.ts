@@ -287,6 +287,7 @@ export interface AdminLLMModel {
   role: string;
   enabled: boolean;
   is_default: boolean;
+  max_tokens: number; // 0 = auto (per-role default)
 }
 
 export interface AdminLLMProvider {

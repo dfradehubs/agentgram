@@ -29,6 +29,9 @@ type LLMModel struct {
 	Role            string    `json:"role"`
 	Enabled         bool      `json:"enabled"`
 	IsDefault       bool      `json:"is_default"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	// MaxTokens overrides the output token cap for this model's calls. 0 = auto:
+	// the caller uses its built-in per-role default.
+	MaxTokens int       `json:"max_tokens"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
