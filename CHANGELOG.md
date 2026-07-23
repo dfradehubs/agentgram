@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.9.0] - 2026-07-23
+
+### Added
+
+- Per-model `Max tokens` override on the Admin LLM page (`0 = auto` uses the built-in per-role default). Applied across every role — moderator, summarizer, session namer, file processor, chart extractor, and MCP chat — and reloaded without restarting Agentgram.
+
+### Fixed
+
+- Group debates no longer abort with "moderator returned an invalid next-speaker response: empty response" when the moderator is a reasoning/thinking model. Such models spend hidden thinking tokens before their visible answer, and the previous 64-token cap left no room for the routing decision. Moderator and synthesis token budgets were raised accordingly.
+
+
+---
+
 ## [0.8.0] - 2026-07-18
 
 ### Added
