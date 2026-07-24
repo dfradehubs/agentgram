@@ -37,7 +37,8 @@ interface HeaderProps {
 }
 
 export function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
-  const { user, isAdmin, displayName, logout, disconnectGitHub } = useUser();
+  const { user, isAdmin, role, displayName, logout, disconnectGitHub } = useUser();
+  const canAccessAdmin = isAdmin || role === "editor";
   const { preferences, updatePreference } = usePreferencesContext();
   const t = useT();
 
@@ -168,7 +169,7 @@ export function Header({ onToggleSidebar, sidebarOpen }: HeaderProps) {
               </DropdownMenuItem>
             )}
 
-            {isAdmin && (
+            {canAccessAdmin && (
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>

@@ -24,7 +24,7 @@ func TestPatchChartsCrossUserDenied(t *testing.T) {
 	fg := &fakeGroupRepo{groups: map[string]*models.AgentGroup{
 		"g1": {ID: "g1", Name: "G", AgentIDs: []string{"agent-a", "agent-b"}, AllowedUsers: []string{"*"}},
 	}}
-	h := NewSessionsHandler(agents.NewRegistry(), fs, fg, service.NewUserService(&fakeUserRepo{}, nil, nil), nil, zap.NewNop())
+	h := NewSessionsHandler(agents.NewRegistry(), fs, fg, service.NewUserService(&fakeUserRepo{}, nil, nil, nil, nil), nil, zap.NewNop())
 
 	// Session owned by someone else, in a group the caller can access.
 	s, _ := fs.CreateSession(context.Background(), "someone-else@example.com", "agent-a", "seed")

@@ -7,16 +7,17 @@ import { AdminNav } from "@/components/admin/AdminNav";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  const { user, isAdmin, isLoading } = useUser();
+  const { user, isAdmin, role, isLoading } = useUser();
   const router = useRouter();
+  const canAccessAdmin = isAdmin || role === "editor";
 
   useEffect(() => {
-    if (!isLoading && (!user || !isAdmin)) {
+    if (!isLoading && (!user || !canAccessAdmin)) {
       router.replace("/");
     }
-  }, [user, isAdmin, isLoading, router]);
+  }, [user, canAccessAdmin, isLoading, router]);
 
-  if (isLoading || !isAdmin) {
+  if (isLoading || !canAccessAdmin) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="space-y-3" aria-busy="true">

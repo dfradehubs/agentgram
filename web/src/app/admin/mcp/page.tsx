@@ -9,12 +9,14 @@ import { Plus, Pencil, Trash2, ArrowLeft, Eye } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { AdminTableSkeleton } from "@/components/admin/AdminTableSkeleton";
+import { useUser } from "@/hooks/useUser";
 
 export default function AdminMCPPage() {
   const [servers, setServers] = useState<AdminMCPServer[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingServer, setEditingServer] = useState<AdminMCPServer | null>(null);
   const [creatingServer, setCreatingServer] = useState(false);
+  const { isAdmin } = useUser();
 
   const fetchServers = useCallback(async () => {
     try {
@@ -131,9 +133,11 @@ export default function AdminMCPPage() {
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditingServer(server)}>
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleDelete(server.id)}>
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                      {isAdmin && (
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleDelete(server.id)}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                     </div>
                   </td>
                 </tr>

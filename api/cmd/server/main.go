@@ -206,7 +206,7 @@ func main() {
 	}
 
 	// Create services
-	userService := service.NewUserService(userRepo, cfg.Auth.AdminUsers, cfg.Auth.AdminGroups)
+	userService := service.NewUserService(userRepo, cfg.Auth.AdminUsers, cfg.Auth.AdminGroups, cfg.Auth.EditorGroups, cfg.Auth.ViewerGroups)
 	bootstrapService := service.NewBootstrapService(userRepo, basicAuthRepo, logger)
 
 	// Seed admin users from config.yaml

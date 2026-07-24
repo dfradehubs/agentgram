@@ -8,12 +8,14 @@ import { SkillForm } from "@/components/admin/SkillForm";
 import { Plus, Pencil, Trash2, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { AdminTableSkeleton } from "@/components/admin/AdminTableSkeleton";
+import { useUser } from "@/hooks/useUser";
 
 export default function AdminSkillsPage() {
   const [skills, setSkills] = useState<AdminSkill[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingSkill, setEditingSkill] = useState<AdminSkill | null>(null);
   const [creatingSkill, setCreatingSkill] = useState(false);
+  const { isAdmin } = useUser();
 
   const fetchSkills = useCallback(async () => {
     try {
@@ -118,9 +120,11 @@ export default function AdminSkillsPage() {
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditingSkill(skill)}>
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleDelete(skill.id)}>
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                      {isAdmin && (
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleDelete(skill.id)}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                     </div>
                   </td>
                 </tr>

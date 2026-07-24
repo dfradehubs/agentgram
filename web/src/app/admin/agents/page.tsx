@@ -14,12 +14,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { toast } from "sonner";
 import { AdminTableSkeleton } from "@/components/admin/AdminTableSkeleton";
+import { useUser } from "@/hooks/useUser";
 
 // Agents and Groups share this page; the active section is derived from the
 // route (/admin/agents vs /admin/groups) so each has its own nav entry.
 export default function AdminAgentsPage() {
   const pathname = usePathname();
   const tab: "agents" | "groups" = pathname.includes("/groups") ? "groups" : "agents";
+  const { isAdmin } = useUser();
 
   // Agents state
   const [agents, setAgents] = useState<AdminAgent[]>([]);
@@ -234,9 +236,11 @@ export default function AdminAgentsPage() {
                           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditingAgent(agent)}>
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleDeleteAgent(agent.id)}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
+                          {isAdmin && (
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleDeleteAgent(agent.id)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                         </div>
                       </td>
                     </tr>

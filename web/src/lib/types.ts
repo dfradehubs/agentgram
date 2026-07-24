@@ -167,11 +167,14 @@ export interface InheritedPermission {
 }
 
 // User types
+export type UserRole = "admin" | "editor" | "viewer" | "user";
+
 export interface User {
   email: string;
   name?: string;
   groups?: string[];
   isAdmin?: boolean;
+  role?: UserRole;
   githubConnected?: boolean;
   githubUsername?: string;
 }

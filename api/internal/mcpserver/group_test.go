@@ -226,7 +226,7 @@ func newGroupTestHandler(t *testing.T, agentAStatus int, moderatorSays ...string
 
 	group := &models.AgentGroup{ID: "g1", Name: "Test Group", Description: "Investigates production incidents", AgentIDs: []string{"agent-a", "agent-b"}, CreatedBy: "user@example.com"}
 	groupRepo := &mcpFakeGroupRepo{groups: map[string]*models.AgentGroup{"g1": group}}
-	userService := service.NewUserService(&mcpFakeUserRepo{}, nil, nil)
+	userService := service.NewUserService(&mcpFakeUserRepo{}, nil, nil, nil, nil)
 
 	h := &Handler{
 		server:       NewServer(registry, nil, userService, groupRepo, nil, zap.NewNop()),
