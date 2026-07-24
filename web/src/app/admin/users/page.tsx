@@ -73,7 +73,9 @@ export default function AdminUsersPage() {
     }
   };
 
-  const ROLES = ["admin", "editor", "viewer", "user"];
+  // viewer is omitted: today it behaves exactly like user (no admin-panel
+  // access). The backend still accepts it for a future read-only role.
+  const ROLES = ["admin", "editor", "user"];
 
   const handleCreateBasicUser = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -489,7 +489,7 @@ func SetupRoutes(cfg *config.Config, registry *agents.Registry, sessionStore sto
 					r.Delete("/llm/{id}", adminLLMHandler.DeleteLLMModel)
 
 					// Admin users
-					adminUsersHandler := handlers.NewAdminUsersHandler(adminDeps.UserRepo, adminDeps.AuditRepo, cfg.Auth.AdminUsers, cfg.Auth.AdminGroups, oidcClient, logger)
+					adminUsersHandler := handlers.NewAdminUsersHandler(adminDeps.UserRepo, adminDeps.AuditRepo, cfg.Auth.AdminUsers, logger)
 					r.Get("/users", adminUsersHandler.ListUsers)
 					r.Put("/users/{email}/role", adminUsersHandler.UpdateRole)
 
