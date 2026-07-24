@@ -37,6 +37,7 @@ type AdminDeps struct {
 	UserService     *service.UserService
 	AgentRepo       repository.AgentRepository
 	MCPRepo         repository.MCPServerRepository
+	SkillRepo       repository.SkillRepository
 	UserRepo        repository.UserRepository
 	AuditRepo       repository.AuditRepository
 	LLMRepo         repository.LLMModelRepository
@@ -128,7 +129,7 @@ func SetupRoutes(cfg *config.Config, registry *agents.Registry, sessionStore sto
 
 	// MCP server endpoint (exposes agents as MCP tools for Claude Code and other MCP clients)
 	if cfg.MCPServer.Enabled {
-		mcpServerHandler := mcpserver.NewHandler(registry, mcpRegistry, sessionStore, adminDeps.UserService, adminDeps.GroupRepo, oidcClient, cfg, logger, adminDeps.LangfuseTracer, adminDeps.OAuth2Manager, adminDeps.MCPRepo, llmRepo, adminDeps.SettingsService)
+		mcpServerHandler := mcpserver.NewHandler(registry, mcpRegistry, sessionStore, adminDeps.UserService, adminDeps.GroupRepo, adminDeps.SkillRepo, oidcClient, cfg, logger, adminDeps.LangfuseTracer, adminDeps.OAuth2Manager, adminDeps.MCPRepo, llmRepo, adminDeps.SettingsService)
 
 		// Public: OAuth2 Protected Resource Metadata (RFC 9728)
 		// Serve at both root and path-based locations per RFC 9728 Section 3.1:
@@ -416,6 +417,17 @@ func SetupRoutes(cfg *config.Config, registry *agents.Registry, sessionStore sto
 				r.Put("/mcp/{id}", adminMCPHandler.UpdateMCPServer)
 				r.Delete("/mcp/{id}", adminMCPHandler.DeleteMCPServer)
 				r.Put("/mcp/{id}/permissions", adminMCPHandler.UpdateMCPPermissions)
+
+				// Admin skills
+				if adminDeps.SkillRepo != nil {
+					adminSkillsHandler := handlers.NewAdminSkillsHandler(adminDeps.SkillRepo, adminDeps.AuditRepo, logger)
+					r.Get("/skills", adminSkillsHandler.ListSkills)
+					r.Post("/skills", adminSkillsHandler.CreateSkill)
+					r.Get("/skills/{id}", adminSkillsHandler.GetSkill)
+					r.Put("/skills/{id}", adminSkillsHandler.UpdateSkill)
+					r.Delete("/skills/{id}", adminSkillsHandler.DeleteSkill)
+					r.Put("/skills/{id}/permissions", adminSkillsHandler.UpdateSkillPermissions)
+				}
 
 				// Admin MCP OAuth2 scope mappings
 				if adminDeps.OAuth2Manager != nil {

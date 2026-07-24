@@ -250,6 +250,17 @@ export interface AdminMCPServer {
   api_key_rules?: MCPApiKeyRule[];
 }
 
+export interface AdminSkill {
+  id: string;
+  name: string;
+  description: string;
+  content: string;
+  allowed_users: string[];
+  allowed_groups: string[];
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface MCPOAuth2ScopeMapping {
   id: string;
   mcp_server_id: string;

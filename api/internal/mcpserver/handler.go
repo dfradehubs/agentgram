@@ -56,6 +56,7 @@ func NewHandler(
 	sessionStore store.SessionStore,
 	userService *service.UserService,
 	groupRepo repository.GroupRepository,
+	skillRepo repository.SkillRepository,
 	oidcClient *auth.OIDCClient,
 	cfg *config.Config,
 	logger *zap.Logger,
@@ -66,7 +67,7 @@ func NewHandler(
 	settingsService *appsettings.Service,
 ) *Handler {
 	return &Handler{
-		server:            NewServer(registry, mcpRegistry, userService, groupRepo, logger),
+		server:            NewServer(registry, mcpRegistry, userService, groupRepo, skillRepo, logger),
 		registry:          registry,
 		mcpRegistry:       mcpRegistry,
 		proxy:             proxy.NewProxy(logger),
@@ -421,6 +422,12 @@ func (h *Handler) handleToolsCall(w http.ResponseWriter, r *http.Request, req js
 		return
 	}
 
+	// Skill tools return the skill's instruction content directly (no proxy).
+	if skillID, ok := GetSkillIDFromToolName(params.Name); ok {
+		h.handleSkillToolCall(w, r, req, skillID, userEmail, userGroups)
+		return
+	}
+
 	// Extract agent ID from tool name
 	agentID, ok := GetAgentIDFromToolName(params.Name)
 	if !ok {
@@ -608,6 +615,28 @@ func (h *Handler) handleToolsCall(w http.ResponseWriter, r *http.Request, req js
 		zap.Int("json_response_bytes", len(jsonResponse)),
 		zap.Int("elapsed_seconds", elapsedSeconds))
 	flushSSE(jsonResponse)
+}
+
+// handleSkillToolCall handles a tools/call for a skill tool. It returns the
+// skill's stored instruction content verbatim after re-checking access.
+func (h *Handler) handleSkillToolCall(w http.ResponseWriter, r *http.Request, req jsonRPCRequest, skillID, userEmail string, userGroups []string) {
+	if h.server.skillRepo == nil {
+		h.writeJSON(w, http.StatusOK, h.server.MarshalToolResult(req.ID, "Skills not available", true))
+		return
+	}
+
+	skill, err := h.server.skillRepo.Get(r.Context(), skillID)
+	if err != nil {
+		h.writeJSON(w, http.StatusOK, h.server.MarshalError(req.ID, errCodeInvalidParams, fmt.Sprintf("skill not found: %s", skillID)))
+		return
+	}
+
+	if !skill.HasAccess(userEmail, userGroups) {
+		h.writeJSON(w, http.StatusOK, h.server.MarshalToolResult(req.ID, "Access denied to this skill", true))
+		return
+	}
+
+	h.writeJSON(w, http.StatusOK, h.server.MarshalToolResult(req.ID, skill.Content, false))
 }
 
 // handleMCPToolCall handles a tools/call for an MCP server tool.

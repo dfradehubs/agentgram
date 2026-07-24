@@ -49,6 +49,16 @@ type MCPServerRepository interface {
 	ReplaceAPIKeyRules(ctx context.Context, serverID string, rules []models.MCPAPIKeyRule) error
 }
 
+// SkillRepository manages skill persistence
+type SkillRepository interface {
+	Create(ctx context.Context, skill *models.Skill) error
+	Get(ctx context.Context, id string) (*models.Skill, error)
+	List(ctx context.Context) ([]*models.Skill, error)
+	Update(ctx context.Context, skill *models.Skill) error
+	Delete(ctx context.Context, id string) error
+	UpdatePermissions(ctx context.Context, id string, users, groups []string) error
+}
+
 // LLMModelRepository manages LLM model persistence
 type LLMModelRepository interface {
 	Create(ctx context.Context, model *models.LLMModel) error
