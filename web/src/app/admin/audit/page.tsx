@@ -33,6 +33,7 @@ export default function AdminAuditPage() {
   const [rangeMinutes, setRangeMinutes] = useState(1440);
   const [user, setUser] = useState("");
   const [category, setCategory] = useState("");
+  const [session, setSession] = useState("");
   const [maxResults, setMaxResults] = useState(50);
   const [offset, setOffset] = useState(0);
 
@@ -44,6 +45,7 @@ export default function AdminAuditPage() {
         from,
         user,
         resource_type: category,
+        session,
         limit: String(maxResults),
         offset: String(offset),
       });
@@ -55,7 +57,7 @@ export default function AdminAuditPage() {
     } finally {
       setLoading(false);
     }
-  }, [rangeMinutes, user, category, maxResults, offset]);
+  }, [rangeMinutes, user, category, session, maxResults, offset]);
 
   useEffect(() => {
     fetchEvents();
@@ -102,6 +104,15 @@ export default function AdminAuditPage() {
             {CATEGORIES.map((c) => <option key={c} value={c}>{c === "" ? "All categories" : c}</option>)}
           </select>
         </div>
+        <div className="flex-1">
+          <label className="mb-1 block text-xs font-medium text-muted-foreground">Session</label>
+          <input
+            className="w-full rounded-md border bg-background px-3 py-1.5 text-sm"
+            placeholder="Search by session ID"
+            value={session}
+            onChange={(e) => { setOffset(0); setSession(e.target.value); }}
+          />
+        </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-muted-foreground">Max</label>
           <select
@@ -115,7 +126,7 @@ export default function AdminAuditPage() {
       </div>
 
       {loading ? (
-        <AdminTableSkeleton columns={4} rows={6} />
+        <AdminTableSkeleton columns={5} rows={6} />
       ) : (
         <div className="overflow-x-auto rounded-lg border">
           <table className="w-full text-sm">
@@ -124,6 +135,7 @@ export default function AdminAuditPage() {
                 <th className="px-4 py-3 text-left font-medium">Date</th>
                 <th className="px-4 py-3 text-left font-medium">Action</th>
                 <th className="px-4 py-3 text-left font-medium">Member</th>
+                <th className="px-4 py-3 text-left font-medium">Session</th>
                 <th className="px-4 py-3 text-left font-medium">Category</th>
               </tr>
             </thead>
@@ -151,13 +163,26 @@ export default function AdminAuditPage() {
                         </div>
                       </td>
                       <td className="px-4 py-3 text-xs">{e.user_email}</td>
+                      <td className="px-4 py-3 text-xs">
+                        {e.session_id ? (
+                          <button
+                            className="font-mono text-muted-foreground hover:text-foreground hover:underline"
+                            title="Filter by this session"
+                            onClick={(ev) => { ev.stopPropagation(); setOffset(0); setSession(e.session_id!); }}
+                          >
+                            {e.session_id.slice(0, 8)}…
+                          </button>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3">
                         <span className="rounded bg-muted px-2 py-0.5 text-xs capitalize">{e.resource_type}</span>
                       </td>
                     </tr>
                     {isOpen && (
                       <tr className="bg-muted/20">
-                        <td colSpan={4} className="px-6 py-4">
+                        <td colSpan={5} className="px-6 py-4">
                           <div className="space-y-3 text-xs">
                             <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
                               {e.client && <span><span className="font-semibold">Client:</span> {e.client}</span>}

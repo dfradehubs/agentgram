@@ -31,6 +31,7 @@ func (h *AdminAuditHandler) ListAuditEvents(w http.ResponseWriter, r *http.Reque
 		Group:        q.Get("group"),
 		ResourceType: q.Get("resource_type"),
 		RequestID:    q.Get("request_id"),
+		SessionID:    q.Get("session"),
 	}
 	if v := q.Get("from"); v != "" {
 		if t, err := time.Parse(time.RFC3339, v); err == nil {

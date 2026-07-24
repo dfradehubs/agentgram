@@ -64,6 +64,7 @@ type AuditEventFilter struct {
 	Group        string
 	ResourceType string
 	RequestID    string
+	SessionID    string
 	Limit        int
 	Offset       int
 }

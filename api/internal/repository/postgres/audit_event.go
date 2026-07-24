@@ -70,6 +70,9 @@ func (r *AuditEventRepository) List(ctx context.Context, f models.AuditEventFilt
 	if f.RequestID != "" {
 		add("request_id = $%d", f.RequestID)
 	}
+	if f.SessionID != "" {
+		add("session_id = $%d", f.SessionID)
+	}
 	where := ""
 	if len(conds) > 0 {
 		where = "WHERE " + strings.Join(conds, " AND ")
