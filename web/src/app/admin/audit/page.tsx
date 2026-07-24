@@ -265,10 +265,12 @@ export default function AdminAuditPage() {
                                 <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded bg-background p-3">{e.response}</pre>
                               </div>
                             )}
-                            {e.error_msg && (
+                            {e.status === "error" && (
                               <div>
-                                <div className="mb-1 font-semibold text-destructive">Error</div>
-                                <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded bg-background p-3 text-destructive">{e.error_msg}</pre>
+                                <div className="mb-1 font-semibold text-destructive">
+                                  Error{e.error_type ? ` (${e.error_type})` : ""}
+                                </div>
+                                <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded bg-background p-3 text-destructive">{e.error_msg || "Unknown error"}</pre>
                               </div>
                             )}
                           </div>
