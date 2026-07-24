@@ -61,8 +61,8 @@ export default function AdminUsersPage() {
     fetchSlackLinks();
   }, [fetchUsers, fetchBasicUsers, fetchSlackLinks]);
 
-  const handleToggleRole = async (user: AdminUser) => {
-    const newRole = user.role === "admin" ? "user" : "admin";
+  const handleChangeRole = async (user: AdminUser, newRole: string) => {
+    if (newRole === user.role) return;
     if (!confirm(`Change role of ${user.email} to "${newRole}"?`)) return;
     try {
       await updateAdminUserRole(user.email, newRole);
@@ -72,6 +72,8 @@ export default function AdminUsersPage() {
       toast.error(err instanceof Error ? err.message : "Error changing role");
     }
   };
+
+  const ROLES = ["admin", "editor", "viewer", "user"];
 
   const handleCreateBasicUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -168,17 +170,20 @@ export default function AdminUsersPage() {
                     </td>
                     <td className="px-4 py-3 text-right">
                       {user.protected ? (
-                        <span className="text-xs text-muted-foreground" title="Admin by system configuration">
+                        <span className="text-xs text-muted-foreground" title="Role set by system configuration (admin_users / admin_groups / editor_groups / viewer_groups)">
                           Protected
                         </span>
                       ) : (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleToggleRole(user)}
+                        <select
+                          className="rounded-md border bg-background px-2 py-1 text-sm"
+                          value={user.role}
+                          onChange={(e) => handleChangeRole(user, e.target.value)}
+                          title="Change role"
                         >
-                          {user.role === "admin" ? "Remove admin" : "Make admin"}
-                        </Button>
+                          {ROLES.map((role) => (
+                            <option key={role} value={role}>{role}</option>
+                          ))}
+                        </select>
                       )}
                     </td>
                   </tr>
