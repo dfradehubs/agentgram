@@ -13,15 +13,69 @@ type UserService struct {
 	userRepo        repository.UserRepository
 	bootstrapAdmins []string
 	adminGroups     []string
+	editorGroups    []string
+	viewerGroups    []string
 }
 
 // NewUserService creates a new user service
-func NewUserService(userRepo repository.UserRepository, bootstrapAdmins []string, adminGroups []string) *UserService {
+func NewUserService(userRepo repository.UserRepository, bootstrapAdmins, adminGroups, editorGroups, viewerGroups []string) *UserService {
 	return &UserService{
 		userRepo:        userRepo,
 		bootstrapAdmins: bootstrapAdmins,
 		adminGroups:     adminGroups,
+		editorGroups:    editorGroups,
+		viewerGroups:    viewerGroups,
 	}
+}
+
+// ResolveRole returns the effective role for a user: the highest of the role
+// granted by config (admin users/groups, editor/viewer groups) and the role
+// stored in the DB. Unknown/absent → user.
+func (s *UserService) ResolveRole(ctx context.Context, email string, groups []string) string {
+	// Config-admin always wins.
+	for _, admin := range s.bootstrapAdmins {
+		if strings.EqualFold(admin, email) {
+			return models.RoleAdmin
+		}
+	}
+	groupSet := make(map[string]bool, len(groups))
+	for _, g := range groups {
+		groupSet[strings.ToLower(g)] = true
+	}
+	for _, g := range s.adminGroups {
+		if groupSet[strings.ToLower(g)] {
+			return models.RoleAdmin
+		}
+	}
+
+	// Config editor/viewer groups.
+	configRole := models.RoleUser
+	for _, g := range s.editorGroups {
+		if groupSet[strings.ToLower(g)] {
+			configRole = models.RoleEditor
+			break
+		}
+	}
+	if configRole == models.RoleUser {
+		for _, g := range s.viewerGroups {
+			if groupSet[strings.ToLower(g)] {
+				configRole = models.RoleViewer
+				break
+			}
+		}
+	}
+
+	// DB role.
+	dbRole := models.RoleUser
+	if user, err := s.userRepo.GetByEmail(ctx, email); err == nil {
+		dbRole = models.NormalizeRole(user.Role)
+	}
+
+	// Highest of config vs DB.
+	if models.HasRole(dbRole, configRole) {
+		return dbRole
+	}
+	return configRole
 }
 
 // IsAdmin checks if a user is an admin (from DB, bootstrap config, or group membership)

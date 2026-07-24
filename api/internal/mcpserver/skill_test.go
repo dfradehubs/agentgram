@@ -60,7 +60,7 @@ func (f *fakeSkillRepo) UpdatePermissions(context.Context, string, []string, []s
 }
 
 func newSkillTestServer(skills ...*models.Skill) *Server {
-	userService := service.NewUserService(&mcpFakeUserRepo{}, nil, nil)
+	userService := service.NewUserService(&mcpFakeUserRepo{}, nil, nil, nil, nil)
 	return NewServer(agents.NewRegistry(), nil, userService, nil, &fakeSkillRepo{skills: skills}, zap.NewNop())
 }
 

@@ -4,12 +4,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Bot, Server, Users, UsersRound, ArrowLeft, Brain, BarChart3, Settings, KeyRound, BookOpen, ScrollText } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useUser } from "@/hooks/useUser";
 
+// editor: true → visible to editors; the rest are admin-only.
 const navItems = [
-  { href: "/admin/agents", label: "Agents", icon: Bot },
+  { href: "/admin/agents", label: "Agents", icon: Bot, editor: true },
   { href: "/admin/groups", label: "Groups", icon: UsersRound },
-  { href: "/admin/mcp", label: "MCP Servers", icon: Server },
-  { href: "/admin/skills", label: "Skills", icon: BookOpen },
+  { href: "/admin/mcp", label: "MCP Servers", icon: Server, editor: true },
+  { href: "/admin/skills", label: "Skills", icon: BookOpen, editor: true },
   { href: "/admin/providers", label: "Providers", icon: KeyRound },
   { href: "/admin/llm", label: "LLM Models", icon: Brain },
   { href: "/admin/users", label: "Users", icon: Users },
@@ -20,6 +22,8 @@ const navItems = [
 
 export function AdminNav() {
   const pathname = usePathname();
+  const { isAdmin } = useUser();
+  const items = navItems.filter((item) => isAdmin || item.editor);
 
   return (
     <nav className="flex w-56 flex-col border-r bg-muted/30 p-4">
@@ -34,7 +38,7 @@ export function AdminNav() {
       <h2 className="mb-4 text-lg font-semibold">Admin</h2>
 
       <div className="flex flex-col gap-1">
-        {navItems.map((item) => {
+        {items.map((item) => {
           const Icon = item.icon;
           const active = pathname.startsWith(item.href);
           return (

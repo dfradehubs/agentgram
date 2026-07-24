@@ -1,13 +1,14 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
-import type { User } from "@/lib/types";
+import type { User, UserRole } from "@/lib/types";
 import { getAuthSession, getMe, logout as apiLogout, disconnectGitHub as apiDisconnectGitHub, ApiError } from "@/lib/api";
 
 interface UserContextType {
   user: User | null;
   isLoading: boolean;
   isAdmin: boolean;
+  role: UserRole;
   displayName: string;
   logout: () => Promise<void>;
   disconnectGitHub: () => Promise<void>;
@@ -28,9 +29,11 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         if (data.authenticated) {
           // Fetch /api/me for admin status
           let isAdmin = false;
+          let role = "user";
           try {
             const meData = await getMe();
             isAdmin = (meData as { is_admin?: boolean }).is_admin || false;
+            role = (meData as { role?: string }).role || "user";
           } catch (err) {
             if (err instanceof ApiError && err.status === 401) {
               // Token expired between session check and API call — treat as unauthenticated
@@ -49,6 +52,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
             name: data.name || "",
             groups: data.groups,
             isAdmin,
+            role: role as User["role"],
             githubConnected: data.github_connected,
             githubUsername: data.github_username,
           });
@@ -124,9 +128,10 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   }
 
   const isAdmin = user?.isAdmin || false;
+  const role = user?.role || "user";
 
   return (
-    <UserContext.Provider value={{ user, isLoading, isAdmin, displayName, logout, disconnectGitHub }}>
+    <UserContext.Provider value={{ user, isLoading, isAdmin, role, displayName, logout, disconnectGitHub }}>
       {children}
     </UserContext.Provider>
   );

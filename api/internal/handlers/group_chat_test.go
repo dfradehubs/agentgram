@@ -268,7 +268,7 @@ func newGroupChatFixture(t *testing.T, agentAStatus, agentBStatus int, moderator
 
 	h := &ProxyHandler{
 		registry:    registry,
-		userService: service.NewUserService(&fakeUserRepo{}, nil, nil),
+		userService: service.NewUserService(&fakeUserRepo{}, nil, nil, nil, nil),
 		groupRepo:   fg,
 		proxy:       proxy.NewProxy(zap.NewNop()),
 		store:       fs,

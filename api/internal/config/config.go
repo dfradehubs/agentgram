@@ -101,6 +101,8 @@ type AuthConfig struct {
 	CookieSecure  bool              `yaml:"cookie_secure"`
 	AdminGroups   []string          `yaml:"admin_groups"`
 	AdminUsers    []string          `yaml:"admin_users"`
+	EditorGroups  []string          `yaml:"editor_groups"`
+	ViewerGroups  []string          `yaml:"viewer_groups"`
 	Keycloak      KeycloakConfig    `yaml:"keycloak"`
 	GitHub        GitHubOAuthConfig `yaml:"github"`
 	Google        GoogleOAuthConfig `yaml:"google"`

@@ -113,13 +113,13 @@ func (h *AdminUsersHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Role != "admin" && req.Role != "user" {
-		http.Error(w, `{"error":"role must be 'admin' or 'user'"}`, http.StatusBadRequest)
+	if !models.IsValidRole(req.Role) {
+		http.Error(w, `{"error":"role must be 'admin', 'editor', 'viewer' or 'user'"}`, http.StatusBadRequest)
 		return
 	}
 
 	// Block demotion of protected admins (bootstrap config or admin group membership)
-	if req.Role == "user" {
+	if req.Role != models.RoleAdmin {
 		if h.isProtectedAdmin(email) {
 			http.Error(w, `{"error":"this user is an admin via system configuration and cannot be modified"}`, http.StatusForbidden)
 			return

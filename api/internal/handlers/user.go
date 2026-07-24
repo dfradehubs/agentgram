@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/dfradehubs/agentgram-api/internal/middleware"
+	"github.com/dfradehubs/agentgram-api/internal/models"
 	"github.com/dfradehubs/agentgram-api/internal/service"
 	"go.uber.org/zap"
 )
@@ -14,6 +15,7 @@ type UserResponse struct {
 	Email   string   `json:"email"`
 	Groups  []string `json:"groups"`
 	IsAdmin bool     `json:"is_admin"`
+	Role    string   `json:"role"` // admin | editor | viewer | user
 }
 
 // UserHandler handles user endpoints
@@ -51,22 +53,20 @@ func (h *UserHandler) Me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isAdmin := false
+	role := models.RoleUser
 	if h.userService != nil {
 		// Ensure user exists in DB (creates on first visit) and update last access
 		if _, err := h.userService.EnsureUser(r.Context(), claims.GetEmail(), claims.GetGroups()); err != nil {
 			h.logger.Error("EnsureUser failed", zap.String("email", claims.GetEmail()), zap.Error(err))
 		}
-
-		if admin, err := h.userService.IsAdmin(r.Context(), claims.GetEmail(), claims.GetGroups()); err == nil {
-			isAdmin = admin
-		}
+		role = h.userService.ResolveRole(r.Context(), claims.GetEmail(), claims.GetGroups())
 	}
 
 	response := UserResponse{
 		Email:   claims.GetEmail(),
 		Groups:  claims.GetGroups(),
-		IsAdmin: isAdmin,
+		IsAdmin: models.HasRole(role, models.RoleAdmin),
+		Role:    role,
 	}
 
 	w.WriteHeader(http.StatusOK)
