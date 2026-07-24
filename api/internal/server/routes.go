@@ -371,6 +371,13 @@ func SetupRoutes(cfg *config.Config, registry *agents.Registry, sessionStore sto
 		// Group sessions are personal: each user only ever sees their own.
 		r.Get("/groups/{groupId}/sessions", groupsHandler.ListGroupSessions)
 
+		// Skills (user-facing, read-only — creation/editing is admin-only)
+		if adminDeps.SkillRepo != nil {
+			skillsHandler := handlers.NewSkillsHandler(adminDeps.SkillRepo, logger)
+			r.Get("/skills", skillsHandler.ListSkills)
+			r.Get("/skills/{id}", skillsHandler.GetSkill)
+		}
+
 		// Multi-MCP endpoints
 		r.Post("/mcp/chat", mcpHandler.ChatMulti)
 		r.Get("/mcp/sessions", mcpHandler.ListMultiMCPSessions)

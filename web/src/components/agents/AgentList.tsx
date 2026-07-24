@@ -10,6 +10,7 @@ import { useT } from "@/lib/i18n";
 import { AgentItem } from "./AgentItem";
 import { AgentItemSkeleton } from "./AgentItemSkeleton";
 import { GroupItem } from "../sessions/GroupItem";
+import { SkillsSection } from "./SkillsSection";
 import { SlackSessionsSection } from "../sessions/SlackSessionsSection";
 import { MultiMCPItem } from "../mcp/MultiMCPItem";
 import { MCPSessionList } from "../mcp/MCPSessionList";
@@ -268,6 +269,9 @@ export function AgentList() {
           </Collapsible>
         </>
       )}
+
+      {/* Skills (read-only reference docs the user has access to) */}
+      <SkillsSection />
 
       <CreateMultiMCPDialog
         isOpen={showMultiMCPDialog}

@@ -250,6 +250,16 @@ export interface AdminMCPServer {
   api_key_rules?: MCPApiKeyRule[];
 }
 
+export interface UserSkill {
+  id: string;
+  name: string;
+  description: string;
+}
+
+export interface SkillDetail extends UserSkill {
+  content: string;
+}
+
 export interface AdminSkill {
   id: string;
   name: string;

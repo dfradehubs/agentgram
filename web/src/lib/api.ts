@@ -7,6 +7,8 @@ import type {
   AdminLLMProvider,
   AdminMCPServer,
   AdminSkill,
+  UserSkill,
+  SkillDetail,
   AdminUser,
   AppSetting,
   BasicAuthUser,
@@ -386,6 +388,15 @@ export async function updateAdminMCPServer(id: string, server: Partial<AdminMCPS
 
 export async function deleteAdminMCPServer(id: string): Promise<void> {
   await fetchApi(`/api/admin/mcp/${id}`, { method: "DELETE" });
+}
+
+export async function getSkills(): Promise<UserSkill[]> {
+  const data = await fetchApi<{ skills: UserSkill[] }>("/api/skills");
+  return data.skills || [];
+}
+
+export async function getSkillDetail(id: string): Promise<SkillDetail> {
+  return fetchApi<SkillDetail>(`/api/skills/${id}`);
 }
 
 export async function getAdminSkills(): Promise<AdminSkill[]> {
