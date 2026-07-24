@@ -22,6 +22,10 @@ func RecordEvent(repo repository.AuditEventRepository, ev *models.AuditEvent, ma
 	if maxContentChars > 0 {
 		ev.Prompt = truncateRunes(ev.Prompt, maxContentChars)
 		ev.Response = truncateRunes(ev.Response, maxContentChars)
+		for i := range ev.ToolCalls {
+			ev.ToolCalls[i].Arguments = truncateRunes(ev.ToolCalls[i].Arguments, maxContentChars)
+			ev.ToolCalls[i].Result = truncateRunes(ev.ToolCalls[i].Result, maxContentChars)
+		}
 	}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), auditInsertTimeout)

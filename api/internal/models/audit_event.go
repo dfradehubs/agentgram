@@ -32,7 +32,6 @@ type AuditToolCall struct {
 // Distinct from ChatEvent, which stores only aggregate metrics with no content.
 type AuditEvent struct {
 	ID           string          `json:"id"`
-	RequestID    string          `json:"request_id,omitempty"`
 	UserEmail    string          `json:"user_email"`
 	UserGroups   []string        `json:"user_groups,omitempty"`
 	ResourceType string          `json:"resource_type"`
@@ -51,7 +50,6 @@ type AuditEvent struct {
 	ErrorType    string          `json:"error_type,omitempty"`
 	ErrorMsg     string          `json:"error_msg,omitempty"`
 	DurationMs   int             `json:"duration_ms"`
-	TTFBMs       *int            `json:"ttfb_ms,omitempty"`
 	CreatedAt    time.Time       `json:"created_at"`
 }
 
@@ -63,7 +61,6 @@ type AuditEventFilter struct {
 	UserEmail    string
 	Group        string
 	ResourceType string
-	RequestID    string
 	SessionID    string
 	Limit        int
 	Offset       int

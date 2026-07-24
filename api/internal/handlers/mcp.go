@@ -499,6 +499,7 @@ func (h *MCPHandler) Chat(w http.ResponseWriter, r *http.Request) {
 		}
 		recordAuditEvent(h.auditRepo, h.auditSettings, &models.AuditEvent{
 			UserEmail:    userEmail,
+			UserGroups:   claims.GetGroups(),
 			ResourceType: models.AuditResourceMCP,
 			ResourceID:   serverID,
 			ResourceName: server.Config.Name,
@@ -743,6 +744,7 @@ func (h *MCPHandler) ChatMulti(w http.ResponseWriter, r *http.Request) {
 		}
 		recordAuditEvent(h.auditRepo, h.auditSettings, &models.AuditEvent{
 			UserEmail:    userEmail,
+			UserGroups:   claims.GetGroups(),
 			ResourceType: models.AuditResourceMCP,
 			ResourceID:   resourceID,
 			ResourceName: "Multi-MCP",

@@ -3,7 +3,6 @@
 -- only aggregate metrics with no content.
 CREATE TABLE audit_events (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    request_id    VARCHAR(255),
     user_email    VARCHAR(255) NOT NULL,
     user_groups   TEXT[],
     resource_type VARCHAR(20)  NOT NULL,   -- agent, mcp, skill, group
@@ -18,11 +17,9 @@ CREATE TABLE audit_events (
     error_type    VARCHAR(50),
     error_msg     TEXT,
     duration_ms   INTEGER      NOT NULL DEFAULT 0,
-    ttfb_ms       INTEGER,
     created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX idx_audit_events_created  ON audit_events (created_at DESC);
 CREATE INDEX idx_audit_events_user     ON audit_events (user_email, created_at DESC);
 CREATE INDEX idx_audit_events_resource ON audit_events (resource_type, created_at DESC);
-CREATE INDEX idx_audit_events_request  ON audit_events (request_id);

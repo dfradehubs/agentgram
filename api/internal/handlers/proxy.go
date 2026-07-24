@@ -574,6 +574,7 @@ func (h *ProxyHandler) Chat(w http.ResponseWriter, r *http.Request) {
 		}
 		recordAuditEvent(h.auditRepo, h.settings, &models.AuditEvent{
 			UserEmail:    userEmail,
+			UserGroups:   claims.GetGroups(),
 			ResourceType: models.AuditResourceAgent,
 			ResourceID:   agentID,
 			ResourceName: agent.Name,

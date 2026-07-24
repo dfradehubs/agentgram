@@ -30,13 +30,13 @@ func (r *AuditEventRepository) Insert(ctx context.Context, e *models.AuditEvent)
 	}
 	_, err := r.pool.Exec(ctx,
 		`INSERT INTO audit_events
-		  (request_id, user_email, user_groups, resource_type, resource_id, resource_name,
+		  (user_email, user_groups, resource_type, resource_id, resource_name,
 		   source, client, session_id, action, prompt, response, tool_calls, token_usage, llm_model,
-		   status, error_type, error_msg, duration_ms, ttfb_ms)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
-		nullStr(e.RequestID), e.UserEmail, e.UserGroups, e.ResourceType, e.ResourceID, nullStr(e.ResourceName),
+		   status, error_type, error_msg, duration_ms)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+		e.UserEmail, e.UserGroups, e.ResourceType, e.ResourceID, nullStr(e.ResourceName),
 		e.Source, nullStr(e.Client), nullStr(e.SessionID), e.Action, e.Prompt, e.Response, toolCallsJSON, tokenUsageJSON, nullStr(e.LLMModel),
-		e.Status, nullStr(e.ErrorType), nullStr(e.ErrorMsg), e.DurationMs, e.TTFBMs)
+		e.Status, nullStr(e.ErrorType), nullStr(e.ErrorMsg), e.DurationMs)
 	if err != nil {
 		return fmt.Errorf("insert audit event: %w", err)
 	}
@@ -67,9 +67,6 @@ func (r *AuditEventRepository) List(ctx context.Context, f models.AuditEventFilt
 	if f.ResourceType != "" {
 		add("resource_type = $%d", f.ResourceType)
 	}
-	if f.RequestID != "" {
-		add("request_id = $%d", f.RequestID)
-	}
 	if f.SessionID != "" {
 		add("session_id = $%d", f.SessionID)
 	}
@@ -93,9 +90,9 @@ func (r *AuditEventRepository) List(ctx context.Context, f models.AuditEventFilt
 	offsetPos := len(args)
 
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, request_id, user_email, user_groups, resource_type, resource_id, resource_name,
+		`SELECT id, user_email, user_groups, resource_type, resource_id, resource_name,
 		        source, client, session_id, action, prompt, response, tool_calls, token_usage, llm_model,
-		        status, error_type, error_msg, duration_ms, ttfb_ms, created_at
+		        status, error_type, error_msg, duration_ms, created_at
 		 FROM audit_events `+where+
 			fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d OFFSET $%d", limitPos, offsetPos),
 		args...)
@@ -107,14 +104,13 @@ func (r *AuditEventRepository) List(ctx context.Context, f models.AuditEventFilt
 	var events []*models.AuditEvent
 	for rows.Next() {
 		var e models.AuditEvent
-		var reqID, resName, client, sessionID, llmModel, errType, errMsg *string
+		var resName, client, sessionID, llmModel, errType, errMsg *string
 		var toolCallsJSON, tokenUsageJSON []byte
-		if err := rows.Scan(&e.ID, &reqID, &e.UserEmail, &e.UserGroups, &e.ResourceType, &e.ResourceID, &resName,
+		if err := rows.Scan(&e.ID, &e.UserEmail, &e.UserGroups, &e.ResourceType, &e.ResourceID, &resName,
 			&e.Source, &client, &sessionID, &e.Action, &e.Prompt, &e.Response, &toolCallsJSON, &tokenUsageJSON, &llmModel,
-			&e.Status, &errType, &errMsg, &e.DurationMs, &e.TTFBMs, &e.CreatedAt); err != nil {
+			&e.Status, &errType, &errMsg, &e.DurationMs, &e.CreatedAt); err != nil {
 			return nil, 0, fmt.Errorf("scan audit event: %w", err)
 		}
-		e.RequestID = deref(reqID)
 		e.ResourceName = deref(resName)
 		e.Client = deref(client)
 		e.SessionID = deref(sessionID)
