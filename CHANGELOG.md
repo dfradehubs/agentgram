@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.11.0] - 2026-07-24
+
+### Added
+
+- **Audit log** (Admin → Audit): detailed activity log of who ran what — the prompt sent, the response returned, tool calls (name/arguments/result), errors, duration, resource (agent/MCP/skill/group), MCP client and session. Captured across all surfaces (web chat, MCP chat, group debates, and the MCP facade used by Claude/Cursor/Codex). Filter by time range, member, category, and session; numeric pagination.
+- Configurable retention from the central admin settings for both audit events and observability metrics (`audit_retention_days`, `observability_retention_days`), plus a content-truncation limit (`audit_max_content_chars`). The cleanup job reads retention from settings.
+
+### Changed
+
+- Skills reader: wider panel with proper scrolling, collapsible sidebar section, and frontmatter stripped from the displayed content.
+
+
+---
+
 ## [0.10.0] - 2026-07-24
 
 ### Added
