@@ -10,6 +10,13 @@ auth:
   cookie_secure: true
   admin_groups:
     - "${ENV:ADMIN_GROUP}"
+  # Optional RBAC groups. Members get the role automatically (highest of config
+  # vs the per-user role in Admin → Users wins). editor: create/edit agents, MCP
+  # servers and skills (no delete, no permissions, no other admin sections).
+  # editor_groups:
+  #   - "/google-workspace/editors@example.com"
+  # viewer_groups:
+  #   - "/google-workspace/viewers@example.com"
   keycloak:
     enabled: true
     issuer: "${ENV:KEYCLOAK_ISSUER}"

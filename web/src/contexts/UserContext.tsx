@@ -1,14 +1,14 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
-import type { User } from "@/lib/types";
+import type { User, UserRole } from "@/lib/types";
 import { getAuthSession, getMe, logout as apiLogout, disconnectGitHub as apiDisconnectGitHub, ApiError } from "@/lib/api";
 
 interface UserContextType {
   user: User | null;
   isLoading: boolean;
   isAdmin: boolean;
-  role: string;
+  role: UserRole;
   displayName: string;
   logout: () => Promise<void>;
   disconnectGitHub: () => Promise<void>;
