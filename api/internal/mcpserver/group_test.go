@@ -229,7 +229,7 @@ func newGroupTestHandler(t *testing.T, agentAStatus int, moderatorSays ...string
 	userService := service.NewUserService(&mcpFakeUserRepo{}, nil, nil)
 
 	h := &Handler{
-		server:       NewServer(registry, nil, userService, groupRepo, zap.NewNop()),
+		server:       NewServer(registry, nil, userService, groupRepo, nil, zap.NewNop()),
 		registry:     registry,
 		proxy:        proxy.NewProxy(zap.NewNop()),
 		sessionStore: newMCPFakeSessionStore(),

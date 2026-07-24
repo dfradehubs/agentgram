@@ -64,23 +64,29 @@ const mcpToolPrefix = "mcp_"
 // valid agent/group IDs.
 const groupToolPrefix = "group__"
 
+// skillToolPrefix namespaces skill tools: skill__<skillID>. Disjoint from all
+// other tool prefixes so routing never depends on precedence.
+const skillToolPrefix = "skill__"
+
 // Server is the MCP protocol server that exposes agents, agent groups and MCP server tools
 type Server struct {
 	registry    *agents.Registry
 	mcpRegistry *mcp.Registry
 	userService *service.UserService
 	groupRepo   repository.GroupRepository
+	skillRepo   repository.SkillRepository
 	sessions    *SessionStore
 	logger      *zap.Logger
 }
 
 // NewServer creates a new MCP server
-func NewServer(registry *agents.Registry, mcpRegistry *mcp.Registry, userService *service.UserService, groupRepo repository.GroupRepository, logger *zap.Logger) *Server {
+func NewServer(registry *agents.Registry, mcpRegistry *mcp.Registry, userService *service.UserService, groupRepo repository.GroupRepository, skillRepo repository.SkillRepository, logger *zap.Logger) *Server {
 	return &Server{
 		registry:    registry,
 		mcpRegistry: mcpRegistry,
 		userService: userService,
 		groupRepo:   groupRepo,
+		skillRepo:   skillRepo,
 		sessions:    NewSessionStore(),
 		logger:      logger,
 	}
@@ -178,6 +184,11 @@ func (s *Server) handleToolsList(req jsonRPCRequest, userEmail string, userGroup
 		tools = append(tools, s.buildGroupTool(group, toolName))
 	}
 
+	// Add skill tools (instruction documents served verbatim on call)
+	for _, skill := range s.AccessibleSkills(userEmail, userGroups) {
+		tools = append(tools, buildSkillTool(skill))
+	}
+
 	// Add utility tools
 	tools = append(tools, buildListAgentsTool())
 
@@ -242,6 +253,53 @@ func (s *Server) buildGroupTool(group *models.AgentGroup, toolName string) map[s
 			"required": []string{"question"},
 		},
 	}
+}
+
+// AccessibleSkills returns the skills the user can see, filtered by permissions.
+// Skills live in the DB (no in-memory registry), so we query per request like
+// AccessibleGroups does.
+func (s *Server) AccessibleSkills(userEmail string, userGroups []string) []*models.Skill {
+	if s.skillRepo == nil {
+		return nil
+	}
+	all, err := s.skillRepo.List(context.Background())
+	if err != nil {
+		s.logger.Warn("failed to list skills for MCP tools", zap.Error(err))
+		return nil
+	}
+	var out []*models.Skill
+	for _, skill := range all {
+		if skill.HasAccess(userEmail, userGroups) {
+			out = append(out, skill)
+		}
+	}
+	return out
+}
+
+// buildSkillTool creates an MCP tool definition from a skill. The tool takes no
+// arguments — calling it returns the skill's instruction content.
+func buildSkillTool(skill *models.Skill) map[string]interface{} {
+	desc := strings.TrimSpace(skill.Description)
+	if desc == "" {
+		desc = skill.Name
+	}
+	return map[string]interface{}{
+		"name":        skillToolPrefix + skill.ID,
+		"description": fmt.Sprintf("[Skill: %s] %s Call this tool to load its full instructions.", skill.Name, desc),
+		"inputSchema": map[string]interface{}{
+			"type":       "object",
+			"properties": map[string]interface{}{},
+		},
+	}
+}
+
+// GetSkillIDFromToolName extracts the skill ID from skill__<skill-id>.
+func GetSkillIDFromToolName(toolName string) (string, bool) {
+	if strings.HasPrefix(toolName, skillToolPrefix) && len(toolName) > len(skillToolPrefix) {
+		id := toolName[len(skillToolPrefix):]
+		return id, models.ValidateSkillID(id) == nil
+	}
+	return "", false
 }
 
 func groupToolName(groupID string) (string, error) {

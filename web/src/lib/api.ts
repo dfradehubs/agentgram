@@ -6,6 +6,9 @@ import type {
   AdminLLMModel,
   AdminLLMProvider,
   AdminMCPServer,
+  AdminSkill,
+  UserSkill,
+  SkillDetail,
   AdminUser,
   AppSetting,
   BasicAuthUser,
@@ -385,6 +388,38 @@ export async function updateAdminMCPServer(id: string, server: Partial<AdminMCPS
 
 export async function deleteAdminMCPServer(id: string): Promise<void> {
   await fetchApi(`/api/admin/mcp/${id}`, { method: "DELETE" });
+}
+
+export async function getSkills(): Promise<UserSkill[]> {
+  const data = await fetchApi<{ skills: UserSkill[] }>("/api/skills");
+  return data.skills || [];
+}
+
+export async function getSkillDetail(id: string): Promise<SkillDetail> {
+  return fetchApi<SkillDetail>(`/api/skills/${id}`);
+}
+
+export async function getAdminSkills(): Promise<AdminSkill[]> {
+  const data = await fetchApi<{ skills: AdminSkill[] }>("/api/admin/skills");
+  return data.skills || [];
+}
+
+export async function createAdminSkill(skill: Partial<AdminSkill>): Promise<AdminSkill> {
+  return fetchApi<AdminSkill>("/api/admin/skills", {
+    method: "POST",
+    body: JSON.stringify(skill),
+  });
+}
+
+export async function updateAdminSkill(id: string, skill: Partial<AdminSkill>): Promise<AdminSkill> {
+  return fetchApi<AdminSkill>(`/api/admin/skills/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(skill),
+  });
+}
+
+export async function deleteAdminSkill(id: string): Promise<void> {
+  await fetchApi(`/api/admin/skills/${id}`, { method: "DELETE" });
 }
 
 export async function getAdminUsers(): Promise<AdminUser[]> {

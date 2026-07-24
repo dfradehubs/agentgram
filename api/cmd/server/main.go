@@ -172,6 +172,7 @@ func main() {
 	userRepo := postgres.NewUserRepository(pool)
 	agentRepo := postgres.NewAgentRepository(pool)
 	mcpRepo := postgres.NewMCPServerRepository(pool)
+	skillRepo := postgres.NewSkillRepository(pool)
 	auditRepo := postgres.NewAuditRepository(pool)
 	llmRepo := postgres.NewLLMModelRepository(pool, dataCipher)
 	providerRepo := postgres.NewLLMProviderRepository(pool, dataCipher)
@@ -330,6 +331,7 @@ func main() {
 		UserService:     userService,
 		AgentRepo:       agentRepo,
 		MCPRepo:         mcpRepo,
+		SkillRepo:       skillRepo,
 		UserRepo:        userRepo,
 		AuditRepo:       auditRepo,
 		LLMRepo:         llmRepo,
