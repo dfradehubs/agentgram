@@ -650,6 +650,24 @@ func (h *ProxyHandler) recordGroupTurnEvent(agent *models.Agent, sessionID, user
 		MessageCount: messageCount,
 		ToolCalls:    toolCallInfos,
 	}, h.logger)
+
+	var auditResp string
+	if result != nil {
+		auditResp = proxy.TranscriptText(result)
+	}
+	recordAuditEvent(h.auditRepo, h.settings, &models.AuditEvent{
+		UserEmail:    userEmail,
+		ResourceType: models.AuditResourceAgent,
+		ResourceID:   agent.ID,
+		ResourceName: agent.Name,
+		Source:       models.AuditSourceWeb,
+		Action:       models.AuditActionGroupDebate,
+		Response:     auditResp,
+		Status:       status,
+		ErrorType:    errType,
+		ErrorMsg:     errMsg,
+		DurationMs:   durationMs,
+	}, h.logger)
 }
 
 // distinctRespondingSpeakers counts agents that produced a response, even when

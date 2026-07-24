@@ -53,8 +53,16 @@ type ProxyHandler struct {
 	settings          *appsettings.Service
 	audit             *audit.Logger
 	chatEventRepo     repository.ChatEventRepository
+	auditRepo         repository.AuditEventRepository
 	langfuseTracer    *lf.Tracer
 	logger            *zap.Logger
+}
+
+// SetAuditRepo wires the audit-event repository (optional; auditing is a no-op
+// without it). Uses the handler's existing settings service for the truncation
+// limit.
+func (h *ProxyHandler) SetAuditRepo(repo repository.AuditEventRepository) {
+	h.auditRepo = repo
 }
 
 // NewProxyHandler creates a new proxy handler
@@ -557,6 +565,25 @@ func (h *ProxyHandler) Chat(w http.ResponseWriter, r *http.Request) {
 			SessionRotated: sessionRotated,
 		}
 		recordChatEvent(h.chatEventRepo, event, h.logger)
+
+		var auditResp string
+		if result != nil {
+			auditResp = proxy.TranscriptText(result)
+		}
+		recordAuditEvent(h.auditRepo, h.settings, &models.AuditEvent{
+			UserEmail:    userEmail,
+			ResourceType: models.AuditResourceAgent,
+			ResourceID:   agentID,
+			ResourceName: agent.Name,
+			Source:       models.AuditSourceWeb,
+			Action:       models.AuditActionChat,
+			Prompt:       lastMessageContent(messagesToSend),
+			Response:     auditResp,
+			Status:       status,
+			ErrorType:    errType,
+			ErrorMsg:     errMsg,
+			DurationMs:   durationMs,
+		}, h.logger)
 	}
 
 	// Audit log

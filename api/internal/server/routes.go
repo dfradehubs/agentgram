@@ -93,6 +93,8 @@ func SetupRoutes(cfg *config.Config, registry *agents.Registry, sessionStore sto
 	proxyHandler := handlers.NewProxyHandler(llmRepo, registry, adminDeps.UserService, adminDeps.GroupRepo, sessionStore, adminDeps.PubSubHub, auditLogger, logger, adminDeps.SettingsService, adminDeps.LangfuseTracer, adminDeps.ChatEventRepo)
 	sessionsHandler := handlers.NewSessionsHandler(registry, sessionStore, adminDeps.GroupRepo, adminDeps.UserService, auditLogger, logger)
 	mcpHandler := handlers.NewMCPHandler(llmRepo, mcpRegistry, sessionStore, func() int { return adminDeps.SettingsService.Int(settings.KeyMCPMaxToolRounds) }, auditLogger, logger, adminDeps.LangfuseTracer, adminDeps.OAuth2Manager, adminDeps.MCPRepo, adminDeps.ChatEventRepo)
+	proxyHandler.SetAuditRepo(adminDeps.AuditEventRepo)
+	mcpHandler.SetAudit(adminDeps.AuditEventRepo, adminDeps.SettingsService)
 	chartHandler := handlers.NewChartHandler(llmRepo, adminDeps.LangfuseTracer, logger)
 
 	// User handler

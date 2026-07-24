@@ -20,6 +20,7 @@ import (
 	"github.com/dfradehubs/agentgram-api/internal/middleware"
 	"github.com/dfradehubs/agentgram-api/internal/models"
 	"github.com/dfradehubs/agentgram-api/internal/repository"
+	appsettings "github.com/dfradehubs/agentgram-api/internal/settings"
 	"github.com/dfradehubs/agentgram-api/internal/sessionnamer"
 	"github.com/dfradehubs/agentgram-api/internal/store"
 	"go.uber.org/zap"
@@ -35,9 +36,18 @@ type MCPHandler struct {
 	audit          *audit.Logger
 	langfuseTracer *lf.Tracer
 	chatEventRepo  repository.ChatEventRepository
+	auditRepo      repository.AuditEventRepository
+	auditSettings  *appsettings.Service
 	oauth2Mgr      *mcp.OAuth2Manager
 	mcpRepo        repository.MCPServerRepository
 	logger         *zap.Logger
+}
+
+// SetAudit wires the audit-event repository and the settings service used for
+// the content-truncation limit (optional; auditing is a no-op without a repo).
+func (h *MCPHandler) SetAudit(repo repository.AuditEventRepository, settings *appsettings.Service) {
+	h.auditRepo = repo
+	h.auditSettings = settings
 }
 
 // NewMCPHandler creates a new MCP handler. maxRoundsFn resolves the max
@@ -478,6 +488,25 @@ func (h *MCPHandler) Chat(w http.ResponseWriter, r *http.Request) {
 			LLMModel:     req.ModelID,
 		}
 		recordChatEvent(h.chatEventRepo, event, h.logger)
+
+		var auditResp string
+		if runResult != nil {
+			auditResp = runResult.AssistantText
+		}
+		recordAuditEvent(h.auditRepo, h.auditSettings, &models.AuditEvent{
+			UserEmail:    userEmail,
+			ResourceType: models.AuditResourceMCP,
+			ResourceID:   serverID,
+			ResourceName: server.Config.Name,
+			Source:       models.AuditSourceWeb,
+			Action:       models.AuditActionChat,
+			Prompt:       lastMessageContent(req.Messages),
+			Response:     auditResp,
+			Status:       status,
+			ErrorType:    errType,
+			ErrorMsg:     errMsg,
+			DurationMs:   durationMs,
+		}, h.logger)
 	}
 
 	// Async: generate a short LLM-based session name for new sessions
@@ -695,6 +724,25 @@ func (h *MCPHandler) ChatMulti(w http.ResponseWriter, r *http.Request) {
 			LLMModel:     req.ModelID,
 		}
 		recordChatEvent(h.chatEventRepo, event, h.logger)
+
+		var auditResp string
+		if runResult != nil {
+			auditResp = runResult.AssistantText
+		}
+		recordAuditEvent(h.auditRepo, h.auditSettings, &models.AuditEvent{
+			UserEmail:    userEmail,
+			ResourceType: models.AuditResourceMCP,
+			ResourceID:   resourceID,
+			ResourceName: "Multi-MCP",
+			Source:       models.AuditSourceWeb,
+			Action:       models.AuditActionChat,
+			Prompt:       lastMessageContent(req.Messages),
+			Response:     auditResp,
+			Status:       status,
+			ErrorType:    errType,
+			ErrorMsg:     errMsg,
+			DurationMs:   durationMs,
+		}, h.logger)
 	}
 
 	// Async: generate a short LLM-based session name for new sessions
