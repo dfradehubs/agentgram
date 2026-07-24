@@ -2,19 +2,37 @@
 
 import { useEffect, useState, useCallback, Fragment } from "react";
 import type { AuditEvent } from "@/lib/types";
-import { getAuditEvents } from "@/lib/api";
+import { getAuditEvents, getAdminSettings } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { ChevronRight, RefreshCw } from "lucide-react";
+import { ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight, RefreshCw } from "lucide-react";
 import { AdminTableSkeleton } from "@/components/admin/AdminTableSkeleton";
 
-const RANGES: { label: string; minutes: number }[] = [
+const BASE_RANGES: { label: string; minutes: number }[] = [
   { label: "Last 30 minutes", minutes: 30 },
   { label: "Last hour", minutes: 60 },
   { label: "Last 6 hours", minutes: 360 },
   { label: "Last 12 hours", minutes: 720 },
   { label: "Last 24 hours", minutes: 1440 },
   { label: "Last 7 days", minutes: 10080 },
+  { label: "Last 14 days", minutes: 20160 },
+  { label: "Last 30 days", minutes: 43200 },
+  { label: "Last 60 days", minutes: 86400 },
+  { label: "Last 90 days", minutes: 129600 },
+  { label: "Last 180 days", minutes: 259200 },
+  { label: "Last 365 days", minutes: 525600 },
 ];
+
+// buildRanges caps the selectable range to the audit retention window (events
+// older than retention are deleted, so offering a longer range is pointless),
+// and always ends with an option covering exactly the retention window.
+function buildRanges(retentionDays: number): { label: string; minutes: number }[] {
+  const maxMin = Math.max(1, retentionDays) * 1440;
+  const opts = BASE_RANGES.filter((r) => r.minutes <= maxMin);
+  if (!opts.some((r) => r.minutes === maxMin)) {
+    opts.push({ label: `Last ${retentionDays} days`, minutes: maxMin });
+  }
+  return opts;
+}
 
 const CATEGORIES = ["", "agent", "mcp", "skill", "group"];
 const MAX_OPTIONS = [50, 100, 250, 500];
@@ -22,6 +40,20 @@ const MAX_OPTIONS = [50, 100, 250, 500];
 function fmtDate(iso: string): string {
   const d = new Date(iso);
   return d.toLocaleString(undefined, { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+// pageItems builds the page numbers to show, inserting "…" (ellipsis) where the
+// sequence skips: always first + last, plus a window around the current page.
+function pageItems(current: number, totalPages: number): (number | "…")[] {
+  if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
+  const items: (number | "…")[] = [1];
+  const start = Math.max(2, current - 1);
+  const end = Math.min(totalPages - 1, current + 1);
+  if (start > 2) items.push("…");
+  for (let p = start; p <= end; p++) items.push(p);
+  if (end < totalPages - 1) items.push("…");
+  items.push(totalPages);
+  return items;
 }
 
 export default function AdminAuditPage() {
@@ -36,6 +68,21 @@ export default function AdminAuditPage() {
   const [session, setSession] = useState("");
   const [maxResults, setMaxResults] = useState(50);
   const [offset, setOffset] = useState(0);
+  const [retentionDays, setRetentionDays] = useState(30);
+
+  // Load the audit retention so the range selector can't exceed it.
+  useEffect(() => {
+    getAdminSettings()
+      .then((settings) => {
+        const r = settings.find((s) => s.key === "audit_retention_days");
+        if (r) setRetentionDays(Number(r.value || r.default) || 30);
+      })
+      .catch(() => {
+        /* keep default */
+      });
+  }, []);
+
+  const ranges = buildRanges(retentionDays);
 
   const fetchEvents = useCallback(async () => {
     setLoading(true);
@@ -82,7 +129,7 @@ export default function AdminAuditPage() {
             value={rangeMinutes}
             onChange={(e) => { setOffset(0); setRangeMinutes(Number(e.target.value)); }}
           >
-            {RANGES.map((r) => <option key={r.minutes} value={r.minutes}>{r.label}</option>)}
+            {ranges.map((r) => <option key={r.minutes} value={r.minutes}>{r.label}</option>)}
           </select>
         </div>
         <div>
@@ -114,7 +161,7 @@ export default function AdminAuditPage() {
           />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-muted-foreground">Max</label>
+          <label className="mb-1 block text-xs font-medium text-muted-foreground">Per page</label>
           <select
             className="rounded-md border bg-background px-3 py-1.5 text-sm"
             value={maxResults}
@@ -240,15 +287,44 @@ export default function AdminAuditPage() {
       )}
 
       {/* Pagination */}
-      {total > maxResults && (
-        <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">
-          <span>{offset + 1}–{Math.min(offset + maxResults, total)} of {total}</span>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - maxResults))}>Previous</Button>
-            <Button variant="outline" size="sm" disabled={offset + maxResults >= total} onClick={() => setOffset(offset + maxResults)}>Next</Button>
+      {(() => {
+        const totalPages = Math.max(1, Math.ceil(total / maxResults));
+        const page = Math.floor(offset / maxResults) + 1;
+        if (totalPages <= 1) return null;
+        const goTo = (p: number) => setOffset((Math.min(Math.max(1, p), totalPages) - 1) * maxResults);
+        const navBtn = "rounded px-2 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40";
+        return (
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-1 text-sm">
+            <button className={`${navBtn} flex items-center gap-0.5`} disabled={page === 1} onClick={() => goTo(1)}>
+              <ChevronsLeft className="h-3.5 w-3.5" /> First
+            </button>
+            <button className={navBtn} disabled={page === 1} onClick={() => goTo(page - 1)} aria-label="Previous page">
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            {pageItems(page, totalPages).map((it, i) =>
+              it === "…" ? (
+                <span key={`e${i}`} className="px-1.5 text-muted-foreground">…</span>
+              ) : (
+                <button
+                  key={it}
+                  onClick={() => goTo(it)}
+                  className={`min-w-[2rem] rounded px-2 py-1 transition-colors ${
+                    it === page ? "bg-primary/10 font-medium text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  }`}
+                >
+                  {it}
+                </button>
+              )
+            )}
+            <button className={navBtn} disabled={page === totalPages} onClick={() => goTo(page + 1)} aria-label="Next page">
+              <ChevronRight className="h-4 w-4" />
+            </button>
+            <button className={`${navBtn} flex items-center gap-0.5`} disabled={page === totalPages} onClick={() => goTo(totalPages)}>
+              Last <ChevronsRight className="h-3.5 w-3.5" />
+            </button>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
