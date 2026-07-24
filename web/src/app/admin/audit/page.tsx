@@ -290,7 +290,6 @@ export default function AdminAuditPage() {
       {(() => {
         const totalPages = Math.max(1, Math.ceil(total / maxResults));
         const page = Math.floor(offset / maxResults) + 1;
-        if (totalPages <= 1) return null;
         const goTo = (p: number) => setOffset((Math.min(Math.max(1, p), totalPages) - 1) * maxResults);
         const navBtn = "rounded px-2 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40";
         return (
