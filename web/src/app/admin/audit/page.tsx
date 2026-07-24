@@ -147,6 +147,7 @@ export default function AdminAuditPage() {
                         </div>
                         <div className="ml-5 text-xs text-muted-foreground">
                           {e.action} · {e.duration_ms}ms · {e.source}
+                          {e.client ? ` · ${e.client.length > 40 ? e.client.slice(0, 40) + "…" : e.client}` : ""}
                         </div>
                       </td>
                       <td className="px-4 py-3 text-xs">{e.user_email}</td>
@@ -158,6 +159,28 @@ export default function AdminAuditPage() {
                       <tr className="bg-muted/20">
                         <td colSpan={4} className="px-6 py-4">
                           <div className="space-y-3 text-xs">
+                            <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
+                              {e.client && <span><span className="font-semibold">Client:</span> {e.client}</span>}
+                              {e.session_id && <span><span className="font-semibold">Session:</span> <span className="font-mono">{e.session_id}</span></span>}
+                              {e.llm_model && <span><span className="font-semibold">Model:</span> {e.llm_model}</span>}
+                              {e.token_usage && e.token_usage.total > 0 && (
+                                <span><span className="font-semibold">Tokens:</span> {e.token_usage.input}/{e.token_usage.output} ({e.token_usage.total})</span>
+                              )}
+                            </div>
+                            {e.tool_calls && e.tool_calls.length > 0 && (
+                              <div>
+                                <div className="mb-1 font-semibold">Tool calls</div>
+                                <div className="space-y-1">
+                                  {e.tool_calls.map((tc, i) => (
+                                    <details key={i} className="rounded bg-background p-2">
+                                      <summary className="cursor-pointer font-mono">{tc.name}</summary>
+                                      {tc.arguments && <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap text-[11px] text-muted-foreground">args: {tc.arguments}</pre>}
+                                      {tc.result && <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap text-[11px] text-muted-foreground">result: {tc.result}</pre>}
+                                    </details>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                             {e.prompt && (
                               <div>
                                 <div className="mb-1 font-semibold">Prompt</div>

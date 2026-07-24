@@ -7,10 +7,24 @@ import (
 	"github.com/dfradehubs/agentgram-api/internal/audit"
 	"github.com/dfradehubs/agentgram-api/internal/metrics"
 	"github.com/dfradehubs/agentgram-api/internal/models"
+	"github.com/dfradehubs/agentgram-api/internal/proxy"
 	"github.com/dfradehubs/agentgram-api/internal/repository"
 	appsettings "github.com/dfradehubs/agentgram-api/internal/settings"
 	"go.uber.org/zap"
 )
+
+// auditToolCalls converts captured proxy tool calls (name + args + result) to
+// the audit-event shape.
+func auditToolCalls(tcs []proxy.CapturedToolCall) []models.AuditToolCall {
+	if len(tcs) == 0 {
+		return nil
+	}
+	out := make([]models.AuditToolCall, 0, len(tcs))
+	for _, tc := range tcs {
+		out = append(out, models.AuditToolCall{Name: tc.Name, Arguments: tc.Args, Result: tc.Result})
+	}
+	return out
+}
 
 // recordAuditEvent records a detailed audit event asynchronously, truncating
 // content to the runtime-configured limit. No-op when auditing isn't wired.

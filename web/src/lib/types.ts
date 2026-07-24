@@ -250,6 +250,12 @@ export interface AdminMCPServer {
   api_key_rules?: MCPApiKeyRule[];
 }
 
+export interface AuditToolCall {
+  name: string;
+  arguments?: string;
+  result?: string;
+}
+
 export interface AuditEvent {
   id: string;
   request_id?: string;
@@ -259,9 +265,14 @@ export interface AuditEvent {
   resource_id: string;
   resource_name: string;
   source: string;
+  client?: string;
+  session_id?: string;
   action: string;
   prompt: string;
   response: string;
+  tool_calls?: AuditToolCall[];
+  token_usage?: { input: number; output: number; total: number };
+  llm_model?: string;
   status: string;
   error_type?: string;
   error_msg?: string;

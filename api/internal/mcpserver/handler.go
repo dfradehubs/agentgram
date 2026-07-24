@@ -591,7 +591,8 @@ func (h *Handler) handleToolsCall(w http.ResponseWriter, r *http.Request, req js
 		h.recordAudit(&models.AuditEvent{
 			UserEmail: userEmail, UserGroups: userGroups,
 			ResourceType: models.AuditResourceAgent, ResourceID: agentID, ResourceName: agent.Name,
-			Source: models.AuditSourceMCP, Action: models.AuditActionChat,
+			Source: models.AuditSourceMCP, Client: r.UserAgent(), SessionID: cr.sessionID,
+			Action: models.AuditActionChat,
 			Prompt: args.Question, Response: cr.text,
 			Status: "error", ErrorMsg: cr.err.Error(),
 			DurationMs: int(time.Since(auditStart).Milliseconds()),
@@ -624,7 +625,8 @@ func (h *Handler) handleToolsCall(w http.ResponseWriter, r *http.Request, req js
 	h.recordAudit(&models.AuditEvent{
 		UserEmail: userEmail, UserGroups: userGroups,
 		ResourceType: models.AuditResourceAgent, ResourceID: agentID, ResourceName: agent.Name,
-		Source: models.AuditSourceMCP, Action: models.AuditActionChat,
+		Source: models.AuditSourceMCP, Client: r.UserAgent(), SessionID: cr.sessionID,
+		Action: models.AuditActionChat,
 		Prompt: args.Question, Response: cr.text, Status: "ok",
 		DurationMs: int(time.Since(auditStart).Milliseconds()),
 	})
@@ -672,6 +674,7 @@ func (h *Handler) handleSkillToolCall(w http.ResponseWriter, r *http.Request, re
 		ResourceID:   skill.ID,
 		ResourceName: skill.Name,
 		Source:       models.AuditSourceMCP,
+		Client:       r.UserAgent(),
 		Action:       models.AuditActionSkillRead,
 		Response:     skill.Content,
 		Status:       "ok",
@@ -856,8 +859,9 @@ func (h *Handler) handleMCPToolCall(w http.ResponseWriter, r *http.Request, req 
 	h.recordAudit(&models.AuditEvent{
 		UserEmail: userEmail, UserGroups: userGroups,
 		ResourceType: models.AuditResourceMCP, ResourceID: serverID, ResourceName: server.Config.Name,
-		Source: models.AuditSourceMCP, Action: models.AuditActionMCPTool,
+		Source: models.AuditSourceMCP, Client: r.UserAgent(), Action: models.AuditActionMCPTool,
 		Prompt: fmt.Sprintf("%s %s", toolName, string(argsJSON)), Response: text, Status: auditStatus,
+		ToolCalls:  []models.AuditToolCall{{Name: toolName, Arguments: string(argsJSON), Result: text}},
 		DurationMs: int(time.Since(auditStart).Milliseconds()),
 	})
 

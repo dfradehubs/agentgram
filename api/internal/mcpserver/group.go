@@ -197,7 +197,7 @@ func (h *Handler) handleGroupToolCall(w http.ResponseWriter, r *http.Request, re
 	h.recordAudit(&models.AuditEvent{
 		UserEmail: userEmail, UserGroups: userGroups,
 		ResourceType: models.AuditResourceGroup, ResourceID: groupID, ResourceName: group.Name,
-		Source: models.AuditSourceMCP, Action: models.AuditActionGroupDebate,
+		Source: models.AuditSourceMCP, Client: r.UserAgent(), Action: models.AuditActionGroupDebate,
 		Prompt: args.Question, Response: responseText, Status: groupAuditStatus,
 		DurationMs: elapsedSeconds * 1000,
 	})

@@ -493,15 +493,23 @@ func (h *MCPHandler) Chat(w http.ResponseWriter, r *http.Request) {
 		if runResult != nil {
 			auditResp = runResult.AssistantText
 		}
+		auditTools := make([]models.AuditToolCall, 0, len(toolCallInfos))
+		for _, tc := range toolCallInfos {
+			auditTools = append(auditTools, models.AuditToolCall{Name: tc.Name})
+		}
 		recordAuditEvent(h.auditRepo, h.auditSettings, &models.AuditEvent{
 			UserEmail:    userEmail,
 			ResourceType: models.AuditResourceMCP,
 			ResourceID:   serverID,
 			ResourceName: server.Config.Name,
 			Source:       models.AuditSourceWeb,
+			SessionID:    sessionID,
 			Action:       models.AuditActionChat,
 			Prompt:       lastMessageContent(req.Messages),
 			Response:     auditResp,
+			ToolCalls:    auditTools,
+			TokenUsage:   tokenUsage,
+			LLMModel:     req.ModelID,
 			Status:       status,
 			ErrorType:    errType,
 			ErrorMsg:     errMsg,
@@ -729,15 +737,23 @@ func (h *MCPHandler) ChatMulti(w http.ResponseWriter, r *http.Request) {
 		if runResult != nil {
 			auditResp = runResult.AssistantText
 		}
+		auditTools := make([]models.AuditToolCall, 0, len(toolCallInfos))
+		for _, tc := range toolCallInfos {
+			auditTools = append(auditTools, models.AuditToolCall{Name: tc.Name})
+		}
 		recordAuditEvent(h.auditRepo, h.auditSettings, &models.AuditEvent{
 			UserEmail:    userEmail,
 			ResourceType: models.AuditResourceMCP,
 			ResourceID:   resourceID,
 			ResourceName: "Multi-MCP",
 			Source:       models.AuditSourceWeb,
+			SessionID:    sessionID,
 			Action:       models.AuditActionChat,
 			Prompt:       lastMessageContent(req.Messages),
 			Response:     auditResp,
+			ToolCalls:    auditTools,
+			TokenUsage:   tokenUsage,
+			LLMModel:     req.ModelID,
 			Status:       status,
 			ErrorType:    errType,
 			ErrorMsg:     errMsg,

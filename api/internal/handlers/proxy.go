@@ -567,8 +567,10 @@ func (h *ProxyHandler) Chat(w http.ResponseWriter, r *http.Request) {
 		recordChatEvent(h.chatEventRepo, event, h.logger)
 
 		var auditResp string
+		var auditTools []models.AuditToolCall
 		if result != nil {
 			auditResp = proxy.TranscriptText(result)
+			auditTools = auditToolCalls(result.ToolCalls)
 		}
 		recordAuditEvent(h.auditRepo, h.settings, &models.AuditEvent{
 			UserEmail:    userEmail,
@@ -576,9 +578,11 @@ func (h *ProxyHandler) Chat(w http.ResponseWriter, r *http.Request) {
 			ResourceID:   agentID,
 			ResourceName: agent.Name,
 			Source:       models.AuditSourceWeb,
+			SessionID:    session.SessionID,
 			Action:       models.AuditActionChat,
 			Prompt:       lastMessageContent(messagesToSend),
 			Response:     auditResp,
+			ToolCalls:    auditTools,
 			Status:       status,
 			ErrorType:    errType,
 			ErrorMsg:     errMsg,

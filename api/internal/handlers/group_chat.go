@@ -652,8 +652,10 @@ func (h *ProxyHandler) recordGroupTurnEvent(agent *models.Agent, sessionID, user
 	}, h.logger)
 
 	var auditResp string
+	var auditTools []models.AuditToolCall
 	if result != nil {
 		auditResp = proxy.TranscriptText(result)
+		auditTools = auditToolCalls(result.ToolCalls)
 	}
 	recordAuditEvent(h.auditRepo, h.settings, &models.AuditEvent{
 		UserEmail:    userEmail,
@@ -661,8 +663,10 @@ func (h *ProxyHandler) recordGroupTurnEvent(agent *models.Agent, sessionID, user
 		ResourceID:   agent.ID,
 		ResourceName: agent.Name,
 		Source:       models.AuditSourceWeb,
+		SessionID:    sessionID,
 		Action:       models.AuditActionGroupDebate,
 		Response:     auditResp,
+		ToolCalls:    auditTools,
 		Status:       status,
 		ErrorType:    errType,
 		ErrorMsg:     errMsg,
