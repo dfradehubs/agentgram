@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.10.0] - 2026-07-24
+
+### Added
+
+- **Skills**: reusable instruction documents managed centrally in Agentgram and served to MCP clients (Claude Code, Cursor, Codex) as tools. Admins create and edit skills from the Admin → Skills page, with access controlled per user and group like agents and MCP servers. Each skill is exposed as its own MCP tool (`skill__<id>`) that only appears for users who can access it; its content loads on demand when the tool is called.
+- Sidebar **Skills** section so users can browse the skills they have access to and read their content, alongside Agents and Groups.
+
+
+---
+
 ## [0.9.0] - 2026-07-23
 
 ### Added
