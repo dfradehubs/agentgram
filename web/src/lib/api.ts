@@ -9,6 +9,7 @@ import type {
   AdminSkill,
   UserSkill,
   SkillDetail,
+  AuditEventsResponse,
   AdminUser,
   AppSetting,
   BasicAuthUser,
@@ -388,6 +389,12 @@ export async function updateAdminMCPServer(id: string, server: Partial<AdminMCPS
 
 export async function deleteAdminMCPServer(id: string): Promise<void> {
   await fetchApi(`/api/admin/mcp/${id}`, { method: "DELETE" });
+}
+
+export async function getAuditEvents(params: Record<string, string>): Promise<AuditEventsResponse> {
+  const clean = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== ""));
+  const qs = new URLSearchParams(clean).toString();
+  return fetchApi<AuditEventsResponse>(`/api/admin/audit${qs ? `?${qs}` : ""}`);
 }
 
 export async function getSkills(): Promise<UserSkill[]> {

@@ -173,6 +173,7 @@ func main() {
 	agentRepo := postgres.NewAgentRepository(pool)
 	mcpRepo := postgres.NewMCPServerRepository(pool)
 	skillRepo := postgres.NewSkillRepository(pool)
+	auditEventRepo := postgres.NewAuditEventRepository(pool)
 	auditRepo := postgres.NewAuditRepository(pool)
 	llmRepo := postgres.NewLLMModelRepository(pool, dataCipher)
 	providerRepo := postgres.NewLLMProviderRepository(pool, dataCipher)
@@ -261,8 +262,10 @@ func main() {
 		logger.Info("MCP OAuth2 manager initialized", zap.String("callback_url", callbackURL))
 	}
 
-	// Start chat_events cleanup goroutine
-	if cfg.Metrics.Enabled && cfg.Metrics.RetentionDays > 0 {
+	// Start cleanup goroutine for chat_events (observability) and audit_events.
+	// Retention is now read from runtime settings on each tick (admin-editable),
+	// falling back to the settings defaults; the cleanup interval stays in YAML.
+	{
 		cleanupInterval := time.Hour
 		if cfg.Metrics.CleanupInterval != "" {
 			if d, err := time.ParseDuration(cfg.Metrics.CleanupInterval); err == nil {
@@ -273,18 +276,33 @@ func main() {
 			ticker := time.NewTicker(cleanupInterval)
 			defer ticker.Stop()
 			for range ticker.C {
-				cleanCtx, cleanCancel := context.WithTimeout(context.Background(), 30*time.Second)
-				deleted, err := chatEventRepo.Cleanup(cleanCtx, cfg.Metrics.RetentionDays)
-				cleanCancel()
-				if err != nil {
-					logger.Warn("chat_events cleanup failed", zap.Error(err))
-				} else if deleted > 0 {
-					logger.Info("chat_events cleanup", zap.Int64("deleted", deleted))
+				// Observability metrics (only if metrics are enabled at all).
+				if cfg.Metrics.Enabled {
+					if days := settingsService.Int(settings.KeyObservabilityRetentionDays); days > 0 {
+						cleanCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+						deleted, err := chatEventRepo.Cleanup(cleanCtx, days)
+						cancel()
+						if err != nil {
+							logger.Warn("chat_events cleanup failed", zap.Error(err))
+						} else if deleted > 0 {
+							logger.Info("chat_events cleanup", zap.Int64("deleted", deleted))
+						}
+					}
+				}
+				// Audit events (independent retention).
+				if days := settingsService.Int(settings.KeyAuditRetentionDays); days > 0 {
+					cleanCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+					deleted, err := auditEventRepo.Cleanup(cleanCtx, days)
+					cancel()
+					if err != nil {
+						logger.Warn("audit_events cleanup failed", zap.Error(err))
+					} else if deleted > 0 {
+						logger.Info("audit_events cleanup", zap.Int64("deleted", deleted))
+					}
 				}
 			}
 		}()
-		logger.Info("chat_events cleanup started",
-			zap.Int("retention_days", cfg.Metrics.RetentionDays),
+		logger.Info("cleanup job started (chat_events + audit_events)",
 			zap.Duration("interval", cleanupInterval))
 	}
 
@@ -332,6 +350,7 @@ func main() {
 		AgentRepo:       agentRepo,
 		MCPRepo:         mcpRepo,
 		SkillRepo:       skillRepo,
+		AuditEventRepo:  auditEventRepo,
 		UserRepo:        userRepo,
 		AuditRepo:       auditRepo,
 		LLMRepo:         llmRepo,

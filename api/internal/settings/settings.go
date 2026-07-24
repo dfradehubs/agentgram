@@ -41,6 +41,10 @@ const (
 	KeyGroupDebateTimeout = "group_debate_timeout_api"
 	KeyGroupMaxTurnsAPI   = "group_max_turns_api"
 	KeyGroupMaxTurnsMCP   = "group_max_turns_mcp"
+
+	KeyObservabilityRetentionDays = "observability_retention_days"
+	KeyAuditRetentionDays         = "audit_retention_days"
+	KeyAuditMaxContentChars       = "audit_max_content_chars"
 )
 
 // Defs is the registry of known settings, in admin-display order. Adding a
@@ -56,6 +60,12 @@ var Defs = []Def{
 		Description: "Default cap on moderated-debate turns over the streaming API. A group's own max_turns overrides this.", Min: 1, Max: 50},
 	{Key: KeyGroupMaxTurnsMCP, Section: "Group debates", Label: "Max turns (MCP)", Type: TypeInt, Default: "3",
 		Description: "Default cap for synchronous MCP group__ tools (kept lower to fit tool-call timeouts). A group's own max_turns overrides this.", Min: 1, Max: 50},
+	{Key: KeyObservabilityRetentionDays, Section: "Observability", Label: "Metrics retention (days)", Type: TypeInt, Default: "30",
+		Description: "How many days of observability metrics (chat events) to keep before the cleanup job deletes them.", Min: 1, Max: 3650},
+	{Key: KeyAuditRetentionDays, Section: "Audit", Label: "Audit retention (days)", Type: TypeInt, Default: "30",
+		Description: "How many days of audit events (prompts and responses) to keep before the cleanup job deletes them.", Min: 1, Max: 3650},
+	{Key: KeyAuditMaxContentChars, Section: "Audit", Label: "Max content chars", Type: TypeInt, Default: "10000",
+		Description: "Maximum characters stored per prompt and per response in an audit event; longer content is truncated.", Min: 100, Max: 200000},
 }
 
 var defByKey = func() map[string]Def {
