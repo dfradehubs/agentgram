@@ -7,14 +7,17 @@ import { Button } from "@/components/ui/button";
 import { ChevronRight, RefreshCw } from "lucide-react";
 import { AdminTableSkeleton } from "@/components/admin/AdminTableSkeleton";
 
-const RANGES: { label: string; hours: number }[] = [
-  { label: "Last 24 hours", hours: 24 },
-  { label: "Last 7 days", hours: 24 * 7 },
-  { label: "Last 30 days", hours: 24 * 30 },
+const RANGES: { label: string; minutes: number }[] = [
+  { label: "Last 30 minutes", minutes: 30 },
+  { label: "Last hour", minutes: 60 },
+  { label: "Last 6 hours", minutes: 360 },
+  { label: "Last 12 hours", minutes: 720 },
+  { label: "Last 24 hours", minutes: 1440 },
+  { label: "Last 7 days", minutes: 10080 },
 ];
 
 const CATEGORIES = ["", "agent", "mcp", "skill", "group"];
-const PAGE_SIZE = 50;
+const MAX_OPTIONS = [50, 100, 250, 500];
 
 function fmtDate(iso: string): string {
   const d = new Date(iso);
@@ -27,22 +30,21 @@ export default function AdminAuditPage() {
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  const [rangeHours, setRangeHours] = useState(24);
+  const [rangeMinutes, setRangeMinutes] = useState(1440);
   const [user, setUser] = useState("");
   const [category, setCategory] = useState("");
-  const [requestId, setRequestId] = useState("");
+  const [maxResults, setMaxResults] = useState(50);
   const [offset, setOffset] = useState(0);
 
   const fetchEvents = useCallback(async () => {
     setLoading(true);
     try {
-      const from = new Date(Date.now() - rangeHours * 3600 * 1000).toISOString();
+      const from = new Date(Date.now() - rangeMinutes * 60 * 1000).toISOString();
       const data = await getAuditEvents({
         from,
         user,
         resource_type: category,
-        request_id: requestId,
-        limit: String(PAGE_SIZE),
+        limit: String(maxResults),
         offset: String(offset),
       });
       setEvents(data.events);
@@ -53,7 +55,7 @@ export default function AdminAuditPage() {
     } finally {
       setLoading(false);
     }
-  }, [rangeHours, user, category, requestId, offset]);
+  }, [rangeMinutes, user, category, maxResults, offset]);
 
   useEffect(() => {
     fetchEvents();
@@ -75,10 +77,10 @@ export default function AdminAuditPage() {
           <label className="mb-1 block text-xs font-medium text-muted-foreground">Range</label>
           <select
             className="rounded-md border bg-background px-3 py-1.5 text-sm"
-            value={rangeHours}
-            onChange={(e) => { setOffset(0); setRangeHours(Number(e.target.value)); }}
+            value={rangeMinutes}
+            onChange={(e) => { setOffset(0); setRangeMinutes(Number(e.target.value)); }}
           >
-            {RANGES.map((r) => <option key={r.hours} value={r.hours}>{r.label}</option>)}
+            {RANGES.map((r) => <option key={r.minutes} value={r.minutes}>{r.label}</option>)}
           </select>
         </div>
         <div>
@@ -100,14 +102,15 @@ export default function AdminAuditPage() {
             {CATEGORIES.map((c) => <option key={c} value={c}>{c === "" ? "All categories" : c}</option>)}
           </select>
         </div>
-        <div className="flex-1">
-          <label className="mb-1 block text-xs font-medium text-muted-foreground">Request ID</label>
-          <input
-            className="w-full rounded-md border bg-background px-3 py-1.5 text-sm"
-            placeholder="Search by request ID"
-            value={requestId}
-            onChange={(e) => { setOffset(0); setRequestId(e.target.value); }}
-          />
+        <div>
+          <label className="mb-1 block text-xs font-medium text-muted-foreground">Max</label>
+          <select
+            className="rounded-md border bg-background px-3 py-1.5 text-sm"
+            value={maxResults}
+            onChange={(e) => { setOffset(0); setMaxResults(Number(e.target.value)); }}
+          >
+            {MAX_OPTIONS.map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
         </div>
       </div>
 
@@ -155,7 +158,6 @@ export default function AdminAuditPage() {
                       <tr className="bg-muted/20">
                         <td colSpan={4} className="px-6 py-4">
                           <div className="space-y-3 text-xs">
-                            {e.request_id && <div><span className="font-semibold">Request ID:</span> <span className="font-mono">{e.request_id}</span></div>}
                             {e.prompt && (
                               <div>
                                 <div className="mb-1 font-semibold">Prompt</div>
@@ -190,12 +192,12 @@ export default function AdminAuditPage() {
       )}
 
       {/* Pagination */}
-      {total > PAGE_SIZE && (
+      {total > maxResults && (
         <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">
-          <span>{offset + 1}–{Math.min(offset + PAGE_SIZE, total)} of {total}</span>
+          <span>{offset + 1}–{Math.min(offset + maxResults, total)} of {total}</span>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>Previous</Button>
-            <Button variant="outline" size="sm" disabled={offset + PAGE_SIZE >= total} onClick={() => setOffset(offset + PAGE_SIZE)}>Next</Button>
+            <Button variant="outline" size="sm" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - maxResults))}>Previous</Button>
+            <Button variant="outline" size="sm" disabled={offset + maxResults >= total} onClick={() => setOffset(offset + maxResults)}>Next</Button>
           </div>
         </div>
       )}

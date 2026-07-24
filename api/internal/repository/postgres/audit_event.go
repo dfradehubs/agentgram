@@ -77,7 +77,7 @@ func (r *AuditEventRepository) List(ctx context.Context, f models.AuditEventFilt
 	}
 
 	limit := f.Limit
-	if limit <= 0 || limit > 200 {
+	if limit <= 0 || limit > 1000 {
 		limit = 50
 	}
 	args = append(args, limit)
