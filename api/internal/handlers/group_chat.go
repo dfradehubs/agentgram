@@ -314,7 +314,7 @@ func (h *ProxyHandler) GroupChat(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Observability + audit per turn (same shape as single-agent chat)
-		h.recordGroupTurnEvent(agent, session.SessionID, userEmail, result, err, int(time.Since(turnStart).Milliseconds()), len(messagesToSend))
+		h.recordGroupTurnEvent(agent, session.SessionID, userEmail, userGroups, lastMessageContent(messagesToSend), result, err, int(time.Since(turnStart).Milliseconds()), len(messagesToSend))
 		h.audit.Log(userEmail, audit.ActionChat,
 			zap.String("agent_id", agentID),
 			zap.String("group_id", groupID),
@@ -618,7 +618,7 @@ func (h *ProxyHandler) persistModeratorMessage(ctx context.Context, sessionID, a
 }
 
 // recordGroupTurnEvent records one debate turn as a chat event for observability.
-func (h *ProxyHandler) recordGroupTurnEvent(agent *models.Agent, sessionID, userEmail string, result *proxy.ProxyResult, err error, durationMs, messageCount int) {
+func (h *ProxyHandler) recordGroupTurnEvent(agent *models.Agent, sessionID, userEmail string, userGroups []string, prompt string, result *proxy.ProxyResult, err error, durationMs, messageCount int) {
 	status := "ok"
 	var errType, errMsg string
 	if err != nil {
@@ -649,6 +649,30 @@ func (h *ProxyHandler) recordGroupTurnEvent(agent *models.Agent, sessionID, user
 		DurationMs:   durationMs,
 		MessageCount: messageCount,
 		ToolCalls:    toolCallInfos,
+	}, h.logger)
+
+	var auditResp string
+	var auditTools []models.AuditToolCall
+	if result != nil {
+		auditResp = proxy.TranscriptText(result)
+		auditTools = auditToolCalls(result.ToolCalls)
+	}
+	recordAuditEvent(h.auditRepo, h.settings, &models.AuditEvent{
+		UserEmail:    userEmail,
+		UserGroups:   userGroups,
+		ResourceType: models.AuditResourceAgent,
+		ResourceID:   agent.ID,
+		ResourceName: agent.Name,
+		Source:       models.AuditSourceWeb,
+		SessionID:    sessionID,
+		Action:       models.AuditActionGroupDebate,
+		Prompt:       prompt,
+		Response:     auditResp,
+		ToolCalls:    auditTools,
+		Status:       status,
+		ErrorType:    errType,
+		ErrorMsg:     errMsg,
+		DurationMs:   durationMs,
 	}, h.logger)
 }
 

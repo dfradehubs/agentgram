@@ -38,6 +38,7 @@ type AdminDeps struct {
 	AgentRepo       repository.AgentRepository
 	MCPRepo         repository.MCPServerRepository
 	SkillRepo       repository.SkillRepository
+	AuditEventRepo  repository.AuditEventRepository
 	UserRepo        repository.UserRepository
 	AuditRepo       repository.AuditRepository
 	LLMRepo         repository.LLMModelRepository
@@ -92,6 +93,8 @@ func SetupRoutes(cfg *config.Config, registry *agents.Registry, sessionStore sto
 	proxyHandler := handlers.NewProxyHandler(llmRepo, registry, adminDeps.UserService, adminDeps.GroupRepo, sessionStore, adminDeps.PubSubHub, auditLogger, logger, adminDeps.SettingsService, adminDeps.LangfuseTracer, adminDeps.ChatEventRepo)
 	sessionsHandler := handlers.NewSessionsHandler(registry, sessionStore, adminDeps.GroupRepo, adminDeps.UserService, auditLogger, logger)
 	mcpHandler := handlers.NewMCPHandler(llmRepo, mcpRegistry, sessionStore, func() int { return adminDeps.SettingsService.Int(settings.KeyMCPMaxToolRounds) }, auditLogger, logger, adminDeps.LangfuseTracer, adminDeps.OAuth2Manager, adminDeps.MCPRepo, adminDeps.ChatEventRepo)
+	proxyHandler.SetAuditRepo(adminDeps.AuditEventRepo)
+	mcpHandler.SetAudit(adminDeps.AuditEventRepo, adminDeps.SettingsService)
 	chartHandler := handlers.NewChartHandler(llmRepo, adminDeps.LangfuseTracer, logger)
 
 	// User handler
@@ -129,7 +132,7 @@ func SetupRoutes(cfg *config.Config, registry *agents.Registry, sessionStore sto
 
 	// MCP server endpoint (exposes agents as MCP tools for Claude Code and other MCP clients)
 	if cfg.MCPServer.Enabled {
-		mcpServerHandler := mcpserver.NewHandler(registry, mcpRegistry, sessionStore, adminDeps.UserService, adminDeps.GroupRepo, adminDeps.SkillRepo, oidcClient, cfg, logger, adminDeps.LangfuseTracer, adminDeps.OAuth2Manager, adminDeps.MCPRepo, llmRepo, adminDeps.SettingsService)
+		mcpServerHandler := mcpserver.NewHandler(registry, mcpRegistry, sessionStore, adminDeps.UserService, adminDeps.GroupRepo, adminDeps.SkillRepo, oidcClient, cfg, logger, adminDeps.LangfuseTracer, adminDeps.OAuth2Manager, adminDeps.MCPRepo, llmRepo, adminDeps.SettingsService, adminDeps.AuditEventRepo)
 
 		// Public: OAuth2 Protected Resource Metadata (RFC 9728)
 		// Serve at both root and path-based locations per RFC 9728 Section 3.1:
@@ -434,6 +437,12 @@ func SetupRoutes(cfg *config.Config, registry *agents.Registry, sessionStore sto
 					r.Put("/skills/{id}", adminSkillsHandler.UpdateSkill)
 					r.Delete("/skills/{id}", adminSkillsHandler.DeleteSkill)
 					r.Put("/skills/{id}/permissions", adminSkillsHandler.UpdateSkillPermissions)
+				}
+
+				// Admin audit log (detailed activity with prompt/response content)
+				if adminDeps.AuditEventRepo != nil {
+					adminAuditHandler := handlers.NewAdminAuditHandler(adminDeps.AuditEventRepo, logger)
+					r.Get("/audit", adminAuditHandler.ListAuditEvents)
 				}
 
 				// Admin MCP OAuth2 scope mappings

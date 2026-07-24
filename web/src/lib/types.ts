@@ -250,6 +250,43 @@ export interface AdminMCPServer {
   api_key_rules?: MCPApiKeyRule[];
 }
 
+export interface AuditToolCall {
+  name: string;
+  arguments?: string;
+  result?: string;
+}
+
+export interface AuditEvent {
+  id: string;
+  request_id?: string;
+  user_email: string;
+  user_groups?: string[];
+  resource_type: string;
+  resource_id: string;
+  resource_name: string;
+  source: string;
+  client?: string;
+  session_id?: string;
+  action: string;
+  prompt: string;
+  response: string;
+  tool_calls?: AuditToolCall[];
+  token_usage?: { input: number; output: number; total: number };
+  llm_model?: string;
+  status: string;
+  error_type?: string;
+  error_msg?: string;
+  duration_ms: number;
+  created_at: string;
+}
+
+export interface AuditEventsResponse {
+  events: AuditEvent[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 export interface UserSkill {
   id: string;
   name: string;

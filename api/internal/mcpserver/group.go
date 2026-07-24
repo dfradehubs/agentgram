@@ -132,6 +132,7 @@ func (h *Handler) handleGroupToolCall(w http.ResponseWriter, r *http.Request, re
 		isError   bool
 		err       error
 	}
+	auditStart := time.Now()
 	done := make(chan callResult, 1)
 	go func() {
 		text, resultSessionID, isError, err := h.callGroupWithModerator(toolCtx, moderator, group, roster, agentsByID, args.Question, sessionID, userEmail, userGroups, lfTrace)
@@ -171,6 +172,13 @@ func (h *Handler) handleGroupToolCall(w http.ResponseWriter, r *http.Request, re
 		if lfTrace != nil {
 			lfTrace.End(false, cr.err.Error())
 		}
+		h.recordAudit(&models.AuditEvent{
+			UserEmail: userEmail, UserGroups: userGroups,
+			ResourceType: models.AuditResourceGroup, ResourceID: groupID, ResourceName: group.Name,
+			Source: models.AuditSourceMCP, Client: r.UserAgent(), Action: models.AuditActionGroupDebate,
+			Prompt: args.Question, Status: "error", ErrorMsg: cr.err.Error(),
+			DurationMs: int(time.Since(auditStart).Milliseconds()),
+		})
 		flushSSE(h.server.MarshalToolResult(req.ID, "Group call failed. Please try again.", true))
 		return
 	}
@@ -190,6 +198,17 @@ func (h *Handler) handleGroupToolCall(w http.ResponseWriter, r *http.Request, re
 	}
 
 	// isError=true for incomplete outcomes as well as total agent failure.
+	groupAuditStatus := "ok"
+	if cr.isError {
+		groupAuditStatus = "error"
+	}
+	h.recordAudit(&models.AuditEvent{
+		UserEmail: userEmail, UserGroups: userGroups,
+		ResourceType: models.AuditResourceGroup, ResourceID: groupID, ResourceName: group.Name,
+		Source: models.AuditSourceMCP, Client: r.UserAgent(), Action: models.AuditActionGroupDebate,
+		Prompt: args.Question, Response: responseText, Status: groupAuditStatus,
+		DurationMs: int(time.Since(auditStart).Milliseconds()),
+	})
 	flushSSE(h.server.MarshalToolResult(req.ID, responseText, cr.isError))
 }
 

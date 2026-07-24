@@ -49,6 +49,13 @@ type MCPServerRepository interface {
 	ReplaceAPIKeyRules(ctx context.Context, serverID string, rules []models.MCPAPIKeyRule) error
 }
 
+// AuditEventRepository manages detailed audit event persistence (prompt/response).
+type AuditEventRepository interface {
+	Insert(ctx context.Context, event *models.AuditEvent) error
+	List(ctx context.Context, filter models.AuditEventFilter) ([]*models.AuditEvent, int, error)
+	Cleanup(ctx context.Context, retentionDays int) (int64, error)
+}
+
 // SkillRepository manages skill persistence
 type SkillRepository interface {
 	Create(ctx context.Context, skill *models.Skill) error

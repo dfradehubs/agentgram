@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/dfradehubs/agentgram-api/internal/agents"
+	"github.com/dfradehubs/agentgram-api/internal/audit"
 	"github.com/dfradehubs/agentgram-api/internal/auth"
 	"github.com/dfradehubs/agentgram-api/internal/config"
 	"github.com/dfradehubs/agentgram-api/internal/identity"
@@ -46,6 +47,7 @@ type Handler struct {
 	moderator         *orchestrator.Moderator
 	moderatorResolver *orchestrator.ModeratorResolver
 	settings          *appsettings.Service
+	auditRepo         repository.AuditEventRepository
 	logger            *zap.Logger
 }
 
@@ -65,6 +67,7 @@ func NewHandler(
 	mcpRepo repository.MCPServerRepository,
 	llmRepo repository.LLMModelRepository,
 	settingsService *appsettings.Service,
+	auditRepo repository.AuditEventRepository,
 ) *Handler {
 	return &Handler{
 		server:            NewServer(registry, mcpRegistry, userService, groupRepo, skillRepo, logger),
@@ -81,6 +84,7 @@ func NewHandler(
 		mcpRepo:           mcpRepo,
 		moderatorResolver: orchestrator.NewModeratorResolver(llmRepo, lfTracer, logger),
 		settings:          settingsService,
+		auditRepo:         auditRepo,
 		logger:            logger,
 	}
 }
@@ -520,6 +524,7 @@ func (h *Handler) handleToolsCall(w http.ResponseWriter, r *http.Request, req js
 		sessionID string
 		err       error
 	}
+	auditStart := time.Now()
 	done := make(chan callResult, 1)
 	go func() {
 		result, resultSessionID, err := h.callAgent(r.Context(), agent, args.Question, sessionID, userEmail, userGroups)
@@ -583,6 +588,15 @@ func (h *Handler) handleToolsCall(w http.ResponseWriter, r *http.Request, req js
 		if mcpSessionID != "" && cr.sessionID != "" {
 			h.server.sessions.SetAgentSession(mcpSessionID, agentID, cr.sessionID)
 		}
+		h.recordAudit(&models.AuditEvent{
+			UserEmail: userEmail, UserGroups: userGroups,
+			ResourceType: models.AuditResourceAgent, ResourceID: agentID, ResourceName: agent.Name,
+			Source: models.AuditSourceMCP, Client: r.UserAgent(), SessionID: cr.sessionID,
+			Action: models.AuditActionChat,
+			Prompt: args.Question, Response: cr.text,
+			Status: "error", ErrorMsg: cr.err.Error(),
+			DurationMs: int(time.Since(auditStart).Milliseconds()),
+		})
 		flushSSE(h.server.MarshalToolResult(req.ID, responseText, true))
 		return
 	}
@@ -608,6 +622,14 @@ func (h *Handler) handleToolsCall(w http.ResponseWriter, r *http.Request, req js
 		lfTrace.End(true, truncateString(responseText, 2000))
 	}
 
+	h.recordAudit(&models.AuditEvent{
+		UserEmail: userEmail, UserGroups: userGroups,
+		ResourceType: models.AuditResourceAgent, ResourceID: agentID, ResourceName: agent.Name,
+		Source: models.AuditSourceMCP, Client: r.UserAgent(), SessionID: cr.sessionID,
+		Action: models.AuditActionChat,
+		Prompt: args.Question, Response: cr.text, Status: "ok",
+		DurationMs: int(time.Since(auditStart).Milliseconds()),
+	})
 	jsonResponse := h.server.MarshalToolResult(req.ID, responseText, false)
 	h.logger.Info("MCP tools/call response",
 		zap.String("agent_id", agentID),
@@ -615,6 +637,15 @@ func (h *Handler) handleToolsCall(w http.ResponseWriter, r *http.Request, req js
 		zap.Int("json_response_bytes", len(jsonResponse)),
 		zap.Int("elapsed_seconds", elapsedSeconds))
 	flushSSE(jsonResponse)
+}
+
+// recordAudit truncates content per the runtime setting and records the audit
+// event asynchronously. No-op when auditing isn't wired.
+func (h *Handler) recordAudit(ev *models.AuditEvent) {
+	if h.auditRepo == nil {
+		return
+	}
+	audit.RecordEvent(h.auditRepo, ev, h.settings.Int(appsettings.KeyAuditMaxContentChars), h.logger)
 }
 
 // handleSkillToolCall handles a tools/call for a skill tool. It returns the
@@ -635,6 +666,19 @@ func (h *Handler) handleSkillToolCall(w http.ResponseWriter, r *http.Request, re
 		h.writeJSON(w, http.StatusOK, h.server.MarshalToolResult(req.ID, "Access denied to this skill", true))
 		return
 	}
+
+	h.recordAudit(&models.AuditEvent{
+		UserEmail:    userEmail,
+		UserGroups:   userGroups,
+		ResourceType: models.AuditResourceSkill,
+		ResourceID:   skill.ID,
+		ResourceName: skill.Name,
+		Source:       models.AuditSourceMCP,
+		Client:       r.UserAgent(),
+		Action:       models.AuditActionSkillRead,
+		Response:     skill.Content,
+		Status:       "ok",
+	})
 
 	h.writeJSON(w, http.StatusOK, h.server.MarshalToolResult(req.ID, skill.Content, false))
 }
@@ -739,6 +783,7 @@ func (h *Handler) handleMCPToolCall(w http.ResponseWriter, r *http.Request, req 
 		result *mcp.ToolResult
 		err    error
 	}
+	auditStart := time.Now()
 	done := make(chan callResult, 1)
 	go func() {
 		result, err := server.Client.CallToolWithHeaders(r.Context(), toolName, args, extraHeaders)
@@ -804,6 +849,21 @@ func (h *Handler) handleMCPToolCall(w http.ResponseWriter, r *http.Request, req 
 	if text == "" {
 		text = "(no output)"
 	}
+
+	toolIsError := cr.result != nil && cr.result.IsError
+	auditStatus := "ok"
+	if toolIsError {
+		auditStatus = "error"
+	}
+	argsJSON, _ := json.Marshal(args)
+	h.recordAudit(&models.AuditEvent{
+		UserEmail: userEmail, UserGroups: userGroups,
+		ResourceType: models.AuditResourceMCP, ResourceID: serverID, ResourceName: server.Config.Name,
+		Source: models.AuditSourceMCP, Client: r.UserAgent(), Action: models.AuditActionMCPTool,
+		Prompt: fmt.Sprintf("%s %s", toolName, string(argsJSON)), Response: text, Status: auditStatus,
+		ToolCalls:  []models.AuditToolCall{{Name: toolName, Arguments: string(argsJSON), Result: text}},
+		DurationMs: int(time.Since(auditStart).Milliseconds()),
+	})
 
 	// End Langfuse spans
 	if toolSpan != nil {
