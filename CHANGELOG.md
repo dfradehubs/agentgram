@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.12.0] - 2026-07-24
+
+### Added
+
+- **Granular roles** (`admin` > `editor` > `viewer` > `user`). Editors can view, create and edit agents, MCP servers and skills, but cannot delete them, manage their permissions, or access observability, audit, settings, users, LLM/providers or groups. Viewers have no admin-panel access. Roles are assigned by Google Workspace group (`editor_groups` / `viewer_groups` in config) or per-user in Admin → Users (now a role selector).
+
+### Changed
+
+- The `/admin` API and UI enforce per-role, per-action authorization instead of a binary admin gate. `GET /api/me` returns the caller's resolved role.
+
+
+---
+
 ## [0.11.0] - 2026-07-24
 
 ### Added
