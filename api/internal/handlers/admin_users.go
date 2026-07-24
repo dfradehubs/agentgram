@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -15,28 +14,21 @@ import (
 )
 
 // UserGroupsProvider can retrieve a user's groups from the identity provider
-type UserGroupsProvider interface {
-	GetUserGroups(ctx context.Context, email string) ([]string, error)
-}
 
 // AdminUsersHandler handles admin CRUD for users
 type AdminUsersHandler struct {
 	userRepo        repository.UserRepository
 	auditRepo       repository.AuditRepository
 	bootstrapAdmins []string
-	adminGroups     []string
-	groupsProvider  UserGroupsProvider
 	logger          *zap.Logger
 }
 
 // NewAdminUsersHandler creates a new admin users handler
-func NewAdminUsersHandler(userRepo repository.UserRepository, auditRepo repository.AuditRepository, bootstrapAdmins []string, adminGroups []string, groupsProvider UserGroupsProvider, logger *zap.Logger) *AdminUsersHandler {
+func NewAdminUsersHandler(userRepo repository.UserRepository, auditRepo repository.AuditRepository, bootstrapAdmins []string, logger *zap.Logger) *AdminUsersHandler {
 	return &AdminUsersHandler{
 		userRepo:        userRepo,
 		auditRepo:       auditRepo,
 		bootstrapAdmins: bootstrapAdmins,
-		adminGroups:     adminGroups,
-		groupsProvider:  groupsProvider,
 		logger:          logger,
 	}
 }
@@ -53,26 +45,6 @@ func (h *AdminUsersHandler) isProtectedAdmin(email string) bool {
 
 // isAdminByGroup checks if a user belongs to an admin group via Keycloak.
 // Returns (true, nil) if in admin group, (false, nil) if not, (false, err) if check failed.
-func (h *AdminUsersHandler) isAdminByGroup(ctx context.Context, email string) (bool, error) {
-	if h.groupsProvider == nil || len(h.adminGroups) == 0 {
-		return false, nil
-	}
-
-	userGroups, err := h.groupsProvider.GetUserGroups(ctx, email)
-	if err != nil {
-		h.logger.Error("failed to fetch user groups from Keycloak", zap.String("email", email), zap.Error(err))
-		return false, err
-	}
-
-	for _, adminGroup := range h.adminGroups {
-		for _, userGroup := range userGroups {
-			if strings.EqualFold(adminGroup, userGroup) {
-				return true, nil
-			}
-		}
-	}
-	return false, nil
-}
 
 // userResponse is a user with an additional protected field
 type userResponse struct {
@@ -118,21 +90,13 @@ func (h *AdminUsersHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Block demotion of protected admins (bootstrap config or admin group membership)
-	if req.Role != models.RoleAdmin {
-		if h.isProtectedAdmin(email) {
-			http.Error(w, `{"error":"this user is an admin via system configuration and cannot be modified"}`, http.StatusForbidden)
-			return
-		}
-		inGroup, err := h.isAdminByGroup(r.Context(), email)
-		if err != nil {
-			http.Error(w, `{"error":"could not verify the user's groups in Keycloak, operation blocked for security"}`, http.StatusInternalServerError)
-			return
-		}
-		if inGroup {
-			http.Error(w, `{"error":"this user belongs to an administrators group and cannot be removed from admin"}`, http.StatusForbidden)
-			return
-		}
+	// Block changing the role of a bootstrap-config admin. Admins granted by an
+	// admin group are already protected by ResolveRole (config wins over the
+	// stored DB role), so demoting their DB role has no real effect and no
+	// Keycloak group lookup is needed here.
+	if req.Role != models.RoleAdmin && h.isProtectedAdmin(email) {
+		http.Error(w, `{"error":"this user is an admin via system configuration and cannot be modified"}`, http.StatusForbidden)
+		return
 	}
 
 	if err := h.userRepo.UpdateRole(r.Context(), email, req.Role); err != nil {
