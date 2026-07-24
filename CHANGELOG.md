@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.12.1] - 2026-07-24
+
+### Fixed
+
+- Assigning a non-admin role (e.g. editor) in Admin → Users no longer fails with "could not verify the user's groups in Keycloak". The redundant Keycloak group lookup was removed; bootstrap admins are still protected.
+- Removed `viewer` from the role selector (identical to `user` today); the role remains in the backend for future read-only use.
+
+
+---
+
 ## [0.12.0] - 2026-07-24
 
 ### Added
