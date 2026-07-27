@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.12.2] - 2026-07-27
+
+### Fixed
+
+- MCP servers whose `tools/list` response exceeds 64KiB no longer fail with "unexpected end of JSON input". The SSE reader used the default `bufio.Scanner` token limit, which gzipped responses overflow easily, and returned an empty body silently instead of an error.
+
+
+---
+
 ## [0.12.1] - 2026-07-24
 
 ### Fixed
