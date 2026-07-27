@@ -390,7 +390,10 @@ func (c *Client) jsonRPCRawWithHeaders(ctx context.Context, method string, param
 	contentType := resp.Header.Get("Content-Type")
 	var responseBody []byte
 	if strings.Contains(contentType, "text/event-stream") {
-		responseBody = extractJSONFromSSE(resp.Body)
+		responseBody, err = extractJSONFromSSE(resp.Body)
+		if err != nil {
+			return nil, newSessionID, err
+		}
 	} else {
 		responseBody, _ = io.ReadAll(resp.Body)
 	}
@@ -413,18 +416,28 @@ func (c *Client) jsonRPCRawWithHeaders(ctx context.Context, method string, param
 	return rpcResp.Result, newSessionID, nil
 }
 
+// maxSSEPayload caps a single SSE data line. The default bufio.Scanner limit is
+// 64KiB, which a real tools/list overflows easily: servers gzip the response, so
+// a 13KB body on the wire can be a several-hundred-KB JSON-RPC payload.
+const maxSSEPayload = 32 << 20
+
 // extractJSONFromSSE reads an SSE stream and returns the first JSON-RPC data payload.
 // SSE format: lines of "event: message\ndata: {json}\n\n"
-func extractJSONFromSSE(body io.Reader) []byte {
+func extractJSONFromSSE(body io.Reader) ([]byte, error) {
 	scanner := bufio.NewScanner(body)
+	scanner.Buffer(make([]byte, 0, 64*1024), maxSSEPayload)
 	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "data: ") {
-			data := strings.TrimPrefix(line, "data: ")
-			if len(data) > 0 && data[0] == '{' {
-				return []byte(data)
-			}
+		// The space after "data:" is optional per the SSE spec.
+		data, found := strings.CutPrefix(scanner.Text(), "data:")
+		if !found {
+			continue
+		}
+		if data = strings.TrimSpace(data); strings.HasPrefix(data, "{") {
+			return []byte(data), nil
 		}
 	}
-	return nil
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("reading SSE stream: %w", err)
+	}
+	return nil, fmt.Errorf("no JSON-RPC data event found in SSE stream")
 }
