@@ -8,6 +8,11 @@ const (
 	AuditResourceMCP   = "mcp"
 	AuditResourceSkill = "skill"
 	AuditResourceGroup = "group"
+	// AuditResourceAdmin covers configuration changes made through the admin API
+	// (web admin or MCP admin tools). The resource actually touched goes in
+	// ResourceID as "<kind>:<id>", so the existing resource_type filter can list
+	// every administrative operation at once.
+	AuditResourceAdmin = "admin"
 
 	AuditSourceWeb   = "web"
 	AuditSourceMCP   = "mcp"
@@ -17,6 +22,10 @@ const (
 	AuditActionMCPTool     = "mcp_tool"
 	AuditActionSkillRead   = "skill_read"
 	AuditActionGroupDebate = "group_debate"
+
+	AuditActionAdminCreate = "admin_create"
+	AuditActionAdminUpdate = "admin_update"
+	AuditActionAdminDelete = "admin_delete"
 )
 
 // AuditToolCall is a tool invocation captured in an audit event, with arguments

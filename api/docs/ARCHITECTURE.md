@@ -49,6 +49,9 @@ The API acts as an **agent multiplexer**, allowing users to interact with multip
 - **security.go**: Security headers
 - **logging.go**: Request logging
 - **ratelimit.go**: Per-agent/user rate limiting
+- **role.go**: Role gate for the admin API (`admin` > `editor` > `viewer` > `user`)
+- **admin_audit.go**: Records every admin mutation in the audit log, tagged with the
+  originating surface (web admin or MCP admin tools)
 
 ## Request Flow
 

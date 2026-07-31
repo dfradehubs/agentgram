@@ -131,6 +131,47 @@ multi-agent context delta (`proxy.PrepareMessagesForMultiAgent`). Key pieces:
 - **MCP surface** (`mcpserver/group.go`): tool `group__<groupId>` (synchronous,
   lower cap, progress notifications), collected replies as one markdown result.
 
+## Administration tools on the MCP facade
+
+`/mcp` also exposes the administration surface as 14 `admin_*` tools (agent and
+MCP-server CRUD for editors; delete, audit, observability and global settings for
+admins). Key pieces:
+
+- **`mcpserver/admin.go`**: declarative `adminTools` table (`{name, method, path,
+  minRole, schema, annotations}`). A tool call is **replayed in-process against the
+  admin router** (`buildAdminRouter` in `server/routes_admin.go`, mounted at
+  `/api/admin` and handed to the handler via `SetAdminRouter`), so validation,
+  `RoleGate`, `registry.Refresh` and auditing stay in the handlers the web admin
+  uses. Adding an operation is one row in the table.
+- **Role filtering**: `tools/list` advertises only what `UserService.ResolveRole`
+  allows, so ordinary users see no admin tools. The `RoleGate` on the router still
+  enforces it on every call (a cached tool gets a 403).
+- **Annotations**: `readOnlyHint` / `destructiveHint` / `idempotentHint` plus an
+  explicit "do not call without the user asking for this specific change" warning
+  in every description — the brake against a model reconfiguring the instance.
+- **Secrets**: responses go through `security.RedactJSON` (`bearer_token`,
+  `api_key`, `oauth2_client_secret`, all `headers` values → `"***"`). Because a
+  read-edit-write round-trip would otherwise wipe a credential, a `PUT` carrying
+  the sentinel triggers an internal `GET` and `security.RestoreRedacted` puts the
+  stored values back.
+- **Path safety**: `{id}` arguments must match `^[A-Za-z0-9._@+-]{1,128}$`, so an
+  argument can't steer the loopback to another endpoint.
+
+## Auditing admin operations
+
+`middleware.AdminAudit` is mounted on the admin router, so **every** configuration
+change is recorded in `audit_events` (the table behind `/api/admin/audit` and the
+audit panel) whether it came from the web admin or the MCP tools, including
+endpoints added later. Entries use `resource_type="admin"`,
+`resource_id="<section>:<id>"`, `action=admin_create|admin_update|admin_delete`
+and `source=web|mcp`. Denied attempts (403/400) are recorded too. The surface is
+tagged via `middleware.WithSurfaceMCP` on the **context**, not a header, so an
+external client can't forge it. Request/response bodies are redacted before
+storage.
+
+The pre-existing `audit_log` table (`auditRepo.Log` inside each admin handler) is
+unchanged; it has no HTTP endpoint and is now a duplicate of the above.
+
 ## Sessions API
 
 Sessions are managed by the API and stored in Redis via `store.SessionStore`. The `SessionsHandler` in `handlers/sessions.go` reads/writes directly to Redis:
