@@ -76,7 +76,10 @@ type Server struct {
 	groupRepo   repository.GroupRepository
 	skillRepo   repository.SkillRepository
 	sessions    *SessionStore
-	logger      *zap.Logger
+	// adminEnabled mirrors Handler.adminRouter so tools/list and tools/call agree
+	// on whether the administration tools exist. Set via Handler.SetAdminRouter.
+	adminEnabled bool
+	logger       *zap.Logger
 }
 
 // NewServer creates a new MCP server
@@ -189,6 +192,13 @@ func (s *Server) handleToolsList(req jsonRPCRequest, userEmail string, userGroup
 		tools = append(tools, buildSkillTool(skill))
 	}
 
+	// Add administration tools, only for the roles that can use them. Ordinary
+	// users see none, so their tool list is unchanged. The admin router enforces
+	// the same limit on every call.
+	for _, t := range adminToolsForRole(s.adminRole(userEmail, userGroups)) {
+		tools = append(tools, t.definition())
+	}
+
 	// Add utility tools
 	tools = append(tools, buildListAgentsTool())
 
@@ -197,6 +207,15 @@ func (s *Server) handleToolsList(req jsonRPCRequest, userEmail string, userGroup
 	}
 
 	return s.marshalResult(req.ID, result), "", nil
+}
+
+// adminRole resolves the caller's effective admin role, or "" when the
+// administration surface isn't available on this instance.
+func (s *Server) adminRole(userEmail string, userGroups []string) string {
+	if !s.adminEnabled || s.userService == nil {
+		return ""
+	}
+	return s.userService.ResolveRole(context.Background(), userEmail, userGroups)
 }
 
 // AccessibleGroups returns the agent groups the user can participate in.

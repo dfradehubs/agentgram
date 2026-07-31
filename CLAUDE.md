@@ -101,6 +101,17 @@ the group respond, in sequence — each sees the previous agents' replies. Singl
 SSE stream: one `RUN_STARTED` and one terminal `RUN_FINISHED` or `RUN_ERROR`, `TEXT_MESSAGE_*` events tagged
 per agent via `agentId`. Also exposed via MCP as the `group__<groupId>` tool.
 
+### Admin tools over MCP
+
+Besides the agent/group/skill tools, `/mcp` exposes 14 `admin_*` tools: agent and
+MCP-server CRUD (role `editor`), plus delete, audit log, observability and global
+settings (role `admin`). They are replayed in-process against the existing
+`/api/admin` router, so validation, role gating, registry reload and auditing are
+shared with the web admin. Credentials are redacted on this surface, write tools
+carry MCP `destructiveHint` annotations, and every administrative change — from
+the web *or* from MCP — lands in `audit_events` with `resource_type="admin"` and
+`source=web|mcp`. See `api/CLAUDE.md` for details.
+
 ### Sessions API (Stored in Redis)
 
 ```

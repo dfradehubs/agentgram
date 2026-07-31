@@ -34,7 +34,9 @@ function buildRanges(retentionDays: number): { label: string; minutes: number }[
   return opts;
 }
 
-const CATEGORIES = ["", "agent", "mcp", "skill", "group"];
+// "admin" covers configuration changes (web admin or MCP admin tools) rather
+// than conversations.
+const CATEGORIES = ["", "agent", "mcp", "skill", "group", "admin"];
 const MAX_OPTIONS = [50, 100, 250, 500];
 
 function fmtDate(iso: string): string {
@@ -255,7 +257,8 @@ export default function AdminAuditPage() {
                             )}
                             {e.prompt && (
                               <div>
-                                <div className="mb-1 font-semibold">Prompt</div>
+                                {/* For admin operations the payload is a request body, not a prompt. */}
+                                <div className="mb-1 font-semibold">{e.resource_type === "admin" ? "Request" : "Prompt"}</div>
                                 <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded bg-background p-3">{e.prompt}</pre>
                               </div>
                             )}

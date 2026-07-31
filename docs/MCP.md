@@ -124,6 +124,51 @@ Each tool accepts:
 - `question` (required): The question or task for the agent
 - `session_id` (optional): Session ID to continue a previous conversation
 
+Beyond agents, the same endpoint exposes:
+
+| Tool pattern | What it is |
+|---|---|
+| `group__<group-id>` | A moderated multi-agent debate across an agent group |
+| `mcp_<server-id>__<tool>` | A tool of an upstream MCP server registered in Agentgram |
+| `skill__<skill-id>` | A stored instruction document, returned verbatim on call |
+| `admin_*` | Administration tools (see below) |
+
+## Administration tools
+
+If your role is `editor` or `admin`, the toolset also includes the administration
+surface, so you can manage the instance from your MCP client. Ordinary users see
+none of these tools.
+
+| Tool | Role | Operation |
+|---|---|---|
+| `admin_list_agents` / `admin_get_agent` | editor | Read the full admin configuration of agents |
+| `admin_create_agent` / `admin_update_agent` | editor | Register or reconfigure an agent |
+| `admin_delete_agent` | admin | Delete an agent |
+| `admin_list_mcp_servers` / `admin_get_mcp_server` | editor | Read the full admin configuration of MCP servers |
+| `admin_create_mcp_server` / `admin_update_mcp_server` | editor | Register or reconfigure an MCP server |
+| `admin_delete_mcp_server` | admin | Delete an MCP server |
+| `admin_query_audit` | admin | Query the audit log (filters: `from`, `to`, `user`, `group`, `resource_type`, `session`, `limit`, `offset`) |
+| `admin_metrics` | admin | Query observability metrics (`scope`: `global`/`user`/`agent`/`mcp`, `view`: `stats`/`timeline`/`top`/`users`/`errors`/`error_events`) |
+| `admin_get_settings` / `admin_update_settings` | admin | Read and change the instance-wide runtime settings |
+
+Notes:
+
+- **Same code path as the web admin.** A tool call is replayed against the
+  `/api/admin` router in-process, so validation, permissions and side effects
+  (such as reloading the agent registry) behave identically.
+- **Write tools are annotated.** They carry the MCP `destructiveHint` /
+  `readOnlyHint` annotations and an explicit warning in their description, so a
+  conformant client asks you to confirm before running one. Only your explicit
+  request should trigger them.
+- **Credentials are redacted.** Bearer tokens, API keys, OAuth2 client secrets and
+  header values come back as `"***"`. Sending a redacted value back in an update
+  keeps the stored credential, so a read-edit-write round-trip is safe.
+- **Everything is audited.** Every administrative change — from the web admin or
+  from these tools — is recorded with your identity, the payload (redacted), the
+  outcome and the originating surface. Denied attempts are recorded too.
+- `admin_query_audit` truncates conversation text to 500 characters; the web admin
+  shows it in full.
+
 ## Usage examples
 
 ### Investigate an incident

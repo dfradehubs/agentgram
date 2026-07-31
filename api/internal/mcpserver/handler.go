@@ -48,7 +48,17 @@ type Handler struct {
 	moderatorResolver *orchestrator.ModeratorResolver
 	settings          *appsettings.Service
 	auditRepo         repository.AuditEventRepository
+	adminRouter       http.Handler
 	logger            *zap.Logger
+}
+
+// SetAdminRouter wires the admin HTTP router so the administration tools can
+// replay requests against it. Without it, no admin tool is advertised or served.
+// Called from route setup once the admin router exists (the same pattern as
+// SetAudit), because that happens after this handler is built.
+func (h *Handler) SetAdminRouter(router http.Handler) {
+	h.adminRouter = router
+	h.server.adminEnabled = router != nil
 }
 
 // NewHandler creates a new MCP HTTP handler
@@ -432,6 +442,13 @@ func (h *Handler) handleToolsCall(w http.ResponseWriter, r *http.Request, req js
 		return
 	}
 
+	// Administration tools replay the request against the admin HTTP router, which
+	// keeps validation, role gating and auditing in one place.
+	if strings.HasPrefix(params.Name, adminToolPrefix) {
+		h.handleAdminToolCall(w, r, req, params.Name, params.Arguments)
+		return
+	}
+
 	// Extract agent ID from tool name
 	agentID, ok := GetAgentIDFromToolName(params.Name)
 	if !ok {
@@ -681,6 +698,29 @@ func (h *Handler) handleSkillToolCall(w http.ResponseWriter, r *http.Request, re
 	})
 
 	h.writeJSON(w, http.StatusOK, h.server.MarshalToolResult(req.ID, skill.Content, false))
+}
+
+// handleAdminToolCall handles a tools/call for an administration tool by
+// replaying it against the admin HTTP router in-process. Authorization is the
+// admin router's RoleGate, and its middleware records the operation in the audit
+// log tagged as MCP-originated — nothing is re-implemented here.
+func (h *Handler) handleAdminToolCall(w http.ResponseWriter, r *http.Request, req jsonRPCRequest, toolName string, arguments json.RawMessage) {
+	tool, ok := lookupAdminTool(toolName)
+	if !ok {
+		h.writeJSON(w, http.StatusOK, h.server.MarshalError(req.ID, errCodeInvalidParams, fmt.Sprintf("unknown tool: %s", toolName)))
+		return
+	}
+
+	args := map[string]interface{}{}
+	if len(arguments) > 0 {
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			h.writeJSON(w, http.StatusOK, h.server.MarshalError(req.ID, errCodeInvalidParams, "invalid arguments"))
+			return
+		}
+	}
+
+	text, isError := h.adminToolResult(r.Context(), tool, args, r.UserAgent())
+	h.writeJSON(w, http.StatusOK, h.server.MarshalToolResult(req.ID, text, isError))
 }
 
 // handleMCPToolCall handles a tools/call for an MCP server tool.
