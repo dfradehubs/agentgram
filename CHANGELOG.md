@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.13.0] - 2026-07-31
+
+### Added
+
+- **Administration tools on the MCP facade** (14 `admin_*` tools). Editors get agent and MCP-server CRUD; admins also get delete, audit log, observability metrics and global settings. Users with role `user` or `viewer` see none of them, so their tool list is unchanged. A tool call is replayed in-process against the existing `/api/admin` router, so validation, role gating, registry reloads and auditing stay in the handlers the web admin already uses. Credentials come back redacted, and sending a redacted value back in an update keeps the stored one, so a read-edit-write round-trip is safe. Write tools carry the MCP `readOnlyHint`/`destructiveHint`/`idempotentHint` annotations and an explicit "only on the user's specific request" warning so a conformant client asks for confirmation.
+- **Admin operations are now in the audit log.** Every configuration change — from the web admin *or* from the new MCP tools — is recorded in `audit_events` with `resource_type="admin"`, `action=admin_create|admin_update|admin_delete` and `source=web|mcp`, including denied attempts. Request and response payloads are stored with credentials redacted. Previously these changes only reached the `audit_log` table, which has no HTTP endpoint, so they never appeared in the audit panel. The audit page gained an `admin` category filter.
+
+
+---
+
 ## [0.12.2] - 2026-07-27
 
 ### Fixed
