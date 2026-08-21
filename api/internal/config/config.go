@@ -12,6 +12,7 @@ type Config struct {
 	Database  DatabaseConfig  `yaml:"database"`
 	Metrics   MetricsConfig   `yaml:"metrics"`
 	MCPServer MCPServerConfig `yaml:"mcp_server"`
+	Seed      SeedConfig      `yaml:"seed"`
 }
 
 // LangfuseConfig holds Langfuse observability configuration
@@ -37,8 +38,10 @@ type MetricsConfig struct {
 	CleanupInterval string `yaml:"cleanup_interval"` // e.g. "1h", "30m"
 }
 
-// DatabaseConfig holds PostgreSQL connection configuration
+// DatabaseConfig holds database connection configuration
 type DatabaseConfig struct {
+	// Driver is "postgres" (default) or "sqlite". sqlite is laptop/single-node.
+	Driver   string `yaml:"driver"`
 	Host     string `yaml:"host"`
 	Port     int    `yaml:"port"`
 	User     string `yaml:"user"`
@@ -46,6 +49,10 @@ type DatabaseConfig struct {
 	DBName   string `yaml:"dbname"`
 	SSLMode  string `yaml:"sslmode"`
 	MaxConns int    `yaml:"max_conns"`
+	// Path is the SQLite file path when Driver is "sqlite" (default agentgram.db).
+	Path string `yaml:"path"`
+	// Embedded starts a private PostgreSQL process (laptop mode, no Docker).
+	Embedded bool `yaml:"embedded"`
 }
 
 // TracingConfig holds OpenTelemetry tracing configuration
@@ -64,12 +71,17 @@ type RedisConfig struct {
 	DB           int    `yaml:"db"`
 	PoolSize     int    `yaml:"pool_size"`
 	MinIdleConns int    `yaml:"min_idle_conns"`
+	// Embedded starts an in-process Redis (miniredis). Addr is ignored.
+	// Single-node / laptop mode only — not for multi-instance deployments.
+	Embedded bool `yaml:"embedded"`
 }
 
 // ServerConfig holds HTTP server configuration
 type ServerConfig struct {
 	Port string `yaml:"port"`
 	Host string `yaml:"host"` // Public hostname (e.g. "agentgram.example.com"), used for OAuth metadata
+	// WebStaticDir, if set, serves a SPA/static UI from this directory on unmatched GET routes.
+	WebStaticDir string `yaml:"web_static_dir"`
 }
 
 // MCPServerConfig holds configuration for the MCP server endpoint
@@ -109,7 +121,9 @@ type AuthConfig struct {
 	Basic         BasicAuthConfig   `yaml:"basic"`
 }
 
-// KeycloakConfig holds Keycloak OIDC configuration
+// KeycloakConfig holds OIDC configuration. Any spec-compliant provider works
+// (Keycloak, Authentik, Auth0, Zitadel, Google). Endpoints are discovered from
+// {issuer}/.well-known/openid-configuration; Keycloak path fallbacks remain.
 type KeycloakConfig struct {
 	Enabled       bool   `yaml:"enabled"`
 	Issuer        string `yaml:"issuer"`
@@ -118,6 +132,8 @@ type KeycloakConfig struct {
 	ClientSecret  string `yaml:"client_secret"`
 	RedirectURI   string `yaml:"redirect_uri"`
 	PostLogoutURI string `yaml:"post_logout_uri"`
+	// DisplayName is shown on the login button. Defaults to "OIDC".
+	DisplayName string `yaml:"display_name"`
 }
 
 // GitHubOAuthConfig holds GitHub OAuth configuration
@@ -144,6 +160,26 @@ type BasicSeedUser struct {
 	Username string `yaml:"username"`
 	Email    string `yaml:"email"`
 	Password string `yaml:"password"`
+}
+
+// SeedConfig controls first-run data so a fresh instance can chat immediately.
+type SeedConfig struct {
+	// DemoAgent registers a built-in echo agent at /demo/chat (no extra container).
+	DemoAgent bool `yaml:"demo_agent"`
+	// Agents are created if the id does not already exist. Empty endpoint skips the row.
+	Agents []SeedAgent `yaml:"agents"`
+}
+
+// SeedAgent is a declarative agent inserted on startup.
+type SeedAgent struct {
+	ID            string   `yaml:"id"`
+	Name          string   `yaml:"name"`
+	Description   string   `yaml:"description"`
+	Category      string   `yaml:"category"`
+	Protocol      string   `yaml:"protocol"`
+	Endpoint      string   `yaml:"endpoint"`
+	AllowedGroups []string `yaml:"allowed_groups"`
+	AllowedUsers  []string `yaml:"allowed_users"`
 }
 
 // LoggingConfig holds logging configuration
@@ -196,8 +232,18 @@ func LoadConfig(path string) (*Config, error) {
 		cfg.Tracing.Insecure = true
 	}
 
+	if cfg.Auth.Keycloak.DisplayName == "" {
+		cfg.Auth.Keycloak.DisplayName = "OIDC"
+	}
+	if cfg.Database.Driver == "" {
+		cfg.Database.Driver = "postgres"
+	}
+	if cfg.Database.Path == "" {
+		cfg.Database.Path = "agentgram.db"
+	}
+
 	// Redis defaults
-	if cfg.Redis.Addr == "" {
+	if cfg.Redis.Addr == "" && !cfg.Redis.Embedded {
 		cfg.Redis.Addr = "localhost:6379"
 	}
 	if cfg.Redis.PoolSize == 0 {

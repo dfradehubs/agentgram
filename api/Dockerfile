@@ -18,6 +18,10 @@ FROM gcr.io/distroless/static:nonroot
 
 COPY --from=builder /server /server
 COPY --from=builder /app/migrations /migrations
+COPY --from=builder /app/configs/config.quickstart.yaml /config/config.yaml
+
+ENV CONFIG_PATH=/config/config.yaml
+ENV MIGRATIONS_PATH=/migrations
 
 USER 65532:65532
 

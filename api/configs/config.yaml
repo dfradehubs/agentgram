@@ -17,9 +17,12 @@ auth:
   #   - "/google-workspace/editors@example.com"
   # viewer_groups:
   #   - "/google-workspace/viewers@example.com"
+  # Any OIDC provider (Keycloak, Authentik, Auth0, Zitadel, Google). Endpoints
+  # are discovered from {issuer}/.well-known/openid-configuration.
   keycloak:
     enabled: true
     issuer: "${ENV:KEYCLOAK_ISSUER}"
+    display_name: "OIDC"
     jwks_cache_ttl: 3600
     client_id: "${ENV:OIDC_CLIENT_ID}"
     client_secret: "${ENV:OIDC_CLIENT_SECRET}"

@@ -97,20 +97,9 @@ logging:
   level: debug
   format: json
 
-agents:
-  - id: mock-agent
-    name: "Mock Agent"
-    description: "Test agent"
-    category: "testing"
-    protocol: rest
-    endpoint: http://mock-agent:9000/chat
-    forward_authorization: true
-    allowed_groups:
-      - "*"  # Access for everyone
-    health_check:
-      enabled: true
-      endpoint: /health
-      interval_seconds: 30
+# Agents are registered at runtime (admin UI / seed.demo_agent), not in this YAML.
+seed:
+  demo_agent: true
 ```
 
 ### Environment Variables

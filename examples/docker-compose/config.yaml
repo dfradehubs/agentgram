@@ -53,6 +53,18 @@ mcp_server:
   tool_call_timeout: "2m"
   max_tool_call_rounds: 10
 
+# Built-in echo agent so the UI chats on first boot. Disable in production.
+seed:
+  demo_agent: true
+
+# Optional: password login without Keycloak. Uncomment and set BASIC_AUTH_PASSWORD.
+# auth.basic:
+#   enabled: true
+#   seed_users:
+#     - username: admin
+#       email: admin@localhost
+#       password: "${ENV:BASIC_AUTH_PASSWORD}"
+
 # Optional: tracing (OpenTelemetry) and Langfuse are off by default.
 langfuse:
   enabled: false

@@ -5,7 +5,7 @@
 <h1 align="center">Agentgram</h1>
 
 <p align="center">
-  <strong>One chat. Every agent. Any protocol.</strong>
+  <strong>One MCP endpoint. One chat. Every agent.</strong>
 </p>
 
 <p align="center">
@@ -15,6 +15,7 @@
 
 <p align="center">
   <a href="https://agentgram.eu"><img src="https://img.shields.io/badge/docs-https://agentgram.eu-7C3AED.svg" alt="Documentation" /></a>
+  <a href="https://github.com/dfradehubs/agentgram/stargazers"><img src="https://img.shields.io/github/stars/dfradehubs/agentgram?style=social" alt="GitHub stars" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
   <img src="https://img.shields.io/badge/Go-1.25-00ADD8.svg" alt="Go 1.25" />
   <img src="https://img.shields.io/badge/Next.js-16-000000.svg" alt="Next.js 16" />
@@ -23,6 +24,10 @@
 
 <p align="center">
   <strong><a href="https://agentgram.eu">📖 Documentation &amp; guides</a></strong>
+</p>
+
+<p align="center">
+  <img src="docs/demo.gif" alt="Agentgram: streaming chat, multi-agent threads, admin, and one MCP endpoint" width="960" />
 </p>
 
 ---
@@ -55,7 +60,7 @@ A2A peer or a Google ADK app.
 - 🧵 **Sessions that persist** — conversation history per agent, stored in Redis and managed by the API (agents stay stateless).
 - 👥 **Multi-agent chats** — talk to several agents in one thread and propagate context between them.
 - 🤝 **Share & collaborate** — share conversations with revocable, time-limited links (view or clone), and build **shared multi-agent groups** that a team uses together.
-- 🔐 **Authentication** — optional Keycloak (OIDC/JWT) login; identities and groups (e.g. Google Workspace) drive the RBAC above.
+- 🔐 **Authentication** — optional OIDC (any provider: Keycloak, Authentik, Auth0, Zitadel, Google) or basic username/password; identities and groups drive the RBAC above.
 - 🛠️ **MCP server** — expose your agents as tools inside Claude Code and Cursor, with full OAuth + Dynamic Client Registration (no manual setup).
 - 💬 **Slack integration** — reach the same agents from Slack.
 - 📊 **Built-in observability** — usage metrics, latency and cost dashboards out of the box.
@@ -103,27 +108,54 @@ See [docs/PROTOCOLS_OVERVIEW.md](docs/PROTOCOLS_OVERVIEW.md) for how each protoc
 
 ## Quick start
 
-**Requirements:** Node.js 22+, Go 1.25+, Docker & Docker Compose.
+**Requirement:** Docker.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dfradehubs/agentgram/main/docker-compose.yaml -o docker-compose.yaml
+docker compose up -d
+```
+
+Open **http://localhost:3000** — a built-in demo agent is already registered, so you can chat immediately.
+
+| Service | URL |
+| ------- | --- |
+| Web UI  | http://localhost:3000 |
+| API / MCP | http://localhost:8080/mcp |
+
+Then point Cursor or Claude Code at the same MCP endpoint:
+
+```bash
+claude mcp add --transport http agentgram http://localhost:8080/mcp
+```
+
+Auth is **off** in this example. Do not expose it to the public internet. Password login (no Keycloak) and generic OIDC are documented under [Configuration](https://agentgram.eu/docs/configuration/).
+
+### Self-host with the published images
+
+```bash
+git clone https://github.com/dfradehubs/agentgram.git
+cd agentgram/examples/docker-compose
+cp .env.example .env
+docker compose up -d
+```
+
+A single image (`ghcr.io/dfradehubs/agentgram`) that runs API + UI together is also published; see [Deploying](#deploying-to-the-world).
+
+### Develop from source
+
+**Requirements:** Node.js 22+, Go 1.25+, Docker.
 
 ```bash
 git clone https://github.com/dfradehubs/agentgram.git
 cd agentgram
-make install        # install web + Go dependencies
-make docker-up      # API + mock agent + Redis + PostgreSQL + a test frontend
+make install
+make docker-up    # API + mock agent + Redis + PostgreSQL + web
 ```
 
-That brings up:
-
-| Service        | URL                     |
-| -------------- | ----------------------- |
-| API            | http://localhost:8080   |
-| Mock agent     | http://localhost:9000   |
-| Test frontend  | http://localhost:3001   |
-
-To run the real web UI against the stack:
+Laptop mode (no Docker for Redis/Postgres — embedded stores):
 
 ```bash
-make web            # Next.js dev server on http://localhost:3000
+cd api && CONFIG_PATH=configs/config.laptop.yaml go run ./cmd/server
 ```
 
 Run `make help` to see every available target.
@@ -167,6 +199,7 @@ Ready-to-use deployment recipes live in [`examples/`](examples/):
 Container images are published to GitHub Container Registry on every release:
 
 ```
+ghcr.io/dfradehubs/agentgram          # API + web in one container
 ghcr.io/dfradehubs/agentgram-api
 ghcr.io/dfradehubs/agentgram-web
 ```
@@ -206,7 +239,7 @@ server discovery (RFC 8414) and **Dynamic Client Registration (RFC 7591)** — s
 connects with just the URL, nothing to configure by hand:
 
 ```bash
-claude mcp add --transport http agentgram https://agentgram.example.com/mcp
+claude mcp add --transport http agentgram http://localhost:8080/mcp
 ```
 
 The client runs the OAuth + DCR flow automatically. Then ask away:
@@ -242,8 +275,7 @@ Deeper dives: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [api/CLAUDE.md](ap
 
 ## Contributing
 
-Issues and pull requests are welcome. For anything non-trivial, open an issue first so we can talk it
-through. Keep PRs focused, run `make test` and `make lint` before pushing, and follow
+Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). Keep PRs focused, run `make test` and `make lint` before pushing, and follow
 [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`, …).
 
 ## License

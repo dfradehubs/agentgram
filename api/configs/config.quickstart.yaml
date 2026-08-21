@@ -1,0 +1,41 @@
+# Default config baked into the API image for `docker compose up`.
+# Override by mounting your own file at CONFIG_PATH.
+
+server:
+  port: "${ENV:PORT}"
+  host: "${ENV:SERVER_HOST}"
+
+auth:
+  enabled: false
+  admin_users:
+    - "anonymous@localhost"
+  admin_groups:
+    - "*"
+  basic:
+    enabled: false
+
+logging:
+  level: "${ENV:LOG_LEVEL}"
+  format: "json"
+
+redis:
+  addr: "${ENV:REDIS_ADDR}"
+  password: "${ENV:REDIS_PASSWORD}"
+
+database:
+  host: "${ENV:POSTGRES_HOST}"
+  port: 5432
+  user: "${ENV:POSTGRES_USER}"
+  password: "${ENV:POSTGRES_PASSWORD}"
+  dbname: "${ENV:POSTGRES_DB}"
+  sslmode: "${ENV:POSTGRES_SSLMODE}"
+  max_conns: 25
+
+metrics:
+  enabled: true
+
+mcp_server:
+  enabled: true
+
+seed:
+  demo_agent: true

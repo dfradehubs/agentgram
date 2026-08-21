@@ -5,11 +5,14 @@ Recipes for running Agentgram outside your laptop. Pick the one that matches whe
 | Recipe | Best for | What you get |
 | ------ | -------- | ------------ |
 | [`docker-compose/`](docker-compose/) | A single VM or server | API + web + Redis + PostgreSQL, using the published images |
+| Root [`docker-compose.yaml`](../docker-compose.yaml) | Trying it in two minutes | Same stack; baked-in demo agent |
+| [`all-in-one/`](all-in-one/) | Fewer app containers | One `agentgram` image (API+UI) + Redis + PostgreSQL |
 | [`kubernetes/`](kubernetes/) | A cluster | Helm values for the [bjw-s `app-template`](https://github.com/bjw-s/helm-charts) chart + an Ingress |
 
 Both pull the official images from GitHub Container Registry:
 
 ```
+ghcr.io/dfradehubs/agentgram:<version>
 ghcr.io/dfradehubs/agentgram-api:<version>
 ghcr.io/dfradehubs/agentgram-web:<version>
 ```
@@ -29,6 +32,5 @@ Database migrations run automatically on API startup, so there is no separate mi
 ## A note on auth
 
 The examples ship with `auth.enabled: false` so you can try Agentgram immediately. **Do not expose an
-unauthenticated instance to the public internet.** Before going live, enable Keycloak (OIDC) in the
-config and put the web app behind your identity-aware proxy or Ingress. See the root
-[README](../README.md#configuration) and [`api/docs/SECURITY.md`](../api/docs/SECURITY.md).
+unauthenticated instance to the public internet.** Before going live, enable basic auth or generic
+OIDC in the config. See the root [README](../README.md#configuration) and [`api/docs/SECURITY.md`](../api/docs/SECURITY.md).

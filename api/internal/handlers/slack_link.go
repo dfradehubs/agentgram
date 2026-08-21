@@ -131,7 +131,8 @@ func (h *SlackLinkHandler) LinkStart(w http.ResponseWriter, r *http.Request) {
 		"state":         {state},
 		"nonce":         {nonce},
 	}
-	authURL := fmt.Sprintf("%s/protocol/openid-connect/auth?%s", h.oidc.Issuer(), params.Encode())
+	meta := auth.ResolveMetadata(r.Context(), h.oidc.Issuer())
+	authURL := meta.AuthorizationEndpoint + "?" + params.Encode()
 	http.Redirect(w, r, authURL, http.StatusFound)
 }
 

@@ -11,13 +11,13 @@ layout: hextra-home
 
 <div class="hx:mt-6 hx:mb-6">
 {{< hextra/hero-headline >}}
-  One chat. Every agent.&nbsp;<br class="hx:sm:block hx:hidden" />Any protocol.
+  One MCP endpoint.&nbsp;<br class="hx:sm:block hx:hidden" />One chat. Every agent.
 {{< /hextra/hero-headline >}}
 </div>
 
 <div class="hx:mb-12">
 {{< hextra/hero-subtitle >}}
-  Centralize every agent and MCP server in your company — ADK, A2A or custom —&nbsp;<br class="hx:sm:block hx:hidden" />behind one API and one MCP endpoint, with RBAC deciding who can reach what.
+  A single front door for the agents and MCP servers you already run — chat in the browser, call them from Cursor or Claude Code, with RBAC deciding who can reach what.
 {{< /hextra/hero-subtitle >}}
 </div>
 
@@ -27,7 +27,9 @@ layout: hextra-home
 {{< hextra/hero-button text="View on GitHub" link="https://github.com/dfradehubs/agentgram" style="background:#27272a;border:1px solid #3f3f46;" >}}
 </div>
 
-<div class="hx:mt-6"></div>
+<div class="hx:mt-6 hx:mb-10" style="max-width:960px;margin-left:auto;margin-right:auto;">
+  <img src="/images/demo.gif" width="960" height="600" alt="Agentgram: streaming chat, multi-agent threads, admin, and one MCP endpoint" />
+</div>
 
 {{< hextra/feature-grid >}}
   {{< hextra/feature-card
@@ -279,7 +281,7 @@ data: {"type":"RUN_FINISHED","threadId":"…","runId":"…"}
 {{< tabs >}}
   {{< tab name="Claude Code" >}}
 ```bash
-claude mcp add --transport http agentgram https://agentgram.eu/mcp
+claude mcp add --transport http agentgram http://localhost:8080/mcp
 # then run /mcp, pick "agentgram" and sign in once
 ```
 
@@ -291,7 +293,7 @@ You get one `ask_<agent-id>` tool per agent you can reach, plus the tools of eve
   "mcpServers": {
     "agentgram": {
       "type": "http",
-      "url": "https://agentgram.eu/mcp"
+      "url": "http://localhost:8080/mcp"
     }
   }
 }
@@ -314,9 +316,8 @@ On first use the client runs the OAuth flow automatically — discovery + Dynami
 Self-host the whole stack on a single VM.
 
 ```bash
-cd agentgram/examples/docker-compose
-cp .env.example .env      # set POSTGRES_PASSWORD, pin AGENTGRAM_VERSION
-docker compose up -d      # web on http://localhost:3000
+curl -fsSL https://raw.githubusercontent.com/dfradehubs/agentgram/main/docker-compose.yaml -o docker-compose.yaml
+docker compose up -d      # web on http://localhost:3000 — demo agent ready to chat
 ```
   {{< /tab >}}
   {{< tab name="Kubernetes" >}}
@@ -340,7 +341,7 @@ docker pull ghcr.io/dfradehubs/agentgram-web:latest
 </section>
 
 <div class="ag-cta">
-<h2 class="ag-section-title">One chat. Every agent. Any protocol.</h2>
+<h2 class="ag-section-title">One MCP endpoint. One chat. Every agent.</h2>
 <p class="ag-section-sub">Run the full stack locally in a couple of commands, then point it at your own agents.</p>
 <div class="ag-cta-actions">
 {{< hextra/hero-button text="Get Started" link="/docs/getting-started/" >}}

@@ -15,7 +15,7 @@ The server implements the full OAuth flow in a standard way: **Protected Resourc
 
 ```bash
 # Add the MCP server (OAuth + DCR are resolved automatically)
-claude mcp add --transport http agentgram https://agentgram.example.com/mcp
+claude mcp add --transport http agentgram http://localhost:8080/mcp
 ```
 
 On first use, Claude Code discovers the authorization server, registers the client via DCR, and opens the browser for login. There is no need to pass `clientId` or `authServerMetadataUrl`.

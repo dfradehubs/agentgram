@@ -20,7 +20,7 @@ integration gives each user only the tools they're entitled to.
 ## Get started
 
 {{< cards >}}
-  {{< card link="/docs/getting-started/" title="Getting Started" icon="play" subtitle="Run the full stack locally in a couple of commands." >}}
+  {{< card link="/docs/getting-started/" title="Getting Started" icon="play" subtitle="One compose file. A demo agent. Chat in under two minutes." >}}
   {{< card link="/docs/docker-compose/" title="Docker Compose" icon="server" subtitle="Self-host API + web + Redis + PostgreSQL on a server." >}}
   {{< card link="/docs/kubernetes/" title="Kubernetes" icon="cube" subtitle="Deploy with Helm using the bjw-s app-template chart." >}}
 {{< /cards >}}
@@ -32,5 +32,6 @@ integration gives each user only the tools they're entitled to.
   {{< card link="/docs/agents/" title="Agents & protocols" icon="switch-horizontal" subtitle="Register agents and how each protocol maps to AG-UI." >}}
   {{< card link="/docs/collaboration/" title="Sharing & collaboration" icon="user-group" subtitle="Share conversations and create shared multi-agent groups across users." >}}
   {{< card link="/docs/mcp/" title="MCP" icon="terminal" subtitle="Expose your agents as tools in any MCP-compatible IDE or CLI." >}}
+  {{< card link="/docs/compare/" title="Compare" icon="switch-horizontal" subtitle="Vs Open WebUI, MCPJungle, ContextForge, agentgateway." >}}
   {{< card link="/api/" title="API Reference" icon="code" subtitle="The full OpenAPI reference for the HTTP API." >}}
 {{< /cards >}}

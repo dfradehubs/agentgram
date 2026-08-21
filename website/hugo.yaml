@@ -37,7 +37,7 @@ menu:
         icon: github
 
 params:
-  description: "One chat, every agent, any protocol. A Go multiplexer that speaks REST, A2A and ADK and emits AG-UI events to a Next.js client."
+  description: "One MCP endpoint and one chat for every agent you already run."
 
   navbar:
     displayTitle: true
