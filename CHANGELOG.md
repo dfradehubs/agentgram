@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.14.0] - 2026-08-21
+
+### Added
+
+- **Quickstart is one Compose file.** `curl` the root `docker-compose.yaml` and `docker compose up -d` opens the UI on `:3000`. A built-in demo agent is seeded so the first chat works without the admin panel. MCP snippets point at `http://localhost:8080/mcp` (the docs site `/mcp` was a 404).
+- **First-run wizard** when no agents are registered: paste a REST, A2A or ADK URL. OIDC uses `{issuer}/.well-known/openid-configuration` (Keycloak paths remain as fallback). Basic auth is the documented production path before an IdP.
+- **All-in-one image** `ghcr.io/dfradehubs/agentgram` (API + web). Laptop mode embeds Redis and PostgreSQL (`config.laptop.yaml`). The API can serve a static UI from `WEB_STATIC_DIR`.
+- README demo GIF, compare page vs Open WebUI / MCPJungle / ContextForge / agentgateway, CONTRIBUTING, issue templates, and paste-ready Show HN notes.
+
+---
+
+---
+
 ## [0.13.0] - 2026-07-31
 
 ### Added
