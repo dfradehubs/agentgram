@@ -27,7 +27,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/demo.gif" alt="Agentgram: streaming chat, smart groups with an LLM moderator, admin, and one MCP endpoint" width="960" />
+  <img src="docs/demo-v2.gif" alt="Agentgram: streaming chat, smart groups with an LLM moderator, admin, and one MCP endpoint" width="960" />
 </p>
 
 ---

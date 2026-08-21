@@ -28,7 +28,7 @@ layout: hextra-home
 </div>
 
 <div class="hx:mt-6 hx:mb-10" style="max-width:960px;margin-left:auto;margin-right:auto;">
-  <img src="/images/demo.gif" width="960" height="600" alt="Agentgram: streaming chat, smart groups with an LLM moderator, admin, and one MCP endpoint" />
+  <img src="/images/demo-v2.gif" width="960" height="600" alt="Agentgram: streaming chat, smart groups with an LLM moderator, admin, and one MCP endpoint" />
 </div>
 
 {{< hextra/feature-grid >}}
