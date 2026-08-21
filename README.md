@@ -26,6 +26,10 @@
   <strong><a href="https://agentgram.eu">📖 Documentation &amp; guides</a></strong>
 </p>
 
+<p align="center">
+  <img src="docs/demo.gif" alt="Agentgram: streaming chat, multi-agent threads, admin, and one MCP endpoint" width="960" />
+</p>
+
 ---
 
 ## Why

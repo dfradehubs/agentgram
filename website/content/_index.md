@@ -27,7 +27,9 @@ layout: hextra-home
 {{< hextra/hero-button text="View on GitHub" link="https://github.com/dfradehubs/agentgram" style="background:#27272a;border:1px solid #3f3f46;" >}}
 </div>
 
-<div class="hx:mt-6"></div>
+<div class="hx:mt-6 hx:mb-10" style="max-width:960px;margin-left:auto;margin-right:auto;">
+  <img src="/images/demo.gif" width="960" height="600" alt="Agentgram: streaming chat, multi-agent threads, admin, and one MCP endpoint" />
+</div>
 
 {{< hextra/feature-grid >}}
   {{< hextra/feature-card
