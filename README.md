@@ -27,7 +27,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/demo.gif" alt="Agentgram: streaming chat, multi-agent threads, admin, and one MCP endpoint" width="960" />
+  <img src="docs/demo.gif" alt="Agentgram: streaming chat, smart groups with an LLM moderator, admin, and one MCP endpoint" width="960" />
 </p>
 
 ---
@@ -58,8 +58,8 @@ A2A peer or a Google ADK app.
 - 🔌 **Protocol-agnostic** — Custom REST/SSE, [A2A](docs/AGENT_A2A_CONTRACT.md) (JSON-RPC) and [Google ADK](docs/AGENT_ADK_CONTRACT.md) agents behind one interface.
 - 📡 **AG-UI native** — the API emits standard [AG-UI](https://docs.ag-ui.com/) SSE events (`RUN_STARTED`, `TEXT_MESSAGE_*`, `TOOL_CALL_*`, `RUN_FINISHED`).
 - 🧵 **Sessions that persist** — conversation history per agent, stored in Redis and managed by the API (agents stay stateless).
-- 👥 **Multi-agent chats** — talk to several agents in one thread and propagate context between them.
-- 🤝 **Share & collaborate** — share conversations with revocable, time-limited links (view or clone), and build **shared multi-agent groups** that a team uses together.
+- 👥 **Smart groups** — message a group like a Telegram chat: an LLM moderator picks who speaks, agents build on each other's replies, and `@mention` steers the roster. Configure max debate turns in admin.
+- 🤝 **Share & collaborate** — share conversations with revocable, time-limited links (view or clone), and build **shared groups** that a team uses together.
 - 🔐 **Authentication** — optional OIDC (any provider: Keycloak, Authentik, Auth0, Zitadel, Google) or basic username/password; identities and groups drive the RBAC above.
 - 🛠️ **MCP server** — expose your agents as tools inside Claude Code and Cursor, with full OAuth + Dynamic Client Registration (no manual setup).
 - 💬 **Slack integration** — reach the same agents from Slack.
@@ -71,11 +71,11 @@ A2A peer or a Google ADK app.
 <table>
   <tr>
     <td width="50%"><img src="website/static/images/screenshots/chat-single.webp" alt="Single-agent chat" /></td>
-    <td width="50%"><img src="website/static/images/screenshots/chat-multi-agent.webp" alt="Multi-agent chat" /></td>
+    <td width="50%"><img src="website/static/images/screenshots/chat-multi-agent.webp" alt="Smart group debate with LLM moderator" /></td>
   </tr>
   <tr>
     <td align="center"><sub><b>Single-agent chat</b> — streaming AG-UI responses with tool calls.</sub></td>
-    <td align="center"><sub><b>Multi-agent chat</b> — several agents in one thread, sharing context.</sub></td>
+    <td align="center"><sub><b>Smart groups</b> — LLM moderator picks who speaks; agents share context.</sub></td>
   </tr>
   <tr>
     <td width="50%"><img src="website/static/images/screenshots/admin-agents.webp" alt="Admin panel" /></td>

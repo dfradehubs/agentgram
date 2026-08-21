@@ -28,7 +28,7 @@ layout: hextra-home
 </div>
 
 <div class="hx:mt-6 hx:mb-10" style="max-width:960px;margin-left:auto;margin-right:auto;">
-  <img src="/images/demo.gif" width="960" height="600" alt="Agentgram: streaming chat, multi-agent threads, admin, and one MCP endpoint" />
+  <img src="/images/demo.gif" width="960" height="600" alt="Agentgram: streaming chat, smart groups with an LLM moderator, admin, and one MCP endpoint" />
 </div>
 
 {{< hextra/feature-grid >}}
@@ -244,19 +244,19 @@ data: {"type":"RUN_FINISHED","threadId":"…","runId":"…"}
 <div class="ag-section-head">
 <span class="ag-eyebrow">See it in action</span>
 <h2 class="ag-section-title">A real chat client, not a demo widget</h2>
-<p class="ag-section-sub">Streaming responses, tool calls, multi-agent threads and an admin surface to manage it all.</p>
+<p class="ag-section-sub">Streaming responses, tool calls, smart groups with an LLM moderator, and an admin surface to manage it all.</p>
 </div>
 
 <div class="ag-gallery">
   <figure class="ag-shot">
     <div class="ag-shot-bar"><span></span><span></span><span></span></div>
-    <img src="/images/screenshots/chat-single.webp" width="2880" height="1800" loading="lazy" decoding="async" alt="Chatting with a single agent: streaming markdown answer with a collapsed tool call and a results table." />
+    <img src="/images/screenshots/chat-single.webp" width="2880" height="1800" loading="lazy" decoding="async" alt="Chatting with a single agent: streaming answer with a SearchTool call, reasoning, and a generate-chart action." />
     <figcaption><strong>Chat with any agent.</strong> Streaming markdown, tool calls and chartable data — whatever protocol the agent speaks.</figcaption>
   </figure>
   <figure class="ag-shot">
     <div class="ag-shot-bar"><span></span><span></span><span></span></div>
-    <img src="/images/screenshots/chat-multi-agent.webp" width="2880" height="1800" loading="lazy" decoding="async" alt="A multi-agent group thread where one question is routed to both the Logs and Metrics agents." />
-    <figcaption><strong>Multi-agent groups.</strong> Ask one question, route it across several agents, and keep the context in your personal group thread.</figcaption>
+    <img src="/images/screenshots/chat-multi-agent.webp" width="2880" height="1800" loading="lazy" decoding="async" alt="A smart group debate: the LLM moderator picks Logs then Kubernetes, each agent seeing the other's reply." />
+    <figcaption><strong>Smart groups.</strong> Message a group like a chat: an LLM moderator picks who speaks, agents build on each other, and you can @mention to steer.</figcaption>
   </figure>
   <figure class="ag-shot">
     <div class="ag-shot-bar"><span></span><span></span><span></span></div>

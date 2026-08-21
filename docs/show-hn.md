@@ -13,7 +13,7 @@ Title is 68 characters (HN limit is 80).
 
 ## First comment (paste as-is)
 
-I kept ending up with a different chat window for every agent (logs, k8s, metrics), each on a different protocol. Agentgram is a self-hosted Go multiplexer: REST/SSE, A2A and Google ADK in, AG-UI out, same agents as MCP tools for Cursor / Claude Code, with RBAC on both.
+I kept ending up with a different chat window for every agent (logs, k8s, metrics), each on a different protocol. Agentgram is a self-hosted Go multiplexer: REST/SSE, A2A and Google ADK in, AG-UI out, same agents as MCP tools for Cursor / Claude Code, with RBAC on both. Groups are moderated debates — an LLM picks who speaks.
 
 ```
 curl -fsSL https://raw.githubusercontent.com/dfradehubs/agentgram/main/docker-compose.yaml -o docker-compose.yaml
