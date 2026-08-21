@@ -19,7 +19,7 @@ The only thing a client needs is the `/mcp` URL.
 **Claude Code:**
 
 ```bash
-claude mcp add --transport http agentgram https://agentgram.example.com/mcp
+claude mcp add --transport http agentgram http://localhost:8080/mcp
 ```
 
 **Cursor** (or any client using an `mcp.json`) — in `~/.cursor/mcp.json` (global) or
@@ -30,7 +30,7 @@ claude mcp add --transport http agentgram https://agentgram.example.com/mcp
   "mcpServers": {
     "agentgram": {
       "type": "http",
-      "url": "https://agentgram.example.com/mcp"
+      "url": "http://localhost:8080/mcp"
     }
   }
 }

@@ -65,6 +65,18 @@ export const translations = {
     "empty.selectAgentDescription": "Elige un agente de la barra lateral para comenzar una conversacion.",
     "empty.typeToStart": "Escribe un mensaje para comenzar",
 
+    // First-run wizard
+    "wizard.title": "Conecta tu primer agente",
+    "wizard.subtitle": "Un chat y un endpoint MCP para todos tus agentes. Pega una URL REST, A2A o ADK para empezar.",
+    "wizard.name": "Nombre",
+    "wizard.endpoint": "URL del agente",
+    "wizard.protocol": "Protocolo",
+    "wizard.submit": "Registrar agente",
+    "wizard.created": "Agente registrado",
+    "wizard.createError": "No se pudo registrar el agente",
+    "wizard.askAdmin": "Pide a un administrador que registre un agente, o espera al agente demo si esta instancia lo tiene activado.",
+    "wizard.mcpHint": "O conecta Cursor / Claude Code",
+
     // Agents
     "agents.title": "Agentes",
     "agents.noAgents": "No hay agentes disponibles",
@@ -296,6 +308,18 @@ export const translations = {
     "empty.selectAgent": "Select an agent",
     "empty.selectAgentDescription": "Choose an agent from the sidebar to start a conversation.",
     "empty.typeToStart": "Type a message to get started",
+
+    // First-run wizard
+    "wizard.title": "Connect your first agent",
+    "wizard.subtitle": "One chat and one MCP endpoint for every agent. Paste a REST, A2A or ADK URL to start.",
+    "wizard.name": "Name",
+    "wizard.endpoint": "Agent URL",
+    "wizard.protocol": "Protocol",
+    "wizard.submit": "Register agent",
+    "wizard.created": "Agent registered",
+    "wizard.createError": "Could not register the agent",
+    "wizard.askAdmin": "Ask an admin to register an agent, or wait for the built-in demo agent if this instance enabled it.",
+    "wizard.mcpHint": "Or connect Cursor / Claude Code",
 
     // Agents
     "agents.title": "Agents",

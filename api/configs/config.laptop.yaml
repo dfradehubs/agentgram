@@ -1,0 +1,39 @@
+# Laptop / single-node: no Docker for Redis or Postgres.
+#   CONFIG_PATH=configs/config.laptop.yaml go run ./cmd/server
+#
+# Data dir: AGENTGRAM_DATA_DIR (default ./data).
+# The UI can be served by Next.js on :3000 or by setting web_static_dir / WEB_STATIC_DIR.
+
+server:
+  port: "8080"
+  host: "localhost:8080"
+
+auth:
+  enabled: false
+  admin_users:
+    - "anonymous@localhost"
+  admin_groups:
+    - "*"
+  basic:
+    enabled: false
+
+logging:
+  level: info
+  format: console
+
+redis:
+  embedded: true
+
+database:
+  embedded: true
+  sslmode: disable
+  max_conns: 10
+
+seed:
+  demo_agent: true
+
+mcp_server:
+  enabled: true
+
+metrics:
+  enabled: true

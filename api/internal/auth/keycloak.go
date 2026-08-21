@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -62,10 +63,12 @@ func (k *KeycloakProvider) refreshJWKS(ctx context.Context) (jwk.Set, error) {
 	return set, nil
 }
 
-// getJWKSURL builds the JWKS endpoint URL
+// getJWKSURL builds the JWKS endpoint URL via OIDC discovery (Keycloak fallback).
 func (k *KeycloakProvider) getJWKSURL() string {
-	// Keycloak standard JWKS endpoint
-	return fmt.Sprintf("%s/protocol/openid-connect/certs", k.issuer)
+	if m := ResolveMetadata(context.Background(), k.issuer); m != nil && m.JWKSURI != "" {
+		return m.JWKSURI
+	}
+	return fmt.Sprintf("%s/protocol/openid-connect/certs", strings.TrimRight(k.issuer, "/"))
 }
 
 // GetIssuer returns the configured issuer

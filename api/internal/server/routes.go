@@ -29,6 +29,7 @@ import (
 	"github.com/dfradehubs/agentgram-api/internal/settings"
 	slackpkg "github.com/dfradehubs/agentgram-api/internal/slack"
 	"github.com/dfradehubs/agentgram-api/internal/store"
+	"github.com/dfradehubs/agentgram-api/internal/webui"
 	"go.uber.org/zap"
 )
 
@@ -405,6 +406,18 @@ func SetupRoutes(cfg *config.Config, registry *agents.Registry, sessionStore sto
 		}
 	})
 
+	if cfg.Seed.DemoAgent {
+		r.Post("/demo/chat", handlers.DemoChat)
+	}
+
+	webDir := cfg.Server.WebStaticDir
+	if webDir == "" {
+		webDir = os.Getenv("WEB_STATIC_DIR")
+	}
+	if webDir != "" {
+		webui.Mount(r, webDir)
+	}
+
 	return r
 }
 
@@ -422,7 +435,7 @@ func handleAuthProviders(cfg *config.Config) http.HandlerFunc {
 
 		if cfg.Auth.Keycloak.Enabled {
 			providers = append(providers, authProvider{
-				Name:     "Keycloak",
+				Name:     cfg.Auth.Keycloak.DisplayName,
 				Type:     "oidc",
 				LoginURL: "/auth/login",
 			})

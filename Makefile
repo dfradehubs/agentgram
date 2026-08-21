@@ -1,5 +1,6 @@
 .PHONY: help dev dev-docker api web install clean test lint \
        image-api image-web image-push-api image-push-web image-all \
+       image-allinone image-push-allinone \
        test-e2e test-e2e-staging swagger \
        bump-patch bump-minor bump-major version changelog
 
@@ -115,7 +116,19 @@ image-push-web: ## Push web image to registry
 	docker push $(WEB_IMAGE):$(COMMIT)
 	docker push $(WEB_IMAGE):latest
 
-image-all: image-api image-web image-push-api image-push-web ## Build and push all images
+image-all: image-api image-web image-allinone image-push-api image-push-web image-push-allinone ## Build and push all images
+
+image-allinone: ## Build all-in-one image (API + web)
+	docker build --platform linux/amd64 \
+		-t $(REGISTRY)/agentgram:$(VERSION) \
+		-t $(REGISTRY)/agentgram:$(COMMIT) \
+		-t $(REGISTRY)/agentgram:latest \
+		-f Dockerfile .
+
+image-push-allinone: ## Push all-in-one image
+	docker push $(REGISTRY)/agentgram:$(VERSION)
+	docker push $(REGISTRY)/agentgram:$(COMMIT)
+	docker push $(REGISTRY)/agentgram:latest
 
 # =============================================================================
 # Setup & Installation

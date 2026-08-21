@@ -12,6 +12,7 @@ import { usePreferencesContext } from "@/contexts/PreferencesContext";
 import { useAgentContext } from "@/contexts/AgentContext";
 import { useT } from "@/lib/i18n";
 import { EmptyState } from "./EmptyState";
+import { FirstRunWizard } from "./FirstRunWizard";
 import { AgentInfoView } from "./AgentInfoView";
 import { ChatHeader } from "./ChatHeader";
 import { ChatMessages } from "./ChatMessages";
@@ -51,7 +52,7 @@ const RUN_RECOVERY_POLL_MS = 1500;
 const RUN_RECOVERY_MAX_POLLS = 40; // ~60s before falling back to a re-send
 
 export function Chat() {
-  const { agents, currentAgent } = useAgents();
+  const { agents, currentAgent, isLoading: agentsLoading } = useAgents();
   const { user, displayName } = useUser();
   const { focusKey } = useAgentContext();
   const { sessions, currentSession, sessionResetKey, refreshSessions, pendingMultiAgentIds, activeGroupId, multiAgentGroups, createNewSession, wantsNewChat, newGroupConversation, markSessionActive, hasMoreMessages, isLoadingMore, loadOlderMessages } = useSessions();
@@ -606,6 +607,9 @@ export function Chat() {
 
   // Empty state: no agent and not in MCP mode
   if (!isMCP && !currentAgent) {
+    if (!agentsLoading && agents.length === 0) {
+      return <FirstRunWizard />;
+    }
     return <EmptyState />;
   }
 

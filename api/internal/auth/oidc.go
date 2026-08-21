@@ -23,7 +23,7 @@ type TokenResponse struct {
 	ExpiresIn    int    `json:"expires_in"`
 }
 
-// OIDCClient handles communication with Keycloak OIDC endpoints
+// OIDCClient handles communication with an OIDC provider (any spec-compliant IdP).
 type OIDCClient struct {
 	issuer        string
 	clientID      string
@@ -65,7 +65,14 @@ func (c *OIDCClient) ExchangeCodeWithRedirect(ctx context.Context, code, redirec
 	return c.tokenRequest(ctx, data)
 }
 
-// GetAuthorizationURL builds the Keycloak authorization URL
+func (c *OIDCClient) meta() *ProviderMetadata {
+	if m := ResolveMetadata(context.Background(), c.issuer); m != nil {
+		return m
+	}
+	return keycloakFallback(strings.TrimRight(c.issuer, "/"))
+}
+
+// GetAuthorizationURL builds the OIDC authorization URL from discovery.
 func (c *OIDCClient) GetAuthorizationURL(state, nonce string) string {
 	params := url.Values{
 		"response_type": {"code"},
@@ -75,7 +82,7 @@ func (c *OIDCClient) GetAuthorizationURL(state, nonce string) string {
 		"state":         {state},
 		"nonce":         {nonce},
 	}
-	return fmt.Sprintf("%s/protocol/openid-connect/auth?%s", c.issuer, params.Encode())
+	return c.meta().AuthorizationEndpoint + "?" + params.Encode()
 }
 
 // ExchangeCode exchanges an authorization code for tokens
@@ -108,7 +115,7 @@ func (c *OIDCClient) RevokeToken(ctx context.Context, token string) error {
 		"client_id":     {c.clientID},
 		"client_secret": {c.clientSecret},
 	}
-	endpoint := fmt.Sprintf("%s/protocol/openid-connect/revoke", c.issuer)
+	endpoint := c.meta().RevocationEndpoint
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(data.Encode()))
 	if err != nil {
@@ -135,7 +142,7 @@ func (c *OIDCClient) GetLogoutURL(idTokenHint string) string {
 	if idTokenHint != "" {
 		params.Set("id_token_hint", idTokenHint)
 	}
-	return fmt.Sprintf("%s/protocol/openid-connect/logout?%s", c.issuer, params.Encode())
+	return c.meta().EndSessionEndpoint + "?" + params.Encode()
 }
 
 // ParseIDTokenClaims parses and validates the ID token, extracting claims.
@@ -288,7 +295,7 @@ func (c *OIDCClient) GetServiceToken(ctx context.Context) (*TokenResponse, error
 }
 
 func (c *OIDCClient) tokenRequest(ctx context.Context, data url.Values) (*TokenResponse, error) {
-	endpoint := fmt.Sprintf("%s/protocol/openid-connect/token", c.issuer)
+	endpoint := c.meta().TokenEndpoint
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(data.Encode()))
 	if err != nil {

@@ -4,10 +4,8 @@ import (
 	"context"
 	"log"
 	"os"
+	"strings"
 	"time"
-
-	"github.com/redis/go-redis/v9"
-
 	_ "github.com/dfradehubs/agentgram-api/docs/swagger" // swagger generated docs
 	"github.com/dfradehubs/agentgram-api/internal/agents"
 	"github.com/dfradehubs/agentgram-api/internal/auth"
@@ -21,6 +19,7 @@ import (
 	"github.com/dfradehubs/agentgram-api/internal/proxy"
 	"github.com/dfradehubs/agentgram-api/internal/pubsub"
 	"github.com/dfradehubs/agentgram-api/internal/repository/postgres"
+	"github.com/dfradehubs/agentgram-api/internal/runtime"
 	"github.com/dfradehubs/agentgram-api/internal/server"
 	"github.com/dfradehubs/agentgram-api/internal/service"
 	"github.com/dfradehubs/agentgram-api/internal/settings"
@@ -76,14 +75,27 @@ func main() {
 		zap.String("port", cfg.Server.Port),
 		zap.String("config_path", configPath))
 
-	// Create Redis client
-	rdb := redis.NewClient(&redis.Options{
-		Addr:         cfg.Redis.Addr,
-		Password:     cfg.Redis.Password,
-		DB:           cfg.Redis.DB,
-		PoolSize:     cfg.Redis.PoolSize,
-		MinIdleConns: cfg.Redis.MinIdleConns,
-	})
+	if strings.EqualFold(cfg.Database.Driver, "sqlite") {
+		logger.Fatal("database.driver=sqlite is not wired to the application repositories yet; set database.embedded: true (in-process PostgreSQL) and redis.embedded: true for laptop mode")
+	}
+
+	embeddedPG, err := runtime.StartPostgres(cfg)
+	if err != nil {
+		logger.Fatal("failed to start embedded postgres", zap.Error(err))
+	}
+	if embeddedPG != nil {
+		defer func() { _ = embeddedPG.Stop() }()
+		logger.Info("embedded postgres started", zap.Int("port", cfg.Database.Port))
+	}
+
+	mr, rdb, err := runtime.StartRedis(cfg)
+	if err != nil {
+		logger.Fatal("failed to start redis", zap.Error(err))
+	}
+	if mr != nil {
+		defer mr.Close()
+		logger.Info("embedded redis started", zap.String("addr", cfg.Redis.Addr))
+	}
 
 	// Verify Redis connection
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -118,7 +130,11 @@ func main() {
 	// Run migrations
 	migrationsPath := os.Getenv("MIGRATIONS_PATH")
 	if migrationsPath == "" {
-		migrationsPath = "/migrations"
+		if _, err := os.Stat("/migrations"); err == nil {
+			migrationsPath = "/migrations"
+		} else {
+			migrationsPath = "./migrations"
+		}
 	}
 	if err := db.RunMigrations(cfg.Database, migrationsPath); err != nil {
 		logger.Fatal("failed to run migrations", zap.Error(err))
@@ -207,9 +223,9 @@ func main() {
 
 	// Create services
 	userService := service.NewUserService(userRepo, cfg.Auth.AdminUsers, cfg.Auth.AdminGroups, cfg.Auth.EditorGroups, cfg.Auth.ViewerGroups)
-	bootstrapService := service.NewBootstrapService(userRepo, basicAuthRepo, logger)
+	bootstrapService := service.NewBootstrapService(userRepo, basicAuthRepo, agentRepo, logger)
 
-	// Seed admin users from config.yaml
+	// Seed admin users, basic-auth users and first-run agents from config.yaml
 	seedCtx, seedCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer seedCancel()
 	if err := bootstrapService.SeedAdminUsers(seedCtx, cfg); err != nil {
@@ -217,6 +233,9 @@ func main() {
 	}
 	if err := bootstrapService.SeedBasicAuthUsers(seedCtx, cfg); err != nil {
 		logger.Fatal("failed to seed basic auth users", zap.Error(err))
+	}
+	if err := bootstrapService.SeedAgents(seedCtx, cfg); err != nil {
+		logger.Fatal("failed to seed agents", zap.Error(err))
 	}
 
 	// Create DB-backed agent registry and load cache

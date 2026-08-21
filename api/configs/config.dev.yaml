@@ -41,6 +41,18 @@ mcp_server:
       email: "anonymous@localhost"
       groups: []
 
+seed:
+  demo_agent: true
+  agents:
+    - id: mock-agent
+      name: Mock agent
+      description: Bundled mock REST agent (docker compose).
+      category: testing
+      protocol: custom
+      endpoint: "${ENV:MOCK_REST_ENDPOINT}"
+      allowed_groups:
+        - "*"
+
 metrics:
   enabled: true
   retention_days: 30
