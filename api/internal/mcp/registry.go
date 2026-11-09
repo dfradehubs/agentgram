@@ -2,7 +2,9 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -58,7 +60,35 @@ type ServerInfo struct {
 	Status      string // "connected", "error", "disconnected"
 	StatusError string // error message if Status == "error"
 	Tools       []Tool // cached tools from last successful ListTools
-	mu          sync.RWMutex
+	toolsAt     time.Time
+	// listMu serializes everything that initializes the client or lists its tools (first init,
+	// background refresh, lazy init, reconnect), so two handshakes never overlap and an older
+	// listing cannot overwrite a newer one. The background refresh only TryLocks it.
+	listMu sync.Mutex
+	mu     sync.RWMutex
+}
+
+// setTools stores a fresh tool list and when it was fetched.
+func (s *ServerInfo) setTools(tools []Tool) {
+	s.mu.Lock()
+	s.Status = "connected"
+	s.StatusError = ""
+	s.Tools = tools
+	s.toolsAt = time.Now()
+	s.mu.Unlock()
+}
+
+// config returns a consistent copy of the server configuration.
+func (s *ServerInfo) config() MCPServerConfig {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.Config
+}
+
+func (s *ServerInfo) toolsStale(ttl time.Duration) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return time.Since(s.toolsAt) >= ttl
 }
 
 // GetStatus returns the current status thread-safely
@@ -83,7 +113,14 @@ type Registry struct {
 	mcpRepo         repository.MCPServerRepository // nil when running without DB
 	toolCallTimeout func() time.Duration           // read per call, so runtime settings changes apply to cached clients
 	stopCh          chan struct{}
+	// toolsTTL bounds how long a pod serves a server's tool list without asking the server
+	// again. Each API pod keeps its own list, so without it replicas drift apart and tools
+	// added upstream only appear after a restart.
+	toolsTTL time.Duration
 }
+
+// defaultToolsTTL is the tool list freshness: refreshes ride the periodic registry reload.
+const defaultToolsTTL = 5 * time.Minute
 
 // NewDBRegistry creates a new DB-backed MCP registry.
 // toolCallTimeout returns the max duration for a single MCP tool call, read per
@@ -96,7 +133,56 @@ func NewDBRegistry(mcpRepo repository.MCPServerRepository, toolCallTimeout func(
 		mcpRepo:         mcpRepo,
 		toolCallTimeout: toolCallTimeout,
 		stopCh:          make(chan struct{}),
+		toolsTTL:        defaultToolsTTL,
 	}
+}
+
+// connectionKey identifies everything a client is built from. A server whose key changes
+// (URL, transport, headers such as a rotated key, auth settings) needs a new client: reusing
+// the old one would keep sending the old credentials until a restart.
+func connectionKey(cfg MCPServerConfig) string {
+	b, _ := json.Marshal(struct {
+		URL, Transport, AuthType, AuthHeaderName, BearerToken   string
+		OAuth2AuthServerURL, OAuth2ClientID, OAuth2ClientSecret string
+		OAuth2Scopes                                            string
+		ForwardAuth                                             bool
+		// Per-user bearer servers handshake with each caller's key (EnsureInitialized), so
+		// turning the rules on or off needs a new client. The keys themselves are resolved
+		// per request and are not part of the client.
+		PerUserBearer bool
+		Headers       map[string]string // json sorts map keys
+	}{cfg.URL, cfg.Transport, cfg.AuthType, cfg.AuthHeaderName, cfg.BearerToken,
+		cfg.OAuth2AuthServerURL, cfg.OAuth2ClientID, cfg.OAuth2ClientSecret, cfg.OAuth2Scopes,
+		cfg.ForwardAuth, cfg.IsBearerPerUser(), effectiveHeaders(cfg)})
+	return string(b)
+}
+
+// sharedClient reports whether the server uses one client for every user (its tools can be
+// re-listed in the background); per-user servers need the caller's credentials.
+func sharedClient(cfg MCPServerConfig) bool {
+	return !cfg.ForwardAuth && !cfg.IsOAuth2() && !cfg.IsBearerPerUser()
+}
+
+// refreshTools re-lists a shared server's tools in the background, keeping the current list if
+// the server does not answer.
+func (r *Registry) refreshTools(info *ServerInfo) {
+	if !info.listMu.TryLock() {
+		return // an init, reconnect or refresh is already running and will set the list
+	}
+	defer info.listMu.Unlock()
+	if !info.Client.IsInitialized() {
+		r.initializeServerLocked(info)
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	tools, err := info.Client.ListTools(ctx)
+	if err != nil {
+		r.logger.Warn("MCP tool refresh failed, keeping the previous list",
+			zap.String("id", info.config().ID), zap.Error(err))
+		return
+	}
+	info.setTools(tools)
 }
 
 // StartPeriodicRefresh starts a background goroutine that reloads MCP servers from DB
@@ -145,12 +231,20 @@ func (r *Registry) LoadFromDB(ctx context.Context) error {
 	for _, s := range servers {
 		serverCfg := mcpServerToConfig(s)
 
-		// Reuse existing connection if server hasn't changed
-		if old, ok := oldServers[s.ID]; ok && old.Config.URL == serverCfg.URL && old.Config.Transport == serverCfg.Transport {
+		// Reuse the connection only if nothing the client is built from changed.
+		if old, ok := oldServers[s.ID]; ok && connectionKey(old.Config) == connectionKey(serverCfg) {
 			r.servers[s.ID] = old
-			// Update config in case permissions changed
-			old.Config = serverCfg
+			// Update config in case permissions changed. Written only on a real change, under
+			// the server lock: rewriting it on every reload raced with every reader.
+			if !reflect.DeepEqual(old.config(), serverCfg) {
+				old.mu.Lock()
+				old.Config = serverCfg
+				old.mu.Unlock()
+			}
 			delete(oldServers, s.ID)
+			if sharedClient(serverCfg) && old.toolsStale(r.toolsTTL) {
+				go r.refreshTools(old)
+			}
 			continue
 		}
 
@@ -173,7 +267,7 @@ func (r *Registry) LoadFromDB(ctx context.Context) error {
 				zap.String("name", s.Name),
 				zap.String("auth_type", serverCfg.AuthType))
 		} else {
-			go r.initializeServer(info)
+			go r.refreshTools(info) // initializes under listMu, like every later refresh
 		}
 	}
 
@@ -228,10 +322,12 @@ func effectiveHeaders(cfg MCPServerConfig) map[string]string {
 	return merged
 }
 
-func (r *Registry) initializeServer(info *ServerInfo) {
+// initializeServerLocked runs the handshake and lists tools; the caller holds info.listMu.
+func (r *Registry) initializeServerLocked(info *ServerInfo) {
+	cfg := info.config()
 	r.logger.Info("MCP server initializing",
-		zap.String("id", info.Config.ID),
-		zap.String("url", info.Config.URL))
+		zap.String("id", cfg.ID),
+		zap.String("url", cfg.URL))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -242,9 +338,9 @@ func (r *Registry) initializeServer(info *ServerInfo) {
 		info.StatusError = err.Error()
 		info.mu.Unlock()
 		r.logger.Warn("MCP server initialization failed",
-			zap.String("id", info.Config.ID),
-			zap.String("name", info.Config.Name),
-			zap.String("url", info.Config.URL),
+			zap.String("id", cfg.ID),
+			zap.String("name", cfg.Name),
+			zap.String("url", cfg.URL),
 			zap.Error(err))
 		return
 	}
@@ -257,26 +353,27 @@ func (r *Registry) initializeServer(info *ServerInfo) {
 		info.StatusError = fmt.Sprintf("initialized but failed to list tools: %s", err)
 		info.mu.Unlock()
 		r.logger.Warn("MCP tool listing failed",
-			zap.String("id", info.Config.ID),
+			zap.String("id", cfg.ID),
 			zap.Error(err))
 		return
 	}
 
-	info.mu.Lock()
-	info.Status = "connected"
-	info.StatusError = ""
-	info.Tools = tools
-	info.mu.Unlock()
+	info.setTools(tools)
 
 	r.logger.Info("MCP initialized",
-		zap.String("id", info.Config.ID),
-		zap.String("name", info.Config.Name),
+		zap.String("id", cfg.ID),
+		zap.String("name", cfg.Name),
 		zap.Int("tools", len(tools)))
 }
 
 // EnsureInitialized initializes a forward_auth server lazily on first request with user headers
 func (r *Registry) EnsureInitialized(info *ServerInfo, extraHeaders map[string]string) error {
 	if info.Client.IsInitialized() {
+		return nil
+	}
+	info.listMu.Lock()
+	defer info.listMu.Unlock()
+	if info.Client.IsInitialized() { // another request initialized it while we waited
 		return nil
 	}
 
@@ -304,11 +401,7 @@ func (r *Registry) EnsureInitialized(info *ServerInfo, extraHeaders map[string]s
 		return fmt.Errorf("MCP tool listing failed: %w", err)
 	}
 
-	info.mu.Lock()
-	info.Status = "connected"
-	info.StatusError = ""
-	info.Tools = tools
-	info.mu.Unlock()
+	info.setTools(tools)
 
 	r.logger.Info("MCP lazy-initialized",
 		zap.String("id", info.Config.ID),
@@ -326,6 +419,9 @@ func (r *Registry) Reconnect(serverID string, extraHeaders map[string]string) (*
 	if !ok {
 		return nil, fmt.Errorf("MCP server not found: %s", serverID)
 	}
+	// Waits for any refresh in flight, so the list this reconnect fetches is the one kept.
+	info.listMu.Lock()
+	defer info.listMu.Unlock()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -349,11 +445,7 @@ func (r *Registry) Reconnect(serverID string, extraHeaders map[string]string) (*
 		return info, fmt.Errorf("tool listing failed after reconnect: %w", err)
 	}
 
-	info.mu.Lock()
-	info.Status = "connected"
-	info.StatusError = ""
-	info.Tools = tools
-	info.mu.Unlock()
+	info.setTools(tools)
 
 	r.logger.Info("MCP reconnected",
 		zap.String("id", info.Config.ID),
