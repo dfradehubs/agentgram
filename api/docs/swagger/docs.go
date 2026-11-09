@@ -1857,6 +1857,10 @@ const docTemplate = `{
                 },
                 "is_admin": {
                     "type": "boolean"
+                },
+                "role": {
+                    "description": "admin | editor | viewer | user",
+                    "type": "string"
                 }
             }
         }
@@ -1884,7 +1888,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/",
 	Schemes:          []string{},
 	Title:            "Agentgram API",
-	Description:      "Multiplexer API for AI agents with AG-UI protocol. Connects to remote agents, handles authentication, permissions, and emits AG-UI SSE events.",
+	Description:      "Gateway API for MCP servers and AI agents. Authenticates callers, enforces RBAC, resolves per-user upstream credentials, and emits AG-UI SSE events.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

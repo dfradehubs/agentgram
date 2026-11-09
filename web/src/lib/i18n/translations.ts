@@ -67,7 +67,7 @@ export const translations = {
 
     // First-run wizard
     "wizard.title": "Conecta tu primer agente",
-    "wizard.subtitle": "Un chat y un endpoint MCP para todos tus agentes. Pega una URL REST, A2A o ADK para empezar.",
+    "wizard.subtitle": "Un endpoint MCP y una API para todos tus agentes y servidores MCP. Pega una URL REST, A2A o ADK para empezar.",
     "wizard.name": "Nombre",
     "wizard.endpoint": "URL del agente",
     "wizard.protocol": "Protocolo",
@@ -311,7 +311,7 @@ export const translations = {
 
     // First-run wizard
     "wizard.title": "Connect your first agent",
-    "wizard.subtitle": "One chat and one MCP endpoint for every agent. Paste a REST, A2A or ADK URL to start.",
+    "wizard.subtitle": "One MCP endpoint and one API for every agent and MCP server. Paste a REST, A2A or ADK URL to start.",
     "wizard.name": "Name",
     "wizard.endpoint": "Agent URL",
     "wizard.protocol": "Protocol",

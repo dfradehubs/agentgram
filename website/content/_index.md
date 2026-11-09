@@ -1,5 +1,5 @@
 ---
-title: "Agentgram — One chat, every agent"
+title: "Agentgram — One gateway for every MCP server and agent"
 layout: hextra-home
 ---
 
@@ -11,13 +11,13 @@ layout: hextra-home
 
 <div class="hx:mt-6 hx:mb-6">
 {{< hextra/hero-headline >}}
-  One MCP endpoint.&nbsp;<br class="hx:sm:block hx:hidden" />One chat. Every agent.
+  One gateway for every&nbsp;<br class="hx:sm:block hx:hidden" />MCP server and agent.
 {{< /hextra/hero-headline >}}
 </div>
 
 <div class="hx:mb-12">
 {{< hextra/hero-subtitle >}}
-  A single front door for the agents and MCP servers you already run — chat in the browser, call them from Cursor or Claude Code, with RBAC deciding who can reach what.
+  Self-hosted MCP and agent gateway: one MCP endpoint and one API in front of everything you run — RBAC per user and group, per-user credentials to each upstream, full audit. Chat and admin console included.
 {{< /hextra/hero-subtitle >}}
 </div>
 
@@ -27,50 +27,46 @@ layout: hextra-home
 {{< hextra/hero-button text="View on GitHub" link="https://github.com/dfradehubs/agentgram" style="background:#27272a;border:1px solid #3f3f46;" >}}
 </div>
 
-<div class="hx:mt-6 hx:mb-10" style="max-width:960px;margin-left:auto;margin-right:auto;">
-  <img src="/images/demo-v2.gif" width="960" height="600" alt="Agentgram: streaming chat, smart groups with an LLM moderator, admin, and one MCP endpoint" />
-</div>
-
 {{< hextra/feature-grid >}}
   {{< hextra/feature-card
-    title="Protocol-agnostic"
+    title="MCP proxy & aggregation"
     icon="switch-horizontal"
-    subtitle="Custom REST/SSE, A2A (JSON-RPC) and Google ADK agents — all behind one uniform interface."
+    subtitle="Put every upstream MCP server (HTTP or SSE) behind one MCP endpoint for any IDE, CLI or chat client. Tools are namespaced and listed per caller."
   >}}
   {{< hextra/feature-card
-    title="AG-UI native"
-    icon="rss"
-    subtitle="The API emits standard AG-UI events over SSE, so the UI never has to know how an agent is built."
-  >}}
-  {{< hextra/feature-card
-    title="Sessions that persist"
-    icon="collection"
-    subtitle="Conversation history per agent, stored in Redis and managed by the API. Agents stay stateless."
-  >}}
-  {{< hextra/feature-card
-    title="Moderated multi-agent debates"
-    icon="user-group"
-    subtitle="Message a group like a Telegram chat: an LLM moderator picks who answers, agents build on each other's replies, and you get the consolidated result."
-  >}}
-  {{< hextra/feature-card
-    title="Share & collaborate"
-    icon="share"
-    subtitle="Share conversations with revocable links, and build shared multi-agent groups your team uses together."
+    title="Agents as MCP tools"
+    icon="terminal"
+    subtitle="Every agent becomes a tool, groups become moderated multi-agent tools, and skills are served as tools too."
   >}}
   {{< hextra/feature-card
     title="RBAC for every agent & MCP"
     icon="shield-check"
-    subtitle="Fine-grained, per-agent and per-MCP access control by group or user. One endpoint; each caller only sees what they're allowed to."
+    subtitle="Per-agent, per-MCP-server, per-group and per-skill access by user or group. One endpoint; each caller only sees what they're allowed to."
   >}}
   {{< hextra/feature-card
-    title="MCP server"
-    icon="terminal"
-    subtitle="Aggregate your agents and company MCP servers into one MCP endpoint for any compatible IDE or CLI — standard OAuth + Dynamic Client Registration, no manual setup."
+    title="Per-user credentials"
+    icon="key"
+    subtitle="Forward the caller's token, pick an API key by user or group, or run a per-user OAuth 2.1 grant against third-party MCP servers."
   >}}
   {{< hextra/feature-card
-    title="Built-in observability"
+    title="OAuth for MCP clients"
+    icon="lock-closed"
+    subtitle="Standard protected-resource metadata pointing at your OIDC provider; Dynamic Client Registration or a pre-registered client id."
+  >}}
+  {{< hextra/feature-card
+    title="Protocol-agnostic agents"
+    icon="rss"
+    subtitle="Custom REST/SSE, A2A (JSON-RPC) and Google ADK agents behind one interface, converted to standard AG-UI events."
+  >}}
+  {{< hextra/feature-card
+    title="Audit & observability"
     icon="chart-bar"
-    subtitle="Usage, latency and cost dashboards out of the box. Plus a Slack integration."
+    subtitle="Every chat, MCP call and admin change in an audit log; usage, latency and cost dashboards out of the box."
+  >}}
+  {{< hextra/feature-card
+    title="Live admin"
+    icon="cog"
+    subtitle="Register agents, MCP servers, LLMs and permissions from the UI or through admin MCP tools — no restarts."
   >}}
   {{< hextra/feature-card
     title="Deploy anywhere"
@@ -81,24 +77,36 @@ layout: hextra-home
 
 <section class="ag-section">
 <div class="ag-section-head">
+<span class="ag-eyebrow">Console included</span>
+<h2 class="ag-section-title">A chat and admin console on top of the gateway</h2>
+<p class="ag-section-sub">Stream any agent or MCP server in the browser, message several agents at once with an LLM moderator picking who answers, share conversations with revocable links, and reach the same agents from Slack — always with each person's own permissions.</p>
+</div>
+
+<div style="max-width:960px;margin-left:auto;margin-right:auto;">
+  <img src="/images/demo-v2.gif" width="960" height="600" alt="Agentgram console: streaming chat, smart groups with an LLM moderator, admin, and one MCP endpoint" />
+</div>
+</section>
+
+<section class="ag-section">
+<div class="ag-section-head">
 <span class="ag-eyebrow">How it works</span>
-<h2 class="ag-section-title">Three steps to one front door for every agent</h2>
+<h2 class="ag-section-title">Three steps to one gateway for every MCP server and agent</h2>
 <p class="ag-section-sub">Register what you already run, put it behind a single gateway, and reach it from anywhere — without each client learning a new protocol.</p>
 </div>
 
 {{% steps %}}
 
-### Register any agent
+### Register your MCP servers and agents
 
-Point Agentgram at an agent's endpoint and pick its protocol — **Custom REST/SSE**, **A2A (JSON-RPC)** or **Google ADK**. No redeploy: agents are managed at runtime from the admin panel and stored in PostgreSQL.
+Point Agentgram at each MCP server (HTTP or SSE) and each agent's endpoint — **Custom REST/SSE**, **A2A (JSON-RPC)** or **Google ADK** — and choose how it authenticates upstream. No redeploy: everything is managed at runtime from the admin panel and stored in PostgreSQL.
 
 ### One API, one MCP endpoint — behind RBAC
 
 Every agent and every company MCP server is reachable through a single API and a single `/mcp` endpoint. Role-based access control decides, per agent and per MCP server, exactly who can reach what.
 
-### Talk to it from anywhere
+### Connect once, from anywhere
 
-Chat from the web UI, call agents as tools from your IDE or CLI over MCP, or wire them into Slack. The API converts every protocol into a uniform stream of AG-UI events.
+Add one MCP endpoint to Claude Code, Cursor, Codex or claude.ai, call the API, or use the built-in chat and Slack. Each person sees exactly the tools they're entitled to, and every call lands in the audit log.
 
 {{% /steps %}}
 </section>
@@ -106,7 +114,7 @@ Chat from the web UI, call agents as tools from your IDE or CLI over MCP, or wir
 <section class="ag-section">
 <div class="ag-section-head">
 <span class="ag-eyebrow">Architecture</span>
-<h2 class="ag-section-title">A thin, stateless multiplexer in the middle</h2>
+<h2 class="ag-section-title">A thin, stateless gateway in the middle</h2>
 <p class="ag-section-sub">Clients speak AG-UI and MCP. Agents speak their own protocol. The Go API translates between them, enforces access, and keeps the sessions.</p>
 </div>
 
@@ -299,7 +307,7 @@ You get one `ask_<agent-id>` tool per agent you can reach, plus the tools of eve
 }
 ```
 
-On first use the client runs the OAuth flow automatically — discovery + Dynamic Client Registration, no manual setup.
+On first use the client runs the OAuth flow automatically — discovery, then Dynamic Client Registration or the pre-registered client id you configure.
   {{< /tab >}}
 {{< /tabs >}}
 </section>
@@ -341,7 +349,7 @@ docker pull ghcr.io/dfradehubs/agentgram-web:latest
 </section>
 
 <div class="ag-cta">
-<h2 class="ag-section-title">One MCP endpoint. One chat. Every agent.</h2>
+<h2 class="ag-section-title">One gateway for every MCP server and agent.</h2>
 <p class="ag-section-sub">Run the full stack locally in a couple of commands, then point it at your own agents.</p>
 <div class="ag-cta-actions">
 {{< hextra/hero-button text="Get Started" link="/docs/getting-started/" >}}
