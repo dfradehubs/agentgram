@@ -6,14 +6,14 @@ Submit as a **Show HN** with the GitHub repo as the URL. Do not use `https://age
 
 | Field | Value |
 | ----- | ----- |
-| **Title** | `Show HN: Agentgram – one MCP endpoint and a chat for all your agents` |
+| **Title** | `Show HN: Agentgram – one MCP gateway for all your MCP servers and agents` |
 | **URL** | `https://github.com/dfradehubs/agentgram` |
 
-Title is 68 characters (HN limit is 80).
+Title is 72 characters (HN limit is 80).
 
 ## First comment (paste as-is)
 
-I kept ending up with a different chat window for every agent (logs, k8s, metrics), each on a different protocol. Agentgram is a self-hosted Go multiplexer: REST/SSE, A2A and Google ADK in, AG-UI out, same agents as MCP tools for Cursor / Claude Code, with RBAC on both. Groups are moderated debates — an LLM picks who speaks.
+Every team I worked with ended up with a pile of MCP servers and agents (logs, k8s, metrics, SaaS), and everyone wiring each one into each client with its own login and API key. Agentgram is a self-hosted Go gateway: one MCP endpoint in front of all of them, per-user RBAC, the right credential for each upstream (your token, a group API key or a per-user OAuth grant), and an audit log. Agents speak REST/SSE, A2A or Google ADK and show up as MCP tools too. There's a chat console on top, where groups are moderated debates — an LLM picks who speaks.
 
 ```
 curl -fsSL https://raw.githubusercontent.com/dfradehubs/agentgram/main/docker-compose.yaml -o docker-compose.yaml

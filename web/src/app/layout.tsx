@@ -23,8 +23,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Agentgram",
-  description: "Unified interface for multiple AI agents",
+  title: "Agentgram — MCP & agent gateway",
+  description: "Self-hosted gateway for MCP servers and AI agents",
 };
 
 export default function RootLayout({

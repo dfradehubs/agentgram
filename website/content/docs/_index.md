@@ -5,10 +5,12 @@ next: getting-started
 
 Welcome to the Agentgram documentation.
 
-Agentgram is a unified interface for interacting with multiple AI agents. The **API** is a Go
-multiplexer that connects to remote agents over their native protocol (Custom REST/SSE, A2A or
-Google ADK), handles authentication, permissions and session storage, and converts everything to a
-uniform stream of [AG-UI](https://docs.ag-ui.com/) events. The **web** client renders that stream.
+Agentgram is a self-hosted gateway for MCP servers and AI agents. The **API** is a Go gateway
+that puts every upstream MCP server and agent behind one MCP endpoint and one API: it authenticates
+the caller, applies RBAC by user and group, picks the right credential for each upstream, and audits
+every call. Agents are reached over their native protocol (Custom REST/SSE, A2A or Google ADK) and
+converted to a uniform stream of [AG-UI](https://docs.ag-ui.com/) events. The **web** client is the
+chat and admin console on top.
 
 {{< callout type="info" >}}
 **Centralize everything, behind RBAC.** Register every agent (ADK, A2A or custom) **and** every MCP

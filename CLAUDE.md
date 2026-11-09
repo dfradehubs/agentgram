@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Agentgram** is a unified interface for interacting with multiple AI agents. The system consists of:
+**Agentgram** is a self-hosted gateway for MCP servers and AI agents (one MCP endpoint and one API, with per-user RBAC, credentials and audit), with a chat and admin console on top. The system consists of:
 
 - **API** (Go): Multiplexer that connects to remote agents, handles authentication (Keycloak JWT), permissions (Google Workspace groups/users), and emits **AG-UI protocol** events
 - **Web** (Next.js + SSE/AG-UI): User interface for chatting with agents

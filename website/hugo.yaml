@@ -37,7 +37,7 @@ menu:
         icon: github
 
 params:
-  description: "One MCP endpoint and one chat for every agent you already run."
+  description: "Self-hosted gateway for MCP servers and AI agents: one endpoint, per-user RBAC and credentials, audit."
 
   navbar:
     displayTitle: true

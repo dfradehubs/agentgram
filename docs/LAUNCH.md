@@ -6,7 +6,7 @@ Do **not** paste a live MCP URL on agentgram.eu — that host is the docs site a
 
 ## Positioning (one sentence)
 
-Agentgram is the self-hosted front door for every agent and MCP server you already run: one chat, one MCP endpoint, RBAC on both.
+Agentgram is the self-hosted gateway for every MCP server and agent you already run: one MCP endpoint, per-user RBAC and credentials, full audit — with a chat console included.
 
 ## Show HN
 
@@ -14,7 +14,7 @@ See [show-hn.md](show-hn.md) for the exact title, URL and first comment.
 
 ## r/selfhosted
 
-**Title:** Agentgram – self-hosted front door for AI agents and MCP (Go + Next.js, MIT)
+**Title:** Agentgram – self-hosted gateway for MCP servers and AI agents (Go + Next.js, MIT)
 
 Same body as the Show HN first comment, plus: Redis + Postgres in the compose file; laptop mode embeds both so you can run the API as one process.
 

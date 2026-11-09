@@ -2,7 +2,7 @@
 
 ## Overview
 
-The API acts as an **agent multiplexer**, allowing users to interact with multiple remote agents through a unified interface.
+The API acts as a **gateway for MCP servers and agents**: it puts every upstream behind one MCP endpoint and one API, enforcing per-user RBAC and resolving per-user upstream credentials.
 
 ```
 ┌─────────────┐     ┌─────────────────┐     ┌─────────────┐

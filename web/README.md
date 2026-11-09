@@ -1,6 +1,6 @@
 # Agentgram Frontend
 
-Next.js frontend with SSE streaming and the AG-UI protocol, providing a unified chat interface with multiple AI agents.
+Next.js chat and admin console for the Agentgram gateway, with SSE streaming and the AG-UI protocol.
 
 ## Features
 

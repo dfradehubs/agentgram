@@ -3,12 +3,13 @@ title: Compare
 weight: 8
 ---
 
-Agentgram is **not** another ChatGPT clone. It is a **front door**: one chat UI and one MCP
-endpoint in front of the agents and tools you already run, with RBAC.
+Agentgram is **not** another ChatGPT clone. It is a **gateway**: one MCP endpoint and one API in
+front of the MCP servers and agents you already run, with per-user RBAC and credentials — plus a
+chat and admin console.
 
 | | Agentgram | Open WebUI | MCPJungle | IBM ContextForge | agentgateway |
 | --- | --- | --- | --- | --- | --- |
-| Job to be done | Company/team front door for heterogeneous agents + MCP | Chat with Ollama / OpenAI-compatible models | One MCP endpoint for many MCP servers | MCP/A2A/REST federation + governance | High-performance MCP/A2A/LLM data plane |
+| Job to be done | Company/team gateway for MCP servers + heterogeneous agents, per-user RBAC and credentials | Chat with Ollama / OpenAI-compatible models | One MCP endpoint for many MCP servers | MCP/A2A/REST federation + governance | High-performance MCP/A2A/LLM data plane |
 | Chat UI | Yes (AG-UI streaming) | Yes (primary) | Admin UI | Admin UI | Built-in explorer |
 | Bring your own agent protocols | REST/SSE, A2A, Google ADK | Model APIs, tools | MCP servers | MCP, A2A, REST/gRPC | MCP, A2A, LLM |
 | MCP gateway + OAuth/DCR | Yes | Via MCPO / plugins | Yes | Yes | Yes |

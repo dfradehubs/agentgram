@@ -5,12 +5,12 @@
 <h1 align="center">Agentgram</h1>
 
 <p align="center">
-  <strong>One MCP endpoint. One chat. Every agent.</strong>
+  <strong>One gateway for every MCP server and agent.</strong>
 </p>
 
 <p align="center">
-  A single front door for all your AI agents — Agentgram speaks REST, A2A and ADK on the way in,<br/>
-  and emits clean <a href="https://docs.ag-ui.com/">AG-UI</a> events on the way out, so the UI never has to care how an agent is built.
+  Self-hosted MCP and agent gateway: one MCP endpoint and one API in front of everything you run —<br/>
+  RBAC per user and group, per-user credentials to each upstream, full audit. Chat and admin console included.
 </p>
 
 <p align="center">
@@ -19,6 +19,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
   <img src="https://img.shields.io/badge/Go-1.25-00ADD8.svg" alt="Go 1.25" />
   <img src="https://img.shields.io/badge/Next.js-16-000000.svg" alt="Next.js 16" />
+  <img src="https://img.shields.io/badge/protocol-MCP-7C3AED.svg" alt="MCP" />
   <img src="https://img.shields.io/badge/protocol-AG--UI-7C3AED.svg" alt="AG-UI" />
 </p>
 
@@ -26,57 +27,62 @@
   <strong><a href="https://agentgram.eu">📖 Documentation &amp; guides</a></strong>
 </p>
 
-<p align="center">
-  <img src="docs/demo-v2.gif" alt="Agentgram: streaming chat, smart groups with an LLM moderator, admin, and one MCP endpoint" width="960" />
-</p>
+```
+  Claude Code · Cursor · Codex ─┐                         ┌─> MCP server (logs)
+  claude.ai · any MCP client ───┤   ┌─────────────────┐   ├─> MCP server (k8s)
+                                ├──>│    Agentgram    │───┼─> MCP server (SaaS, per-user OAuth)
+  Web chat · Slack · your API ──┘   │  auth · RBAC    │   ├─> Agent (A2A)
+                                    │  credentials    │   ├─> Agent (Google ADK)
+                                    │  audit          │   └─> Agent (REST · SSE)
+                                    └─────────────────┘
+```
 
 ---
 
 ## Why
 
-I kept ending up with a different chat window for every agent I built — one for the Kubernetes
-agent, another for logs, another for metrics — each speaking its own protocol. Agentgram is the
-single front door I wanted: **one chat UI, one API, every agent**, regardless of how each one is
-wired underneath.
+Every team ends up with a pile of MCP servers and agents — one for logs, one for Kubernetes, one
+for metrics, a couple of SaaS ones — and every person has to wire each of them into each client,
+with its own login and its own API key. N servers × N clients × N credentials, and nobody can say
+who has access to what.
 
-The API is a multiplexer. It handles auth, permissions and session storage, talks to each agent in
-its native protocol, and converts everything to a uniform stream of AG-UI events. The web client
-just renders that stream — it never needs to know whether an answer came from a REST endpoint, an
-A2A peer or a Google ADK app.
+Agentgram is the gateway in front of all of them. Register every MCP server and agent your company
+runs once; people connect **one MCP endpoint** (or one API) and see exactly the tools they are
+entitled to — nothing else. Agentgram authenticates the caller, applies role-based access control
+by user and group, picks the right credential for each upstream (the user's own token, a group API
+key or a per-user OAuth grant), and records every call in an audit log.
 
-> [!TIP]
-> **The killer feature — centralize everything, behind RBAC.** Point Agentgram at *every* agent and
-> MCP server in your company — whether they speak ADK, A2A or a custom protocol — and expose them
-> through **one API endpoint and one MCP endpoint**. Role-based access control (RBAC) decides exactly
-> who can reach which agent or MCP, so a single integration hands each person precisely the tools
-> they're entitled to — and nothing else. No more N integrations, N logins, N tools to wire up per client.
+Agents are first-class too: Agentgram talks to each one in its native protocol (custom REST/SSE,
+A2A or Google ADK) and exposes it both as an MCP tool and as a uniform
+[AG-UI](https://docs.ag-ui.com/) event stream, so no client ever has to care how an agent is built.
 
 ## Features
 
-- 🏢 **Centralize N agents and N MCP servers** — register everything your company runs and reach it all through **one API endpoint and one MCP endpoint**.
-- 🛡️ **RBAC** — fine-grained, per-agent and per-MCP access control by group or user. Each caller only ever sees what they're allowed to.
-- 🔌 **Protocol-agnostic** — Custom REST/SSE, [A2A](docs/AGENT_A2A_CONTRACT.md) (JSON-RPC) and [Google ADK](docs/AGENT_ADK_CONTRACT.md) agents behind one interface.
-- 📡 **AG-UI native** — the API emits standard [AG-UI](https://docs.ag-ui.com/) SSE events (`RUN_STARTED`, `TEXT_MESSAGE_*`, `TOOL_CALL_*`, `RUN_FINISHED`).
-- 🧵 **Sessions that persist** — conversation history per agent, stored in Redis and managed by the API (agents stay stateless).
-- 👥 **Smart groups** — message a group like a Telegram chat: an LLM moderator picks who speaks, agents build on each other's replies, and `@mention` steers the roster. Configure max debate turns in admin.
-- 🤝 **Share & collaborate** — share conversations with revocable, time-limited links (view or clone), and build **shared groups** that a team uses together.
-- 🔐 **Authentication** — optional OIDC (any provider: Keycloak, Authentik, Auth0, Zitadel, Google) or basic username/password; identities and groups drive the RBAC above.
-- 🛠️ **MCP server** — expose your agents as tools inside Claude Code and Cursor, with full OAuth + Dynamic Client Registration (no manual setup).
-- 💬 **Slack integration** — reach the same agents from Slack.
-- 📊 **Built-in observability** — usage metrics, latency and cost dashboards out of the box.
-- 🧰 **Admin panel** — register agents, MCP servers, LLMs and permissions from the UI.
+### Gateway
+
+- 🔀 **MCP proxy and aggregation** — put N upstream MCP servers (HTTP or SSE) behind **one MCP endpoint**; their tools are namespaced and listed per caller.
+- 🤖 **Agents as MCP tools** — every agent becomes an `ask_<agent>` tool, groups become moderated multi-agent tools, and skills are served as tools too.
+- 🛡️ **RBAC** — per-agent, per-MCP-server, per-group and per-skill access by user or group. Each caller only ever sees what they're allowed to.
+- 🔑 **Per-user credentials to each upstream** — forward the caller's token, pick an API key by user or group with priorities, or run a per-user OAuth 2.1 grant against third-party MCP servers.
+- 🔐 **OAuth for MCP clients** — standard protected-resource metadata pointing at your identity provider (any OIDC: Keycloak, Authentik, Auth0, Zitadel, Google); Dynamic Client Registration or a pre-registered client id.
+- 🔌 **Protocol-agnostic agents** — custom REST/SSE, [A2A](docs/AGENT_A2A_CONTRACT.md) (JSON-RPC) and [Google ADK](docs/AGENT_ADK_CONTRACT.md) behind one interface, converted to standard [AG-UI](https://docs.ag-ui.com/) events.
+- 📜 **Audit and observability** — every chat, MCP call and admin change in an audit log; usage, latency and cost dashboards out of the box.
+- 🧰 **Admin, live** — register agents, MCP servers, LLMs and permissions from the UI or through admin MCP tools, without restarts.
+
+### Console included
+
+- 💬 **Chat** — streaming chat with any agent or MCP server, with tool calls, charts and attachments; sessions persist in Redis and agents stay stateless.
+- 👥 **Smart groups** — message several agents at once: an LLM moderator picks who speaks, agents build on each other's replies, and `@mention` steers the roster.
+- 🤝 **Share & collaborate** — revocable, time-limited links to conversations (view or clone) and shared groups for a team.
+- 💬 **Slack** — reach the same agents from Slack, with each person's own permissions.
+
+<p align="center">
+  <img src="docs/demo-v2.gif" alt="Agentgram console: streaming chat, smart groups with an LLM moderator, admin, and one MCP endpoint" width="960" />
+</p>
 
 ## Screenshots
 
 <table>
-  <tr>
-    <td width="50%"><img src="website/static/images/screenshots/chat-single.webp" alt="Single-agent chat" /></td>
-    <td width="50%"><img src="website/static/images/screenshots/chat-multi-agent.webp" alt="Smart group debate with LLM moderator" /></td>
-  </tr>
-  <tr>
-    <td align="center"><sub><b>Single-agent chat</b> — streaming AG-UI responses with tool calls.</sub></td>
-    <td align="center"><sub><b>Smart groups</b> — LLM moderator picks who speaks; agents share context.</sub></td>
-  </tr>
   <tr>
     <td width="50%"><img src="website/static/images/screenshots/admin-agents.webp" alt="Admin panel" /></td>
     <td width="50%"><img src="website/static/images/screenshots/admin-observability.webp" alt="Observability dashboard" /></td>
@@ -85,23 +91,31 @@ A2A peer or a Google ADK app.
     <td align="center"><sub><b>Admin panel</b> — register agents, MCP servers, LLMs and permissions.</sub></td>
     <td align="center"><sub><b>Observability</b> — usage, latency and cost dashboards out of the box.</sub></td>
   </tr>
+  <tr>
+    <td width="50%"><img src="website/static/images/screenshots/chat-single.webp" alt="Single-agent chat" /></td>
+    <td width="50%"><img src="website/static/images/screenshots/chat-multi-agent.webp" alt="Smart group debate with LLM moderator" /></td>
+  </tr>
+  <tr>
+    <td align="center"><sub><b>Chat</b> — streaming AG-UI responses with tool calls.</sub></td>
+    <td align="center"><sub><b>Smart groups</b> — LLM moderator picks who speaks; agents share context.</sub></td>
+  </tr>
 </table>
 
 ## Architecture
 
 ```
-┌──────────────────────┐     ┌─────────────────────┐     ┌─────────────────┐
-│        Web           │────>│        API          │────>│  Agent (Custom) │
-│  (Next.js + AG-UI)   │<────│   (Go Multiplexer)  │<────│  REST · SSE     │
-└──────────────────────┘     │                     │     └─────────────────┘
-         ↑                   │  - JWT / OIDC auth  │     ┌─────────────────┐
-    AG-UI events             │  - Permissions      │────>│  Agent (A2A)    │
-    over SSE                 │  - Session store    │<────│  JSON-RPC       │
-                             │  - AG-UI conversion │     └─────────────────┘
-                             │  - MCP server       │     ┌─────────────────┐
-                             └─────────────────────┘────>│  Agent (ADK)    │
-                                       │            <────│  REST · SSE     │
-                                  Redis · PostgreSQL     └─────────────────┘
+┌──────────────────────┐     ┌──────────────────────┐     ┌───────────────────┐
+│  MCP clients         │────>│        API           │────>│  MCP servers      │
+│  (Claude Code, ...)  │<────│     (Go gateway)     │<────│  HTTP · SSE       │
+└──────────────────────┘     │                      │     └───────────────────┘
+┌──────────────────────┐     │  - JWT / OIDC auth   │     ┌───────────────────┐
+│  Web console         │────>│  - RBAC              │────>│  Agents           │
+│  (Next.js + AG-UI)   │<────│  - Outbound creds    │<────│  REST · A2A · ADK │
+└──────────────────────┘     │  - AG-UI conversion  │     └───────────────────┘
+                             │  - Sessions · audit  │
+                             └──────────────────────┘
+                                        │
+                                 Redis · PostgreSQL
 ```
 
 See [docs/PROTOCOLS_OVERVIEW.md](docs/PROTOCOLS_OVERVIEW.md) for how each protocol is mapped onto AG-UI.
