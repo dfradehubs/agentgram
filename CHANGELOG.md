@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.14.1] - 2026-11-09
+
+### Fixed
+
+- **MCP servers' tool lists stay fresh on every API pod.** Each pod listed a server's tools once, on first connect, and reused that list until it restarted: tools added upstream never showed up, and with more than one replica clients saw different catalogs depending on the pod they reached (saving the server in admin did not help). Shared servers now re-list their tools in the background every 5 minutes, riding the 30 s registry reload; a failed refresh keeps the previous list, and a server whose first initialize failed is retried. Per-user servers (forward auth, OAuth2, per-user bearer) still refresh on reconnect, since listing needs the caller's credentials.
+- **Changed headers or auth take effect without a restart.** A server whose headers (e.g. a rotated static key), bearer token, OAuth2 settings, forward auth or per-user bearer rules change gets a new client; before, the old one kept the old credentials until the pod restarted.
+- **No overlapping handshakes.** Init, background refresh, lazy init and reconnect of a server are serialized, so a reload during the first initialize no longer starts a second one, and an older listing never overwrites a reconnect's.
+- **Data race on server config.** The registry rewrote each server's config on every reload without a lock while requests read it; it is now written only when it changes, under the server lock.
+
+---
+
 ## [0.14.0] - 2026-08-21
 
 ### Added
